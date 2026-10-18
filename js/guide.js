@@ -24,6 +24,7 @@ const GUIDE = [
       <li>Alternativ: <b>Handy weitergeben</b> – das Spielleiter-Handy geht reihum, jeder sieht nur seine eigene Rolle.</li>
       <li>Auf seinem Handy kann jeder Spieler seine Rolle und Fähigkeit in Ruhe nachlesen. Die Karte ist verdeckt und wird erst durch Antippen sichtbar – so kann niemand über die Schulter schauen.</li>
       <li>Im <b>Grimoire</b> verwaltet der Spielleiter Leben, Tod, Geisterstimmen und Notizen und hat die <b>Nachtreihenfolge</b> für genau die Rollen im Spiel.</li>
+      <li>Optional hilft der <b>Abstimmungs-Helfer</b> (im Grimoire unter „Tag – Abstimmung“, aufklappen): Nominierung eintragen, Handzeichen antippen, die App zählt, prüft die Mehrheit, verbraucht Geisterstimmen und führt die Hinrichtung durch. Wer lieber selbst zählt, lässt ihn einfach zu.</li>
     </ol>
     <p class="hint">Damit QR-Codes und Links auf anderen Handys funktionieren, muss die App online erreichbar sein (z. B. über GitHub Pages). Die Codes funktionieren auch ohne Internet, wenn alle die App geöffnet haben.</p>` },
 

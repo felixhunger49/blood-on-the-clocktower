@@ -283,3 +283,25 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 .ns-bluff { border-left: 5px solid var(--c); background: var(--panel2); border-radius: 12px; padding: .7rem .9rem; }
 .ns-bluff b { display: block; font-size: 1.4rem; }
 .ns-bluff small { color: var(--muted); font-size: .9rem; }
+
+/* Abstimmung */
+.daypanel summary { cursor: pointer; list-style: none; }
+.daypanel summary::-webkit-details-marker { display: none; }
+.daypanel summary h2 { display: inline; }
+.daypanel summary::after { content: " ▸"; color: var(--muted); }
+.daypanel[open] summary::after { content: " ▾"; }
+.nomform { display: grid; gap: .5rem; margin: .6rem 0; }
+.nomform label { display: grid; gap: .2rem; font-size: .9rem; }
+.votelist { display: grid; gap: .35rem; margin: .6rem 0; }
+.voter { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; text-align: left; background: var(--panel2); color: var(--text); border: 2px solid transparent; border-radius: 10px; padding: .55rem .7rem; font: inherit; cursor: pointer; }
+.voter span { width: 1.4rem; text-align: center; font-size: 1.2rem; }
+.voter small { color: var(--muted); font-size: .78rem; width: 100%; padding-left: 2rem; }
+.voter.up { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel2)); }
+.voter:disabled { opacity: .4; cursor: default; }
+.votecount { position: sticky; bottom: 76px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: .4rem .9rem; text-align: center; font-weight: 700; }
+.votecount.ok { border-color: var(--ok); color: var(--ok); }
+.nomlist { list-style: none; padding: 0; display: grid; gap: .3rem; }
+.nomlist li { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; background: var(--panel2); border-radius: 10px; padding: .4rem .7rem; }
+.nomlist li.onblock { border: 1px solid var(--evil); }
+.nomcount { margin-left: auto; font-size: .85rem; color: var(--muted); }
+.box.exec { border-left: 4px solid var(--evil); }

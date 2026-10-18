@@ -363,6 +363,8 @@
     game.assignedKey = game.selected.slice().sort().join(",") + "|" + game.count;
     game.done = {};
     game.nightNo = 1;
+    game.days = {};
+    game.vote = null;
     game.winner = null;
     game.ignoreEnd = null;
   }
@@ -570,6 +572,7 @@
       </div>`;
     }).join("");
     const alive = ps.filter(s => s.alive && !s.trav).length;
+    const needed = votesNeeded();
     const first = game.nightNo === 1;
     const night = first ? NIGHT_FIRST : NIGHT_OTHER;
     const key = first ? "n1" : "n";
@@ -616,7 +619,7 @@
       <section class="panel">
         <h2>Grimoire</h2>
         <div class="daycount">🌙 Nacht ${game.nightNo} <span>·</span> ☀️ ${game.nightNo > 1 ? `Tag ${game.nightNo - 1} vorbei` : "noch kein Tag"}</div>
-        <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${Math.ceil(alive / 2)}</b> Stimmen</p>
+        <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${needed}</b> Stimmen</p>
         <div class="gseats">${seats}</div>
         <div class="box"><h4>Bluffs</h4><p>${game.bluffs.map(id => roleChip(id)).join(" ")}</p></div>
       </section>
@@ -634,6 +637,7 @@
           ${game.nightNo > 1 ? `<button class="btn sm" id="prevnight">↩︎ Zurück zu Nacht ${game.nightNo - 1}</button>` : ""}
         </div>
       </section>
+      ${dayPanel()}
       <section class="panel">
         <h2>Spiel beenden</h2>
         <p class="small">Für Siege, die die App nicht selbst erkennt – z. B. Heiliger hingerichtet, Bürgermeister-Sieg, Vortox ohne Hinrichtung, Tollpatsch, Böser Zwilling.</p>
@@ -721,6 +725,7 @@
       save(); renderSL();
     }));
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
+      game.vote = null;
       game.nightNo++;
       game.done[game.nightNo] = [];
       save(); renderSL();
@@ -729,6 +734,7 @@
       toast(`Nacht ${game.nightNo} beginnt`);
     });
     $("#prevnight") && $("#prevnight").addEventListener("click", () => { game.nightNo--; save(); renderSL(); });
+    bindDay();
     $$("[data-change]").forEach(b => b.addEventListener("click", () => changeRole(+b.dataset.change)));
     $$("[data-win]").forEach(b => b.addEventListener("click", () => {
       const team = b.dataset.win;
@@ -740,6 +746,153 @@
     $("#ignoreend") && $("#ignoreend").addEventListener("click", () => { game.ignoreEnd = aliveKey(); save(); renderSL(); });
     $("#showend") && $("#showend").addEventListener("click", showEnd);
     $("#undoend") && $("#undoend").addEventListener("click", () => { game.winner = null; game.ignoreEnd = aliveKey(); save(); renderSL(); });
+  }
+
+  // =====================================================================
+  //  ABSTIMMUNGS-HELFER (optional, eingeklappt)
+  // =====================================================================
+  // Mehrheit: mindestens die Hälfte der lebenden Spieler (Reisende zählen mit).
+  const votesNeeded = () => Math.ceil(game.seats.filter(s => s.alive).length / 2);
+  function today() {
+    game.days = game.days || {};
+    return game.days[game.nightNo] = game.days[game.nightNo] || { noms: [], exec: null };
+  }
+  // Wer liegt auf dem Block? Höchste Stimmenzahl, mindestens die Mehrheit, kein Gleichstand.
+  function block(day) {
+    let best = null, tie = false;
+    day.noms.forEach(n => {
+      if (n.count < n.needed) return;
+      if (!best || n.count > best.count) { best = n; tie = false; }
+      else if (n.count === best.count) tie = true;
+    });
+    return tie ? { tie: true, count: best.count } : best;
+  }
+
+  function dayPanel() {
+    const day = today();
+    const ps = game.seats;
+    const nominatedBy = new Set(day.noms.map(n => n.by));
+    const nominated = new Set(day.noms.map(n => n.on));
+    const b = block(day);
+    const v = game.vote;
+    let body = "";
+
+    if (day.exec) {
+      body += `<div class="box exec">${day.exec === "none" ? "Heute wurde <b>niemand</b> hingerichtet." : `⚔️ <b>${esc(ps[day.exec.seat] ? ps[day.exec.seat].name : day.exec.name)}</b> wurde heute hingerichtet.`}
+        <button class="btn sm" id="undoexec">rückgängig</button></div>`;
+    } else if (v) {
+      // Laufende Abstimmung: im Uhrzeigersinn ab dem Platz nach dem Nominierten.
+      const order = [];
+      for (let k = 1; k <= ps.length; k++) order.push((v.on + k) % ps.length);
+      const count = order.filter(i => v.hands.includes(i)).length;
+      body += `<div class="vote">
+        <p><b>${esc(ps[v.by].name)}</b> nominiert <b>${esc(ps[v.on].name)}</b></p>
+        <p class="small">Gehe im Uhrzeigersinn herum und tippe alle an, die die Hand heben. Tote haben nur ihre eine Geisterstimme.</p>
+        <div class="votelist">${order.map(i => {
+          const s = ps[i];
+          const canVote = s.alive || s.ghost;
+          const up = v.hands.includes(i);
+          return `<button class="voter ${up ? "up" : ""}" data-hand="${i}" ${canVote ? "" : "disabled"}>
+            <span>${up ? "✋" : "·"}</span><b>${esc(s.name)}</b>${s.alive ? "" : `<small>${s.ghost ? "👻 Geisterstimme" : "keine Stimme mehr"}</small>`}${s.role === "butler" ? `<small>Butler – nur wenn sein Meister stimmt</small>` : ""}</button>`;
+        }).join("")}</div>
+        <div class="votecount ${count >= votesNeeded() ? "ok" : ""}">${count} Stimmen · nötig ${votesNeeded()}${b && !b.tie ? ` · auf dem Block mit ${b.count}` : ""}</div>
+        <div class="row wrap"><button class="btn primary" id="savevote">Abstimmung beenden</button><button class="btn" id="cancelvote">Abbrechen</button></div>
+      </div>`;
+    } else {
+      const opt = (list, sel) => list.map(i => `<option value="${i}">${esc(ps[i].name)}${sel(i)}</option>`).join("");
+      const all = ps.map((_, i) => i);
+      body += `<div class="nomform">
+        <label>Wer nominiert?<select id="nomby">${opt(all.filter(i => ps[i].alive), i => nominatedBy.has(i) ? " (hat schon nominiert)" : "")}</select></label>
+        <label>Wer wird nominiert?<select id="nomon">${opt(all, i => nominated.has(i) ? " (war schon nominiert)" : "")}</select></label>
+        <button class="btn primary" id="startvote">🗳️ Abstimmung starten</button>
+      </div>
+      <p class="small">Regeln: Jeder <b>lebende</b> Spieler darf einmal pro Tag nominieren, jeder Spieler einmal pro Tag nominiert werden. Tote nominieren nicht.</p>`;
+    }
+
+    const noms = day.noms.map((n, k) => `<li class="${b && !b.tie && b === n ? "onblock" : ""}">
+        <span>${esc(ps[n.by] ? ps[n.by].name : "?")} → <b>${esc(ps[n.on] ? ps[n.on].name : "?")}</b></span>
+        <span class="nomcount">${n.count} / ${n.needed}${b && !b.tie && b === n ? " · auf dem Block" : ""}</span>
+        ${day.exec ? "" : `<button class="btn sm" data-delnom="${k}" title="Nominierung löschen">✕</button>`}</li>`).join("");
+
+    let blockLine = "Noch niemand auf dem Block.";
+    if (b && b.tie) blockLine = `Gleichstand mit ${b.count} Stimmen – niemand ist auf dem Block.`;
+    else if (b) blockLine = `Auf dem Block: <b>${esc(ps[b.on].name)}</b> mit ${b.count} Stimmen.`;
+
+    const execBtns = day.exec || v ? "" : `<div class="row wrap">
+        ${b && !b.tie ? `<button class="btn danger" id="execute">⚔️ ${esc(ps[b.on].name)} hinrichten</button>` : ""}
+        <button class="btn" id="noexec">Niemand wird hingerichtet</button>
+      </div>`;
+
+    return `<section class="panel">
+      <details class="daypanel" ${game.voteOpen ? "open" : ""}>
+        <summary><h2>☀️ Tag ${game.nightNo} – Abstimmung <span class="small">(optional)</span></h2></summary>
+        <p class="small">Nötig für die Hinrichtung: <b>${votesNeeded()}</b> Stimmen (Hälfte der Lebenden). ${blockLine}</p>
+        ${body}
+        ${noms ? `<h3>Nominierungen heute</h3><ul class="nomlist">${noms}</ul>` : ""}
+        ${execBtns}
+      </details>
+    </section>`;
+  }
+
+  function bindDay() {
+    const dp = $(".daypanel");
+    if (!dp) return;
+    dp.addEventListener("toggle", () => { game.voteOpen = dp.open; save(); });
+    const day = today();
+    $("#startvote") && $("#startvote").addEventListener("click", () => {
+      const by = +$("#nomby").value, on = +$("#nomon").value;
+      if (Number.isNaN(by) || Number.isNaN(on)) return;
+      const warn = [];
+      if (day.noms.some(n => n.by === by)) warn.push(`${game.seats[by].name} hat heute schon nominiert.`);
+      if (day.noms.some(n => n.on === on)) warn.push(`${game.seats[on].name} war heute schon nominiert.`);
+      if (warn.length && !confirm(warn.join("\n") + "\n\nTrotzdem abstimmen?")) return;
+      game.vote = { by, on, hands: [] };
+      save(); renderSL();
+    });
+    $$("[data-hand]").forEach(btn => btn.addEventListener("click", () => {
+      const i = +btn.dataset.hand, h = game.vote.hands;
+      game.vote.hands = h.includes(i) ? h.filter(x => x !== i) : [...h, i];
+      save(); renderSL();
+    }));
+    $("#cancelvote") && $("#cancelvote").addEventListener("click", () => { game.vote = null; save(); renderSL(); });
+    $("#savevote") && $("#savevote").addEventListener("click", () => {
+      const v = game.vote;
+      // Tote, die abgestimmt haben, verbrauchen ihre Geisterstimme.
+      v.hands.forEach(i => { const s = game.seats[i]; if (!s.alive) s.ghost = false; });
+      day.noms.push({ by: v.by, on: v.on, count: v.hands.length, needed: votesNeeded(), hands: v.hands });
+      game.vote = null;
+      save(); renderSL();
+    });
+    $$("[data-delnom]").forEach(btn => btn.addEventListener("click", () => {
+      if (!confirm("Diese Nominierung löschen? (Verbrauchte Geisterstimmen bitte selbst zurücksetzen.)")) return;
+      day.noms.splice(+btn.dataset.delnom, 1);
+      save(); renderSL();
+    }));
+    $("#execute") && $("#execute").addEventListener("click", () => {
+      const b = block(day);
+      const s = game.seats[b.on];
+      const role = ROLE_BY_ID[s.role];
+      let msg = `${s.name} hinrichten?`;
+      if (s.role === "saint") msg += "\n\n⚠️ Das ist der HEILIGE – wird er hingerichtet, gewinnt Böse!";
+      if (["fool", "pacifist", "tealady", "devilsadvocate", "sailor", "zombuul"].some(id => game.seats.some(x => x.role === id)))
+        msg += "\n\nHinweis: Eine Rolle im Spiel kann die Hinrichtung verhindern (z. B. Narr, Pazifist, Teedame, Advocatus Diaboli, Seemann). Prüfe das, bevor du bestätigst.";
+      if (!confirm(msg)) return;
+      s.alive = false;
+      day.exec = { seat: b.on, name: s.name };
+      save(); renderSL();
+      if (s.role === "saint") toast("Der Heilige wurde hingerichtet – Böse gewinnt!");
+      else toast(`${s.name} wurde hingerichtet (${role.de})`);
+    });
+    $("#noexec") && $("#noexec").addEventListener("click", () => {
+      day.exec = "none";
+      save(); renderSL();
+      if (game.seats.some(s => s.role === "vortox" && s.alive)) toast("Achtung: Vortox im Spiel – ohne Hinrichtung gewinnt Böse!");
+    });
+    $("#undoexec") && $("#undoexec").addEventListener("click", () => {
+      if (day.exec && day.exec !== "none" && game.seats[day.exec.seat]) game.seats[day.exec.seat].alive = true;
+      day.exec = null;
+      save(); renderSL();
+    });
   }
 
   // Rolle oder Gesinnung eines Spielers während des Spiels ändern (Imp-Wechsel, Scharlachrote Frau, Grubenhexe …).
@@ -796,7 +949,7 @@
     $("#again").addEventListener("click", () => {
       game.names = playerSeats().map(s => s.name);
       Object.assign(game, { selected: [], seats: [], bluffs: [], drunkShown: null, lunaticShown: null,
-        assignedKey: "", nightNo: 1, done: {}, winner: null, ignoreEnd: null, step: "roles" });
+        assignedKey: "", nightNo: 1, done: {}, days: {}, vote: null, winner: null, ignoreEnd: null, step: "roles" });
       save(); closeModal(); renderSL();
     });
   }
