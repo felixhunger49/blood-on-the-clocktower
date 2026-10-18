@@ -593,8 +593,10 @@
       const holders = ps.filter(s => s.role === id);
       const drunks = ps.filter(s => s.role === "drunk" && shownRole("drunk") === id);
       if (!holders.length && !drunks.length) return;
-      const who = [...holders.map(s => esc(s.name) + (s.alive ? "" : " †")), ...drunks.map(s => esc(s.name) + " (Säufer – Info darf falsch sein)")].join(", ");
-      steps.push({ id, name: role.de, text: role[key], who, t: role.t });
+      const who = [...holders.map(s => esc(s.name) + (s.alive ? "" : " †")), ...drunks.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Säufer – Info darf falsch sein)")].join(", ");
+      // Tote Spieler haben keine Fähigkeit mehr – außer Rollen, die gerade durch ihren Tod ausgelöst werden.
+      const inactive = !ACTS_WHEN_DEAD.includes(id) && [...holders, ...drunks].every(s => !s.alive);
+      steps.push({ id, name: role.de, text: role[key], who, t: role.t, inactive });
     });
     const done = game.done[game.nightNo] || [];
     let banner = "";
@@ -625,11 +627,11 @@
       </section>
       <section class="panel">
         <h2>${first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`}</h2>
-        <p class="small">${steps.filter(st => done.includes(st.id)).length} von ${steps.length} Schritten erledigt</p>
+        <p class="small">${steps.filter(st => !st.inactive && done.includes(st.id)).length} von ${steps.filter(st => !st.inactive).length} Schritten erledigt${steps.some(st => st.inactive) ? " · grau = tot, entfällt" : ""}</p>
         <ol class="nightlist">${steps.map(s => `
-          <li class="${done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
-            <div class="ns-head"><input type="checkbox" ${done.includes(s.id) ? "checked" : ""}><b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
-            <p>${esc(s.text)}</p>
+          <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
+            <div class="ns-head">${s.inactive ? `<span class="dead-mark">💀</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
+            <p>${s.inactive ? "Tot – keine Fähigkeit mehr, nicht wecken." : esc(s.text)}</p>
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
@@ -718,7 +720,7 @@
     $$("[data-note]").forEach(inp => inp.addEventListener("input", () => { game.seats[+inp.dataset.note].note = inp.value; save(); }));
     $$("[data-info]").forEach(b => b.addEventListener("click", () => openModal(roleDetail(ROLE_BY_ID[b.dataset.info], true))));
     $$(".showevil").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); showEvilInfo(b.dataset.show); }));
-    $$(".nightlist li").forEach(li => li.addEventListener("click", () => {
+    $$(".nightlist li:not(.inactive)").forEach(li => li.addEventListener("click", () => {
       const id = li.dataset.stepId;
       const d = game.done[game.nightNo] || [];
       game.done[game.nightNo] = d.includes(id) ? d.filter(x => x !== id) : [...d, id];
@@ -953,6 +955,9 @@
       save(); closeModal(); renderSL();
     });
   }
+
+  // Rollen, deren Nacht-Schritt gerade durch den Tod ausgelöst wird.
+  const ACTS_WHEN_DEAD = ["ravenkeeper", "sage", "moonchild", "sweetheart", "barber"];
 
   function evilTeam() {
     const ps = playerSeats();

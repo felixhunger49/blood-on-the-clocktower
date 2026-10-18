@@ -305,3 +305,7 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 .nomlist li.onblock { border: 1px solid var(--evil); }
 .nomcount { margin-left: auto; font-size: .85rem; color: var(--muted); }
 .box.exec { border-left: 4px solid var(--evil); }
+
+.nightlist li.inactive { opacity: .35; filter: grayscale(1); cursor: default; }
+.nightlist li.inactive .who { color: var(--muted); }
+.dead-mark { width: 1.1rem; text-align: center; }
