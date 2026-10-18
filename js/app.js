@@ -263,6 +263,33 @@
   const save = () => store.set("botc.game", game);
 
   const playerSeats = () => game.seats.filter(s => !s.trav);
+  // Gesinnung: Reisende und umgedrehte Spieler (z. B. Schlangenbeschwörer) haben s.align, sonst gilt der Rollentyp.
+  const seatGood = s => s.align ? s.align !== "e" : TEAMS[ROLE_BY_ID[s.role].t].good;
+
+  // Prüft die automatisch erkennbaren Siegbedingungen. Gibt null zurück, solange das Spiel läuft.
+  function detectEnd() {
+    const ps = playerSeats();
+    if (!ps.length) return null;
+    const alive = ps.filter(s => s.alive);
+    const demons = ps.filter(s => ROLE_BY_ID[s.role].t === "demon");
+    const aliveDemons = demons.filter(s => s.alive);
+    if (demons.length && !aliveDemons.length) {
+      const warn = [];
+      if (ps.some(s => s.role === "scarletwoman" && s.alive) && alive.length + 1 >= 5)
+        warn.push("Die Scharlachrote Frau lebt – sie wird zum Dämon, wenn beim Tod des Dämons noch 5+ Spieler lebten. Dann ändere ihre Rolle (🔁) statt den Sieg zu verkünden.");
+      if (ps.some(s => s.role === "mastermind" && s.alive))
+        warn.push("Der Drahtzieher lebt – wurde der Dämon hingerichtet, wird noch ein Tag gespielt.");
+      if (demons.some(s => s.role === "zombuul"))
+        warn.push("Der Zombuul überlebt seinen ersten Tod (er wirkt nur tot).");
+      if (demons.some(s => s.role === "imp") && ps.some(s => s.alive && ROLE_BY_ID[s.role].t === "minion"))
+        warn.push("Hat sich der Imp selbst getötet, wird ein Scherge zum Imp – dann dessen Rolle ändern (🔁).");
+      return { winner: "good", reason: "Der Dämon ist tot.", warn };
+    }
+    if (aliveDemons.length && alive.length <= 2)
+      return { winner: "evil", reason: "Nur noch 2 Spieler leben – der Dämon hat überlebt.", warn: [] };
+    return null;
+  }
+  const aliveKey = () => game.seats.map(s => (s.alive ? 1 : 0) + s.role).join(",");
   function names() {
     const out = [];
     for (let i = 0; i < game.count; i++) out.push((game.names[i] || "").trim() || `Spieler ${i + 1}`);
@@ -334,6 +361,8 @@
     game.seats.push(...travellers);
     game.assignedKey = game.selected.slice().sort().join(",") + "|" + game.count;
     game.done = {};
+    game.winner = null;
+    game.ignoreEnd = null;
   }
 
   function evilInfoFor(seat) {
@@ -523,13 +552,14 @@
         <div class="g-top">
           <span class="seatno">${i + 1}</span>
           <b>${esc(s.name)}</b>
-          ${roleChip(s.role, s.trav ? (s.align === "e" ? " · böse" : " · gut") : "")}
+          ${roleChip(s.role, s.trav || s.align ? (seatGood(s) ? " · gut" : " · böse") : "")}
           ${shown !== s.role ? `<span class="small">(glaubt: ${esc(roleName(shown))})</span>` : ""}
         </div>
         <div class="g-ctl">
           <button class="btn sm" data-alive="${i}">${s.alive ? "❤️ lebt" : "💀 tot"}</button>
           ${s.alive ? "" : `<button class="btn sm" data-ghost="${i}">${s.ghost ? "👻 Stimme frei" : "🚫 Stimme verbraucht"}</button>`}
           <button class="btn sm" data-info="${s.role}">ℹ️</button>
+          <button class="btn sm" data-change="${i}" title="Rolle oder Gesinnung ändern">🔁</button>
         </div>
         <input class="note" data-note="${i}" placeholder="Notiz (z. B. vergiftet, geschützt, Ablenker …)" value="${esc(s.note)}">
       </div>`;
@@ -553,7 +583,25 @@
       steps.push({ id, name: role.de, text: role[key], who, t: role.t });
     });
     const done = game.done[game.night] || [];
-    return `
+    let banner = "";
+    if (game.winner) {
+      banner = `<section class="panel endbanner ${game.winner.team}">
+        <h2>${game.winner.team === "good" ? "😇 Gut hat gewonnen" : "😈 Böse hat gewonnen"}</h2>
+        <p>${esc(game.winner.reason)}</p>
+        <div class="row wrap"><button class="btn primary" id="showend">🏆 Ergebnis anzeigen</button><button class="btn" id="undoend">Spiel fortsetzen</button></div>
+      </section>`;
+    } else {
+      const end = detectEnd();
+      if (end && game.ignoreEnd !== aliveKey()) {
+        banner = `<section class="panel endbanner ${end.winner}">
+          <h2>🏁 Spielende erkannt</h2>
+          <p><b>${end.winner === "good" ? "Gut gewinnt" : "Böse gewinnt"}:</b> ${esc(end.reason)}</p>
+          ${end.warn.map(w => `<p class="warnmsg">⚠️ ${esc(w)}</p>`).join("")}
+          <div class="row wrap"><button class="btn primary" data-win="${end.winner}" data-reason="${esc(end.reason)}">Sieg verkünden</button><button class="btn" id="ignoreend">Spiel geht weiter</button></div>
+        </section>`;
+      }
+    }
+    return banner + `
       <section class="panel">
         <h2>Grimoire</h2>
         <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${Math.ceil(alive / 2)}</b> Stimmen</p>
@@ -572,6 +620,15 @@
             <p>${esc(s.text)}</p>
           </li>`).join("")}</ol>
         <div class="row"><button class="btn" id="resetnight">Häkchen zurücksetzen</button></div>
+      </section>
+      <section class="panel">
+        <h2>Spiel beenden</h2>
+        <p class="small">Für Siege, die die App nicht selbst erkennt – z. B. Heiliger hingerichtet, Bürgermeister-Sieg, Vortox ohne Hinrichtung, Tollpatsch, Böser Zwilling.</p>
+        <label class="field">Grund (optional): <input id="winreason" placeholder="z. B. Der Heilige wurde hingerichtet"></label>
+        <div class="row wrap">
+          <button class="btn wingood" data-win="good">😇 Gut hat gewonnen</button>
+          <button class="btn winevil" data-win="evil">😈 Böse hat gewonnen</button>
+        </div>
       </section>`;
   }
 
@@ -650,6 +707,76 @@
       save(); renderSL();
     }));
     $("#resetnight") && $("#resetnight").addEventListener("click", () => { game.done[game.night] = []; save(); renderSL(); });
+    $$("[data-change]").forEach(b => b.addEventListener("click", () => changeRole(+b.dataset.change)));
+    $$("[data-win]").forEach(b => b.addEventListener("click", () => {
+      const team = b.dataset.win;
+      const reason = b.dataset.reason || ($("#winreason") && $("#winreason").value.trim()) ||
+        (team === "good" ? "Die guten Spieler haben das Dorf gerettet." : "Das Böse hat das Dorf übernommen.");
+      game.winner = { team, reason };
+      save(); renderSL(); showEnd();
+    }));
+    $("#ignoreend") && $("#ignoreend").addEventListener("click", () => { game.ignoreEnd = aliveKey(); save(); renderSL(); });
+    $("#showend") && $("#showend").addEventListener("click", showEnd);
+    $("#undoend") && $("#undoend").addEventListener("click", () => { game.winner = null; game.ignoreEnd = aliveKey(); save(); renderSL(); });
+  }
+
+  // Rolle oder Gesinnung eines Spielers während des Spiels ändern (Imp-Wechsel, Scharlachrote Frau, Grubenhexe …).
+  function changeRole(i) {
+    const s = game.seats[i];
+    const pool = ROLES.filter(r => s.trav ? r.t === "traveller" : (r.ed === game.edition && r.t !== "traveller"));
+    openModal(`<h2>${esc(s.name)}</h2>
+      <label class="field">Neue Rolle:
+        <select id="newrole">${pool.map(r => `<option value="${r.id}" ${r.id === s.role ? "selected" : ""}>${esc(r.de)} (${TEAMS[r.t].name})</option>`).join("")}</select></label>
+      <label class="field">Gesinnung:
+        <select id="newalign">
+          <option value="" ${s.align ? "" : "selected"}>Automatisch (nach Rolle)</option>
+          <option value="g" ${s.align === "g" ? "selected" : ""}>Gut</option>
+          <option value="e" ${s.align === "e" ? "selected" : ""}>Böse</option>
+        </select></label>
+      <p class="small">Danach bekommt der Spieler einen neuen Code/QR-Code unter „3 · Verteilen“, falls er seine neue Rolle nachlesen soll.</p>
+      <div class="row end"><button class="btn primary" id="saverole">Speichern</button></div>`);
+    $("#saverole").addEventListener("click", () => {
+      s.role = $("#newrole").value;
+      s.align = $("#newalign").value || (s.trav ? "g" : undefined);
+      game.ignoreEnd = null;
+      save(); closeModal(); renderSL();
+    });
+  }
+
+  // Großer Ergebnis-Bildschirm mit Auflösung aller Rollen.
+  function showEnd() {
+    const w = game.winner;
+    if (!w) return;
+    const good = w.team === "good";
+    const list = game.seats.map(s => {
+      const shown = shownRole(s.role);
+      return `<li class="${seatGood(s) ? "al-good" : "al-evil"} ${s.alive ? "" : "dead"}">
+        <span class="er-name">${esc(s.name)}${s.alive ? "" : " 💀"}</span>
+        ${roleChip(s.role)}
+        ${shown !== s.role ? `<span class="small">(glaubte: ${esc(roleName(shown))})</span>` : ""}
+        <span class="er-al">${seatGood(s) ? "gut" : "böse"}</span>
+      </li>`;
+    }).join("");
+    openModal(`<div class="endscreen ${w.team}">
+        <div class="end-icon">${good ? "😇" : "😈"}</div>
+        <h1>${good ? "Gut gewinnt!" : "Böse gewinnt!"}</h1>
+        <p class="end-reason">${esc(w.reason)}</p>
+        <p class="end-sub">${good ? "Das Dorf ist gerettet – der Dämon wurde besiegt." : "Die Dunkelheit hat gesiegt – das Dorf ist verloren."}</p>
+      </div>
+      <h3>Auflösung</h3>
+      <ul class="endlist">${list}</ul>
+      ${game.bluffs.length ? `<p class="small">Bluffs des Dämons: ${game.bluffs.map(id => esc(roleName(id))).join(", ")}</p>` : ""}
+      <div class="row wrap center">
+        <button class="btn primary" id="again">🔄 Neue Runde, gleiche Spieler</button>
+        <button class="btn" id="endclose">Zurück zum Grimoire</button>
+      </div>`, "full");
+    $("#endclose").addEventListener("click", closeModal);
+    $("#again").addEventListener("click", () => {
+      game.names = playerSeats().map(s => s.name);
+      Object.assign(game, { selected: [], seats: [], bluffs: [], drunkShown: null, lunaticShown: null,
+        assignedKey: "", night: "first", done: {}, winner: null, ignoreEnd: null, step: "roles" });
+      save(); closeModal(); renderSL();
+    });
   }
 
   function showQR(i) {

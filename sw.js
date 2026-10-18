@@ -1,5 +1,5 @@
 // Offline-Cache: App funktioniert nach dem ersten Öffnen auch ohne Internet.
-const CACHE = "clocktower-v3";
+const CACHE = "clocktower-v4";
 const FILES = ["./", "index.html", "css/style.css", "js/roles.js", "js/guide.js", "js/app.js", "vendor/qrcode.js", "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
