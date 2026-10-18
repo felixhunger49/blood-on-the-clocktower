@@ -33,7 +33,7 @@ const GUIDE = [
       <li><b>Rollen nach Spielerzahl wählen</b> (siehe Tabelle unten). Manche Rollen verändern den Aufbau, z. B. der Baron (+2 Außenseiter).</li>
       <li><b>Säufer:</b> Der Säufer-Spieler bekommt eine Dorfbewohner-Rolle gezeigt, die <i>nicht</i> im Spiel ist. Die App macht das automatisch.</li>
       <li><b>Wahrsager:</b> Lege einen guten Spieler als Ablenker (Red Herring) fest.</li>
-      <li><b>Bluffs:</b> Lege 3 gute Rollen beiseite, die nicht im Spiel sind. Der Dämon erfährt sie in der ersten Nacht.</li>
+      <li><b>Bluffs:</b> 3 gute Rollen, die <i>nicht</i> im Spiel sind. Der Dämon darf behaupten, eine davon zu sein – niemand kann ihn dann mit der echten Rolle widerlegen. Die App wählt sie automatisch aus (unter „3 · Verteilen“ kannst du neu würfeln). In der ersten Nacht weckst du den Dämon und zeigst sie ihm: im Grimoire beim Schritt <i>Dämonen-Info</i> auf <b>„📱 Dem Dämon zeigen“</b> tippen und ihm das Handy hinhalten. Mit echten Tokens legst du einfach die drei Rollen-Plättchen vor ihn.</li>
       <li><b>Rollen verteilen</b> und das <b>Grimoire</b> (dein geheimer Überblick) vorbereiten.</li>
     </ol>
     <div id="setup-table"></div>` },

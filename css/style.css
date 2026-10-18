@@ -267,3 +267,19 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 
 .topbtn { margin-left: auto; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: .3rem .8rem; font: inherit; font-size: .85rem; cursor: pointer; }
 .urltext { font-size: .8rem; word-break: break-all; color: var(--accent); }
+
+/* Nachts dem Dämon / den Schergen zeigen */
+.showevil { margin-top: .5rem; }
+.modal.night { background: #000; }
+.modal.night .modal-box { background: #000; }
+.nightshow { text-align: center; padding: 1rem 0; }
+.nightshow h2 { font-size: 1.6rem; margin: 1.4rem 0 .6rem; color: var(--evil); }
+.ns-label { display: inline-block; border: 1px solid var(--evil); color: var(--evil); border-radius: 999px; padding: .2rem .9rem; font-weight: 700; }
+.ns-names { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; }
+.ns-names span { font-size: 1.7rem; font-weight: 800; background: var(--panel2); border-radius: 12px; padding: .3rem .9rem; }
+.ns-names.demon span { color: #fff; background: var(--demon); }
+.ns-hint { color: var(--muted); }
+.ns-bluffs { display: grid; gap: .5rem; text-align: left; }
+.ns-bluff { border-left: 5px solid var(--c); background: var(--panel2); border-radius: 12px; padding: .7rem .9rem; }
+.ns-bluff b { display: block; font-size: 1.4rem; }
+.ns-bluff small { color: var(--muted); font-size: .9rem; }

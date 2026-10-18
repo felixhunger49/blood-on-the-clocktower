@@ -577,7 +577,12 @@
     night.forEach(id => {
       if (NIGHT_STEPS[id]) {
         if ((id === "minioninfo" || id === "demoninfo") && playerSeats().length < 7) return;
-        if (NIGHT_STEPS[id][key]) steps.push({ id, name: NIGHT_STEPS[id].de, text: NIGHT_STEPS[id][key], who: "" });
+        if (!NIGHT_STEPS[id][key]) return;
+        const ev = evilTeam();
+        let who = "";
+        if (id === "minioninfo") who = `Dämon: ${esc(ev.demon ? ev.demon.name : "–")}`;
+        if (id === "demoninfo") who = `Schergen: ${ev.minions.map(m => esc(m.name)).join(", ") || "–"} · Bluffs: ${game.bluffs.map(b => esc(roleName(b))).join(", ")}`;
+        steps.push({ id, name: NIGHT_STEPS[id].de, text: NIGHT_STEPS[id][key], who, show: id === "minioninfo" || id === "demoninfo" });
         return;
       }
       const role = ROLE_BY_ID[id];
@@ -622,6 +627,7 @@
           <li class="${done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
             <div class="ns-head"><input type="checkbox" ${done.includes(s.id) ? "checked" : ""}><b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${esc(s.text)}</p>
+            ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
           <button class="btn primary" id="nextnight">☀️ Tag ${game.nightNo} vorbei → Nacht ${game.nightNo + 1} beginnen</button>
@@ -707,6 +713,7 @@
     $$("[data-ghost]").forEach(b => b.addEventListener("click", () => { const s = game.seats[+b.dataset.ghost]; s.ghost = !s.ghost; save(); renderSL(); }));
     $$("[data-note]").forEach(inp => inp.addEventListener("input", () => { game.seats[+inp.dataset.note].note = inp.value; save(); }));
     $$("[data-info]").forEach(b => b.addEventListener("click", () => openModal(roleDetail(ROLE_BY_ID[b.dataset.info], true))));
+    $$(".showevil").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); showEvilInfo(b.dataset.show); }));
     $$(".nightlist li").forEach(li => li.addEventListener("click", () => {
       const id = li.dataset.stepId;
       const d = game.done[game.nightNo] || [];
@@ -790,6 +797,43 @@
       game.names = playerSeats().map(s => s.name);
       Object.assign(game, { selected: [], seats: [], bluffs: [], drunkShown: null, lunaticShown: null,
         assignedKey: "", nightNo: 1, done: {}, winner: null, ignoreEnd: null, step: "roles" });
+      save(); closeModal(); renderSL();
+    });
+  }
+
+  function evilTeam() {
+    const ps = playerSeats();
+    return {
+      demon: ps.find(s => ROLE_BY_ID[s.role].t === "demon"),
+      minions: ps.filter(s => ROLE_BY_ID[s.role].t === "minion")
+    };
+  }
+
+  // Bildschirm, den der Spielleiter nachts dem Dämon bzw. den Schergen zeigt.
+  function showEvilInfo(which) {
+    const ev = evilTeam();
+    let html;
+    if (which === "demoninfo") {
+      html = `<div class="nightshow">
+        <p class="ns-label">Du bist der Dämon</p>
+        <h2>Das sind deine Schergen</h2>
+        <div class="ns-names">${ev.minions.map(m => `<span>${esc(m.name)}</span>`).join("") || "<span>keine</span>"}</div>
+        <h2>Deine Bluffs</h2>
+        <p class="ns-hint">Diese guten Rollen sind <b>nicht im Spiel</b> – du kannst gefahrlos behaupten, eine davon zu sein.</p>
+        <div class="ns-bluffs">${game.bluffs.map(id => { const r = ROLE_BY_ID[id]; return `<div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div>`; }).join("")}</div>
+      </div>`;
+    } else {
+      html = `<div class="nightshow">
+        <p class="ns-label">Ihr seid die Schergen</p>
+        <h2>Das ist euer Dämon</h2>
+        <div class="ns-names demon"><span>${esc(ev.demon ? ev.demon.name : "–")}</span></div>
+        ${ev.minions.length > 1 ? `<h2>Alle Schergen</h2><div class="ns-names">${ev.minions.map(m => `<span>${esc(m.name)}</span>`).join("")}</div>` : ""}
+      </div>`;
+    }
+    openModal(html + `<div class="row center"><button class="btn big" id="nsdone">✓ Fertig – verdecken</button></div>`, "full night");
+    $("#nsdone").addEventListener("click", () => {
+      const d = game.done[game.nightNo] || [];
+      if (!d.includes(which)) game.done[game.nightNo] = [...d, which];
       save(); closeModal(); renderSL();
     });
   }

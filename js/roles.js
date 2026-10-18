@@ -491,8 +491,8 @@ const ROLES = [
 // Spezielle Schritte in der Nachtreihenfolge (keine Rollen).
 const NIGHT_STEPS = {
   dusk: { de: "Abenddämmerung", n1: "Alle schließen die Augen. Prüfe, dass niemand schaut.", n: "Alle schließen die Augen. Prüfe, dass niemand schaut." },
-  minioninfo: { de: "Schergen-Info", n1: "Nur bei 7+ Spielern: Wecke alle Schergen. Sie sehen sich gegenseitig. Zeige „Das ist der Dämon“ und deute auf den Dämon." },
-  demoninfo: { de: "Dämonen-Info", n1: "Nur bei 7+ Spielern: Wecke den Dämon. Zeige „Das sind deine Schergen“ und deute auf sie. Zeige dann 3 gute Rollen, die nicht im Spiel sind (Bluffs)." },
+  minioninfo: { de: "Schergen-Info", n1: "Nur bei 7+ Spielern: Wecke alle Schergen. Sie sehen sich gegenseitig. Zeige „Das ist der Dämon“ und deute auf den Dämon – oder nutze den Knopf „Den Schergen zeigen“." },
+  demoninfo: { de: "Dämonen-Info", n1: "Nur bei 7+ Spielern: Wecke den Dämon. Zeige „Das sind deine Schergen“ und deute auf sie. Zeige dann 3 gute Rollen, die nicht im Spiel sind (Bluffs). Am einfachsten mit dem Knopf „Dem Dämon zeigen“." },
   dawn: { de: "Morgendämmerung", n1: "Warte kurz, dann wecke alle. Verkünde, wer gestorben ist (in der ersten Nacht meist niemand).", n: "Warte kurz, dann wecke alle. Verkünde, wer heute Nacht gestorben ist." }
 };
 
