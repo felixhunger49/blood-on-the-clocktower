@@ -567,6 +567,7 @@
           ${s.alive ? "" : `<button class="btn sm" data-ghost="${i}">${s.ghost ? "👻 Stimme frei" : "🚫 Stimme verbraucht"}</button>`}
           <button class="btn sm" data-info="${s.role}">ℹ️</button>
           <button class="btn sm" data-change="${i}" title="Rolle oder Gesinnung ändern">🔁</button>
+          ${ONCE_PER_GAME.includes(s.role) ? `<button class="btn sm ${s.used ? "used" : ""}" data-used="${i}">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>` : ""}
         </div>
         <input class="note" data-note="${i}" placeholder="Notiz (z. B. vergiftet, geschützt, Ablenker …)" value="${esc(s.note)}">
       </div>`;
@@ -595,8 +596,14 @@
       if (!holders.length && !drunks.length) return;
       const who = [...holders.map(s => esc(s.name) + (s.alive ? "" : " †")), ...drunks.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Säufer – Info darf falsch sein)")].join(", ");
       // Tote Spieler haben keine Fähigkeit mehr – außer Rollen, die gerade durch ihren Tod ausgelöst werden.
-      const inactive = !ACTS_WHEN_DEAD.includes(id) && [...holders, ...drunks].every(s => !s.alive);
-      steps.push({ id, name: role.de, text: role[key], who, t: role.t, inactive });
+      const all = [...holders, ...drunks];
+      const allDead = !ACTS_WHEN_DEAD.includes(id) && all.every(s => !s.alive);
+      const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => s.used || !s.alive);
+      // Der Jongleur erfährt sein Ergebnis nur in der Nacht nach dem ersten Tag.
+      const over = id === "juggler" && game.nightNo > 2;
+      const inactive = allDead || allUsed || over;
+      const why = allDead ? "Tot – keine Fähigkeit mehr, nicht wecken." : over ? "Nur in der zweiten Nacht – entfällt." : "Fähigkeit schon benutzt – nicht mehr wecken.";
+      steps.push({ id, name: role.de, text: role[key], who, t: role.t, inactive, why, mark: allDead ? "💀" : "✔", once: ONCE_PER_GAME.includes(id) });
     });
     const done = game.done[game.nightNo] || [];
     let banner = "";
@@ -627,11 +634,12 @@
       </section>
       <section class="panel">
         <h2>${first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`}</h2>
-        <p class="small">${steps.filter(st => !st.inactive && done.includes(st.id)).length} von ${steps.filter(st => !st.inactive).length} Schritten erledigt${steps.some(st => st.inactive) ? " · grau = tot, entfällt" : ""}</p>
+        <p class="small">${steps.filter(st => !st.inactive && done.includes(st.id)).length} von ${steps.filter(st => !st.inactive).length} Schritten erledigt${steps.some(st => st.inactive) ? " · grau = tot oder benutzt, entfällt" : ""}</p>
         <ol class="nightlist">${steps.map(s => `
           <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
-            <div class="ns-head">${s.inactive ? `<span class="dead-mark">💀</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
-            <p>${s.inactive ? "Tot – keine Fähigkeit mehr, nicht wecken." : esc(s.text)}</p>
+            <div class="ns-head">${s.inactive ? `<span class="dead-mark">${s.mark}</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
+            <p>${s.inactive ? s.why : esc(s.text)}</p>
+            ${s.once && !s.inactive ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
@@ -720,6 +728,15 @@
     $$("[data-note]").forEach(inp => inp.addEventListener("input", () => { game.seats[+inp.dataset.note].note = inp.value; save(); }));
     $$("[data-info]").forEach(b => b.addEventListener("click", () => openModal(roleDetail(ROLE_BY_ID[b.dataset.info], true))));
     $$(".showevil").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); showEvilInfo(b.dataset.show); }));
+    $$("[data-useonce]").forEach(b => b.addEventListener("click", e => {
+      e.stopPropagation();
+      const id = b.dataset.useonce;
+      game.seats.forEach(s => { if (s.alive && (s.role === id || (s.role === "drunk" && shownRole("drunk") === id))) s.used = true; });
+      const d = game.done[game.nightNo] || [];
+      if (!d.includes(id)) game.done[game.nightNo] = [...d, id];
+      save(); renderSL();
+    }));
+    $$("[data-used]").forEach(b => b.addEventListener("click", () => { const s = game.seats[+b.dataset.used]; s.used = !s.used; save(); renderSL(); }));
     $$(".nightlist li:not(.inactive)").forEach(li => li.addEventListener("click", () => {
       const id = li.dataset.stepId;
       const d = game.done[game.nightNo] || [];
@@ -958,6 +975,9 @@
 
   // Rollen, deren Nacht-Schritt gerade durch den Tod ausgelöst wird.
   const ACTS_WHEN_DEAD = ["ravenkeeper", "sage", "moonchild", "sweetheart", "barber"];
+  // Fähigkeiten, die nur einmal pro Spiel wirken.
+  const ONCE_PER_GAME = ["courtier", "professor", "seamstress", "philosopher", "assassin", "bonecollector",
+    "slayer", "artist", "virgin", "fool", "judge"];
 
   function evilTeam() {
     const ps = playerSeats();
