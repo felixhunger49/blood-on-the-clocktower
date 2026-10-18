@@ -449,6 +449,9 @@
         <p class="small center">${setupLine(game.count)}</p>
         <h3>Namen in Sitzreihenfolge (im Uhrzeigersinn)</h3>
         <div class="names">${nm.join("")}</div>
+        <div class="row wrap">
+          <button class="btn" id="appqr2">📲 App-QR für Mitspieler</button>
+        </div>
         <div class="row end"><button class="btn primary" id="next1">Weiter: Rollen wählen →</button></div>
       </section>
       <section class="panel muted">
@@ -647,6 +650,7 @@
       if (game.selected.length && game.selected.length !== game.count) game.selected = [];
       save(); renderSL();
     };
+    $("#appqr2") && $("#appqr2").addEventListener("click", showAppQR);
     $("#minus") && $("#minus").addEventListener("click", () => setCount(game.count - 1));
     $("#plus") && $("#plus").addEventListener("click", () => setCount(game.count + 1));
     $$(".name").forEach(inp => inp.addEventListener("input", () => {
@@ -789,6 +793,39 @@
       save(); closeModal(); renderSL();
     });
   }
+
+  // QR-Code zur App selbst, damit Mitspieler sie schnell aufs Handy holen können.
+  const appUrl = () => location.origin + location.pathname.replace(/index\.html$/, "");
+  function qrSvg(text) {
+    const qr = qrcode(0, "M");
+    qr.addData(text);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+  }
+  function showAppQR() {
+    const url = appUrl();
+    openModal(`
+      <h2 class="center">📲 App aufs Handy holen</h2>
+      <p class="center small">Mit der Handy-Kamera scannen – dann öffnet sich die App.</p>
+      <div class="qr">${qrSvg(url)}</div>
+      <p class="center"><code class="urltext">${esc(url)}</code></p>
+      <div class="row center wrap">
+        <button class="btn" id="copyapp">🔗 Link kopieren</button>
+        ${navigator.share ? `<button class="btn primary" id="shareapp">📤 Teilen</button>` : ""}
+      </div>
+      <div class="box"><h4>Danach als App speichern</h4>
+        <p><b>iPhone:</b> In Safari auf Teilen ⬆︎ → „Zum Home-Bildschirm“.</p>
+        <p><b>Android:</b> Menü ⋮ → „App installieren“ bzw. „Zum Startbildschirm hinzufügen“.</p>
+      </div>`);
+    $("#copyapp").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(url); toast("Link kopiert"); }
+      catch (e) { prompt("Link kopieren:", url); }
+    });
+    $("#shareapp") && $("#shareapp").addEventListener("click", () => {
+      navigator.share({ title: "Blood on the Clocktower – Rollen-App", url }).catch(() => {});
+    });
+  }
+  $("#appqr").addEventListener("click", showAppQR);
 
   function showQR(i) {
     const seat = game.seats[i];
