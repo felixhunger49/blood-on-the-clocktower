@@ -28,6 +28,19 @@ const GUIDE = [
     </ol>
     <p class="hint">Damit QR-Codes und Links auf anderen Handys funktionieren, muss die App online erreichbar sein (z. B. über GitHub Pages). Die Codes funktionieren auch ohne Internet, wenn alle die App geöffnet haben.</p>` },
 
+  { id: "online", title: "Online-Spiel (optional)", html: `
+    <p>Mit Internet können alle Handys live verbunden werden. Ohne Internet funktioniert alles wie bisher mit QR-Codes, Codes und „Handy weitergeben“.</p>
+    <ol>
+      <li><b>Spielleiter:</b> Unter „Spielleiter → 1 · Spiel“ auf <b>„🌐 Online-Spiel starten“</b> tippen. Es erscheinen ein Raum-Code und ein QR-Code.</li>
+      <li><b>Spieler:</b> QR-Code scannen oder „Meine Rolle → Online-Spiel beitreten“ öffnen, Raum-Code und Namen eingeben.</li>
+      <li><b>Spielleiter:</b> Die Spieler in Sitzreihenfolge sortieren (↑ ↓) und <b>„👥 Als Mitspieler übernehmen“</b> tippen. Danach Rollen wählen und verteilen wie gewohnt.</li>
+      <li>Die <b>Rollen erscheinen automatisch</b> auf den Handys der Spieler – verschlüsselt, jedes Handy kann nur seine eigene Rolle lesen. Ändert der Spielleiter eine Rolle (🔁), wird sie sofort aktualisiert.</li>
+      <li>Spieler sehen oben, wer lebt, wer tot ist, wer noch eine Geisterstimme hat und welche Nacht ist.</li>
+      <li><b>Philosoph &amp; Co.</b> schicken ihre Wahl direkt an den Spielleiter – er bekommt eine Meldung, der Philosoph wird automatisch eingetragen.</li>
+      <li>Beim <b>Spielende</b> sehen alle den Sieger-Bildschirm mit Auflösung und ob sie gewonnen haben.</li>
+    </ol>
+    <p class="hint">Fällt das Internet aus, macht der Spielleiter einfach offline weiter – das Grimoire liegt auf seinem Handy. Spieler ohne Verbindung bekommen ihre Rolle per QR-Code oder Code.</p>` },
+
   { id: "vorbereitung", title: "Spielleiter: Vorbereitung", html: `
     <ol>
       <li><b>Edition wählen.</b> Für Anfänger immer <i>Trouble Brewing</i>.</li>

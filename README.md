@@ -36,3 +36,18 @@ Die 5-stelligen Codes funktionieren auch ohne Internet, solange die App auf dem 
 
 *Blood on the Clocktower* ist ein Spiel von The Pandemonium Institute. Diese App ist ein inoffizielles
 Fan-Hilfsmittel; die Rollentexte sind eigene, sinngemäße Beschreibungen.
+
+## Online-Modus einrichten (optional)
+
+Der Online-Modus verbindet alle Handys live über Firebase (kostenlos). Ohne Einrichtung ist er
+ausgeblendet und die App läuft rein offline.
+
+1. Auf https://console.firebase.google.com ein Projekt anlegen (Google Analytics kann aus bleiben).
+2. **Authentication** → Anmeldemethode → **Anonym** aktivieren.
+3. **Realtime Database** → Datenbank erstellen (Standort z. B. Belgien, „gesperrter Modus“) →
+   Tab **Regeln** → Inhalt von `database.rules.json` einfügen → Veröffentlichen.
+4. Projekteinstellungen → **Web-App hinzufügen** → die angezeigte `firebaseConfig` in
+   `js/firebase-config.js` eintragen (`window.FIREBASE_CONFIG = { ... }`).
+
+Rollen und Nachrichten werden zwischen Spielleiter und Spieler Ende-zu-Ende verschlüsselt
+(ECDH + AES-GCM); die Datenbank sieht nur verschlüsselte Daten, Namen und wer lebt.

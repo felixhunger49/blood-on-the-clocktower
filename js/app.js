@@ -238,10 +238,15 @@
       if (!id) { toast("Bitte zuerst eine Rolle auswählen."); return; }
       const r = ROLE_BY_ID[id];
       if (cfg.keep) { mine.pick = id; store.set("botc.myrole", mine); }
+      if (mine.online) sendToHost({ type: "pick", role: mine.r, pick: id }).then(ok => {
+        const el = $("#picksent");
+        if (el) el.textContent = ok ? "✓ Automatisch an den Spielleiter gesendet" : "Konnte nicht gesendet werden – zeig dem Spielleiter das Handy.";
+      });
       openModal(`<div class="nightshow pickshow">
           <p class="ns-label">${esc(ROLE_BY_ID[mine.r].de)}${mine.n ? " · " + esc(mine.n) : ""}</p>
           <h2>Ich wähle</h2>
           <div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div>
+          ${mine.online ? `<p id="picksent" class="small">Wird an den Spielleiter gesendet …</p>` : ""}
         </div>
         <div class="row center"><button class="btn big" id="pickdone">✓ Fertig – verdecken</button></div>`, "full night");
       $("#pickdone").addEventListener("click", () => { closeModal(); renderPlayer(); });
@@ -257,8 +262,21 @@
   // =====================================================================
   function renderPlayer() {
     const mine = store.get("botc.myrole", null);
+    const on = store.get("botc.online", null);
+    if (!mine && on) {
+      view.innerHTML = netbarHtml() + `
+        <section class="panel center">
+          <div class="cover-icon">⏳</div>
+          <h2>Du bist im Spiel!</h2>
+          <p>Raum <b>${esc(on.code)}</b> als <b>${esc(on.name)}</b>.</p>
+          <p class="small">Warte, bis der Spielleiter die Rollen verteilt – deine Rolle erscheint dann automatisch hier.</p>
+          <button class="btn danger" id="leaveroom">Raum verlassen</button>
+        </section>`;
+      $("#leaveroom").addEventListener("click", () => { if (confirm("Online-Spiel wirklich verlassen?")) leaveRoom(false); });
+      return;
+    }
     if (!mine) {
-      view.innerHTML = installPanel() + `
+      view.innerHTML = installPanel() + joinPanel() + `
         <section class="panel">
           <h2>Deine Rolle</h2>
           <p>Scanne den <b>QR-Code</b> beim Spielleiter, öffne den Link, den er dir geschickt hat, oder gib hier deinen <b>Code</b> ein.</p>
@@ -280,9 +298,10 @@
         renderPlayer();
       });
       bindInstall();
+      bindJoin();
       return;
     }
-    view.innerHTML = `
+    view.innerHTML = netbarHtml() + `
       <section class="reveal-wrap">
         <div id="cover" class="cover" role="button" tabindex="0">
           <div class="cover-icon">🕰️</div>
@@ -297,7 +316,7 @@
       <section class="panel muted">
         <div class="row center wrap">
           <a class="btn" href="#/rollen">📖 Alle Rollen ansehen</a>
-          <button id="forget" class="btn danger">Andere Rolle laden</button>
+          ${on ? `<button id="leaveroom" class="btn danger">Raum verlassen</button>` : `<button id="forget" class="btn danger">Andere Rolle laden</button>`}
         </div>
       </section>`;
     const show = () => { $("#cover").classList.add("hidden"); $("#card").classList.remove("hidden"); };
@@ -305,9 +324,10 @@
     $("#cover").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") show(); });
     bindPicker(mine);
     $("#hide").addEventListener("click", () => { $("#card").classList.add("hidden"); $("#cover").classList.remove("hidden"); window.scrollTo(0, 0); });
-    $("#forget").addEventListener("click", () => {
+    $("#forget") && $("#forget").addEventListener("click", () => {
       if (confirm("Deine gespeicherte Rolle wirklich entfernen?")) { store.del("botc.myrole"); renderPlayer(); }
     });
+    $("#leaveroom") && $("#leaveroom").addEventListener("click", () => { if (confirm("Online-Spiel wirklich verlassen?")) leaveRoom(false); });
   }
 
   // =====================================================================
@@ -319,7 +339,7 @@
   }
   let game = store.get("botc.game", null) || newGame();
   if (!game.nightNo) { game.nightNo = 1; game.done = {}; delete game.night; } // ältere Spielstände
-  const save = () => store.set("botc.game", game);
+  const save = () => { store.set("botc.game", game); if (game.online) scheduleSync(); };
 
   const playerSeats = () => game.seats.filter(s => !s.trav);
   // Gesinnung: Reisende und umgedrehte Spieler (z. B. Schlangenbeschwörer) haben s.align, sonst gilt der Rollentyp.
@@ -416,7 +436,8 @@
     const roles = shuffle(game.selected);
     const nm = names();
     const travellers = game.seats.filter(s => s.trav);
-    game.seats = roles.map((r, i) => ({ name: nm[i], role: r, alive: true, ghost: true, note: "", salt: randInt(32) }));
+    const pids = game.pids || [];
+    game.seats = roles.map((r, i) => ({ name: nm[i], pid: pids[i] || null, role: r, alive: true, ghost: true, note: "", salt: randInt(32) }));
     game.seats.push(...travellers);
     game.assignedKey = game.selected.slice().sort().join(",") + "|" + game.count;
     game.done = {};
@@ -514,6 +535,7 @@
         </div>
         <div class="row end"><button class="btn primary" id="next1">Weiter: Rollen wählen →</button></div>
       </section>
+      ${onlineHostPanel()}
       <section class="panel muted">
         <div class="row wrap">
           <button class="btn danger" id="reset">🗑️ Komplett neues Spiel</button>
@@ -572,7 +594,7 @@
         ? roleChip(s.role, s.align === "e" ? " (böse)" : " (gut)")
         : `<select class="seatrole" data-i="${i}">${game.selected.map(id => `<option value="${id}" ${id === s.role ? "selected" : ""}>${esc(roleName(id))}</option>`).join("")}</select>`;
       return `<div class="seat t-${r.t}-border">
-        <div class="seat-top"><span class="seatno">${i + 1}</span><b class="seatname">${esc(s.name)}</b>
+        <div class="seat-top"><span class="seatno">${i + 1}</span><b class="seatname">${esc(s.name)}</b>${onlineBadge(s)}
           ${shown !== s.role ? `<span class="small">sieht: ${esc(roleName(shown))}</span>` : ""}</div>
         <div class="seat-mid">${sel}</div>
         <div class="seat-bot"><code class="code">${seatCode(s, i)}</code>
@@ -584,6 +606,7 @@
     return `
       <section class="panel">
         <h2>Rollen verteilen</h2>
+        ${game.online ? `<p class="okmsg">🌐 Online-Spiel <b>${esc(game.online.code)}</b>: Rollen werden automatisch an alle verbundenen Handys gesendet. Für alle anderen gibt es weiterhin QR-Code und Code.</p>` : ""}
         <p>Jeder Spieler holt sich seine Rolle: <b>QR-Code scannen</b>, <b>Link</b> öffnen oder in der App unter „Meine Rolle“ den <b>Code</b> eingeben. Oder gib dein Handy reihum.</p>
         <div class="row wrap">
           <button class="btn primary" id="pass">🔄 Handy weitergeben</button>
@@ -603,6 +626,7 @@
           <input id="travname" placeholder="Name">
           <select id="travrole">${travOpts}</select>
           <select id="travalign"><option value="g">Gut</option><option value="e">Böse</option></select>
+          ${game.online ? `<select id="travpid"><option value="">– kein Online-Spieler –</option>${Object.entries(lobby).filter(([uid]) => !game.seats.some(x => x.pid === uid)).map(([uid, p]) => `<option value="${uid}">🌐 ${esc(p.name)}</option>`).join("")}</select>` : ""}
           <button class="btn" id="addtrav">+ Hinzufügen</button>
         </div>
       </section>
@@ -689,6 +713,8 @@
     return banner + `
       <section class="panel">
         <h2>Grimoire</h2>
+        ${game.online ? `<p class="small">${netDot()} Online-Spiel ${esc(game.online.code)}</p>` : ""}
+        ${(game.log || []).length ? `<div class="box msglog"><h4>📨 Meldungen von Spielern</h4><ul>${game.log.slice(-5).reverse().map(l => `<li>${esc(l.text)}</li>`).join("")}</ul></div>` : ""}
         <div class="daycount">🌙 Nacht ${game.nightNo} <span>·</span> ☀️ ${game.nightNo > 1 ? `Tag ${game.nightNo - 1} vorbei` : "noch kein Tag"}</div>
         <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${needed}</b> Stimmen</p>
         <div class="gseats">${seats}</div>
@@ -736,6 +762,7 @@
     $("#appqr2") && $("#appqr2").addEventListener("click", showAppQR);
     $("#minus") && $("#minus").addEventListener("click", () => setCount(game.count - 1));
     $("#plus") && $("#plus").addEventListener("click", () => setCount(game.count + 1));
+    bindOnlineHost();
     $$(".name").forEach(inp => inp.addEventListener("input", () => {
       game.names[+inp.dataset.i] = inp.value;
       save();
@@ -743,7 +770,7 @@
     $("#next1") && $("#next1").addEventListener("click", () => {
       // Namen in bestehende Plätze übernehmen
       const nm = names();
-      playerSeats().forEach((s, i) => { s.name = nm[i] || s.name; });
+      playerSeats().forEach((s, i) => { s.name = nm[i] || s.name; s.pid = (game.pids || [])[i] || s.pid || null; });
       goStep("roles");
     });
     $("#reset") && $("#reset").addEventListener("click", () => {
@@ -779,8 +806,9 @@
     $("#rebluff") && $("#rebluff").addEventListener("click", () => { game.bluffs = []; refreshHidden(); save(); renderSL(); });
     $("#evilinfo") && $("#evilinfo").addEventListener("change", e => { game.evilInfo = e.target.checked; save(); });
     $("#addtrav") && $("#addtrav").addEventListener("click", () => {
-      const name = $("#travname").value.trim() || `Reisender ${game.seats.filter(s => s.trav).length + 1}`;
-      game.seats.push({ name, role: $("#travrole").value, align: $("#travalign").value, trav: true, alive: true, ghost: true, note: "", salt: randInt(32) });
+      const pid = $("#travpid") ? $("#travpid").value || null : null;
+      const name = $("#travname").value.trim() || (pid && lobby[pid] ? lobby[pid].name : "") || `Reisender ${game.seats.filter(s => s.trav).length + 1}`;
+      game.seats.push({ name, pid, role: $("#travrole").value, align: $("#travalign").value, trav: true, alive: true, ghost: true, note: "", salt: randInt(32) });
       save(); renderSL();
     });
     $("#next3") && $("#next3").addEventListener("click", () => goStep("grim"));
@@ -1269,7 +1297,7 @@
   // =====================================================================
   function renderGuide() {
     view.innerHTML = installPanel() + `<section class="panel"><h2>Anleitung</h2>
-      ${GUIDE.map((g, i) => `<details class="guide" ${i < 2 ? "open" : ""}><summary>${esc(g.title)}</summary><div class="guide-body">${g.html}</div></details>`).join("")}
+      ${GUIDE.filter(g => g.id !== "online" || Net.configured()).map((g, i) => `<details class="guide" ${i < 2 ? "open" : ""}><summary>${esc(g.title)}</summary><div class="guide-body">${g.html}</div></details>`).join("")}
       </section>`;
     const tbl = $("#setup-table");
     if (tbl) {
@@ -1280,10 +1308,433 @@
   }
 
   // =====================================================================
+  //  ONLINE-MODUS – Spielleiter
+  // =====================================================================
+  let lobby = {};            // uid -> { name, pub, joined }
+  let lastInbox = {};
+  let hostSubs = [];
+  const sent = {};           // was zuletzt gesendet wurde (um nur Änderungen zu schicken)
+  const handled = new Set();
+  let syncTimer = null;
+  const roomPath = p => `rooms/${game.online.code}${p ? "/" + p : ""}`;
+  const netDot = () => `<span class="netdot ${Net.connected ? "on" : ""}"></span>`;
+  const joinUrl = code => appUrl() + "#join=" + code;
+
+  function onlineBadge(s) {
+    if (!game.online || !s.pid) return "";
+    return lobby[s.pid] ? `<span class="badge on">🌐 online</span>` : `<span class="badge">🌐 nicht im Raum</span>`;
+  }
+
+  // Reihenfolge der Spieler im Raum (= Sitzreihenfolge), vom Spielleiter sortierbar.
+  function lobbyOrder() {
+    const ids = Object.keys(lobby).sort((a, b) => (lobby[a].joined || 0) - (lobby[b].joined || 0));
+    const order = (game.lobbyOrder || []).filter(id => lobby[id]);
+    ids.forEach(id => { if (!order.includes(id)) order.push(id); });
+    return order;
+  }
+
+  function onlineHostPanel() {
+    if (!Net.configured()) return "";
+    if (!game.online) {
+      return `<section class="panel online">
+        <h2>🌐 Online-Spiel <span class="small">(optional)</span></h2>
+        <p class="small">Alle treten mit ihrem eigenen Handy bei. Rollen, Spielende und die Wahl von Philosoph &amp; Co. werden dann automatisch übertragen – verschlüsselt, nur das richtige Handy kann seine Rolle lesen. Ohne Internet einfach wie bisher mit QR-Codes spielen.</p>
+        <button class="btn primary" id="startonline">🌐 Online-Spiel starten</button>
+      </section>`;
+    }
+    const order = lobbyOrder();
+    return `<section class="panel online">
+      <h2>🌐 Online-Spiel ${netDot()}</h2>
+      <p>Raum-Code: <code class="code big">${esc(game.online.code)}</code></p>
+      <p class="small">Mitspieler scannen diesen QR-Code oder öffnen die App → „Meine Rolle“ → „Online-Spiel beitreten“ und geben den Code ein.</p>
+      <div class="qr small-qr">${qrSvg(joinUrl(game.online.code))}</div>
+      <h3>Im Raum (${order.length})</h3>
+      <p class="small">Sortiere die Spieler in Sitzreihenfolge (im Uhrzeigersinn).</p>
+      <ol class="lobby">${order.map((id, k) => `<li><span>${esc(lobby[id].name)}</span>
+        <button class="btn sm" data-lmove="${k}" data-dir="-1" ${k ? "" : "disabled"}>↑</button>
+        <button class="btn sm" data-lmove="${k}" data-dir="1" ${k < order.length - 1 ? "" : "disabled"}>↓</button>
+        <button class="btn sm danger" data-lkick="${id}">✕</button></li>`).join("") || "<li class='small'>Noch niemand beigetreten …</li>"}</ol>
+      <div class="row wrap">
+        <button class="btn primary" id="takelobby" ${order.length ? "" : "disabled"}>👥 Als Mitspieler übernehmen</button>
+        <button class="btn danger" id="stoponline">Online-Spiel beenden</button>
+      </div>
+    </section>`;
+  }
+
+  function bindOnlineHost() {
+    $("#startonline") && $("#startonline").addEventListener("click", startOnline);
+    $("#stoponline") && $("#stoponline").addEventListener("click", () => {
+      if (confirm("Online-Spiel beenden? Alle Spieler werden getrennt. Das Grimoire bleibt erhalten.")) stopOnline();
+    });
+    $$("[data-lmove]").forEach(b => b.addEventListener("click", () => {
+      const order = lobbyOrder(), k = +b.dataset.lmove, j = k + +b.dataset.dir;
+      [order[k], order[j]] = [order[j], order[k]];
+      game.lobbyOrder = order;
+      save(); renderSL();
+    }));
+    $$("[data-lkick]").forEach(b => b.addEventListener("click", async () => {
+      const id = b.dataset.lkick;
+      if (!confirm(`${lobby[id].name} aus dem Raum entfernen?`)) return;
+      const api = await Net.init();
+      await api.remove(roomPath("players/" + id));
+    }));
+    $("#takelobby") && $("#takelobby").addEventListener("click", () => {
+      const order = lobbyOrder();
+      if (order.length < 5) { toast("Es braucht mindestens 5 Spieler."); return; }
+      const ids = order.slice(0, 15);
+      if (order.length > 15) toast("Mehr als 15 Spieler – die übrigen kannst du als Reisende hinzufügen.");
+      if (game.count !== ids.length) game.selected = [];
+      game.count = ids.length;
+      game.names = ids.map(id => lobby[id].name);
+      game.pids = ids;
+      save(); renderSL();
+      toast(`${ids.length} Spieler übernommen`);
+    });
+  }
+
+  async function startOnline() {
+    try {
+      const api = await Net.init();
+      const keys = await Net.genKeys();
+      let code;
+      for (let k = 0; k < 5; k++) {
+        code = Net.newCode();
+        if (!(await api.get(`rooms/${code}/meta`))) break;
+      }
+      await api.set(`rooms/${code}/meta`, { host: api.uid, hostPub: keys.pub, created: Date.now(), edition: game.edition });
+      game.online = { code, pub: keys.pub, priv: keys.priv };
+      game.lobbyOrder = [];
+      game.pids = [];
+      save();
+      await hostConnect();
+      renderSL();
+    } catch (e) {
+      toast("Online-Spiel konnte nicht gestartet werden – bist du mit dem Internet verbunden?");
+    }
+  }
+
+  async function hostConnect() {
+    if (!game.online || hostSubs.length) return;
+    try {
+      const api = await Net.init();
+      if (!(await api.get(roomPath("meta")))) { game.online = null; save(); renderSL(); toast("Das Online-Spiel existiert nicht mehr."); return; }
+      hostSubs.push(api.listen(roomPath("players"), v => {
+        lobby = v || {};
+        handleInbox(lastInbox);
+        scheduleSync();
+        refreshHostView();
+      }));
+      hostSubs.push(api.listen(roomPath("inbox"), v => { lastInbox = v || {}; handleInbox(lastInbox); }));
+    } catch (e) {
+      toast("Keine Verbindung zum Online-Spiel – du kannst offline weiterspielen.");
+    }
+  }
+
+  async function stopOnline() {
+    try { const api = await Net.init(); await api.remove(roomPath()); } catch (e) { /* offline */ }
+    hostSubs.forEach(u => u());
+    hostSubs = [];
+    lobby = {};
+    Object.keys(sent).forEach(k => delete sent[k]);
+    game.online = null;
+    game.pids = [];
+    save(); renderSL();
+  }
+
+  // Lobby-Änderungen anzeigen, ohne dem Spielleiter beim Tippen dazwischenzufunken.
+  function refreshHostView() {
+    const tab = (location.hash.match(/^#\/(\w+)/) || [])[1];
+    if (tab !== "sl" || !modal.classList.contains("hidden")) return;
+    const a = document.activeElement;
+    if (a && (a.tagName === "INPUT" || a.tagName === "SELECT")) return;
+    if (game.step === "setup" || game.step === "assign") renderSL();
+  }
+
+  function scheduleSync() {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncOnline, 300);
+  }
+
+  // Was alle sehen dürfen: Namen, lebt/tot, Nacht und am Ende die Auflösung. Keine Rollen während des Spiels.
+  function publicState() {
+    const w = game.winner;
+    return {
+      nightNo: game.nightNo || 1,
+      started: game.seats.length > 0 && game.step !== "setup",
+      seats: game.seats.map(s => ({ n: s.name, a: !!s.alive, g: !!s.ghost, t: !!s.trav })),
+      winner: w ? {
+        team: w.team, reason: w.reason, nights: game.nightNo,
+        reveal: game.seats.map(s => ({ n: s.name, r: s.role, s: shownRole(s.role), good: seatGood(s), a: !!s.alive })),
+        bluffs: game.bluffs
+      } : null
+    };
+  }
+
+  async function syncOnline() {
+    if (!game.online) return;
+    let api;
+    try { api = await Net.init(); } catch (e) { return; }
+    const tasks = [];
+    game.seats.forEach((s, i) => {
+      const p = s.pid && lobby[s.pid];
+      if (!p || !p.pub) return;
+      const info = seatInfo(s, i);
+      const sig = JSON.stringify(info) + p.pub.x;
+      if (sent[s.pid] === sig) return;
+      sent[s.pid] = sig;
+      tasks.push(Net.shared(game.online.priv, p.pub)
+        .then(k => Net.seal(k, info))
+        .then(box => api.set(roomPath("roles/" + s.pid), box))
+        .catch(e => { delete sent[s.pid]; throw e; }));
+    });
+    // Wer keinen Platz (mehr) hat, bekommt seine alte Rolle entzogen.
+    Object.keys(lobby).forEach(uid => {
+      if (!game.seats.some(s => s.pid === uid) && sent[uid] !== "none") {
+        sent[uid] = "none";
+        tasks.push(api.remove(roomPath("roles/" + uid)));
+      }
+    });
+    const pub = publicState();
+    const pj = JSON.stringify(pub);
+    if (sent.__public !== pj) {
+      sent.__public = pj;
+      tasks.push(api.set(roomPath("public"), pub).catch(e => { delete sent.__public; throw e; }));
+    }
+    try { await Promise.all(tasks); } catch (e) { toast("Online: Senden fehlgeschlagen – wird erneut versucht."); setTimeout(scheduleSync, 3000); }
+  }
+
+  async function handleInbox(all) {
+    if (!game.online) return;
+    let api;
+    try { api = await Net.init(); } catch (e) { return; }
+    for (const [uid, msgs] of Object.entries(all || {})) {
+      const p = lobby[uid];
+      if (!p) continue;
+      for (const [id, box] of Object.entries(msgs || {})) {
+        if (handled.has(id)) continue;
+        handled.add(id);
+        try {
+          const msg = await Net.open(await Net.shared(game.online.priv, p.pub), box);
+          onPlayerMessage(uid, msg);
+        } catch (e) { /* unlesbare Nachricht ignorieren */ }
+        api.remove(roomPath(`inbox/${uid}/${id}`)).catch(() => {});
+      }
+    }
+  }
+
+  function onPlayerMessage(uid, msg) {
+    if (msg.type !== "pick" || !ROLE_BY_ID[msg.pick]) return;
+    const i = game.seats.findIndex(s => s.pid === uid);
+    const name = i >= 0 ? game.seats[i].name : (lobby[uid] && lobby[uid].name) || "?";
+    const text = `${name} (${roleName(msg.role)}) wählt: ${roleName(msg.pick)}`;
+    game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
+    if (i >= 0 && game.seats[i].role === "philosopher") setPhilo(i, msg.pick);
+    else { save(); refreshHostView(); }
+    notice("📨 " + text);
+  }
+
+  // Auffälliger Hinweis oben, bleibt bis zum Antippen (nachts übersieht man Toasts leicht).
+  function notice(text) {
+    const n = document.createElement("div");
+    n.className = "notice";
+    n.innerHTML = `<span>${esc(text)}</span><small>Tippen zum Schließen</small>`;
+    n.addEventListener("click", () => n.remove());
+    document.body.appendChild(n);
+    if (navigator.vibrate) navigator.vibrate(200);
+  }
+
+  // =====================================================================
+  //  ONLINE-MODUS – Spieler
+  // =====================================================================
+  let playerSubs = [];
+  let pubState = store.get("botc.public", null);
+  let pendingJoin = "";
+
+  function joinPanel() {
+    if (!Net.configured()) return "";
+    return `<section class="panel online">
+      <h2>🌐 Online-Spiel beitreten</h2>
+      <p class="small">Hat der Spielleiter ein Online-Spiel gestartet? Dann Raum-Code und deinen Namen eingeben – deine Rolle kommt automatisch.</p>
+      <form id="joinform" class="joinform" autocomplete="off">
+        <input id="joincode" maxlength="6" placeholder="Raum-Code" autocapitalize="characters" spellcheck="false" value="${esc(pendingJoin)}">
+        <input id="joinname" maxlength="20" placeholder="Dein Name" value="${esc(store.get("botc.myname", ""))}">
+        <button class="btn primary" type="submit">Beitreten</button>
+      </form>
+      <p id="joinerr" class="error hidden"></p>
+    </section>`;
+  }
+
+  function bindJoin() {
+    const f = $("#joinform");
+    if (!f) return;
+    if (pendingJoin) setTimeout(() => $("#joinname") && $("#joinname").focus(), 50);
+    f.addEventListener("submit", async e => {
+      e.preventDefault();
+      const code = $("#joincode").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const name = $("#joinname").value.trim();
+      const err = $("#joinerr");
+      if (!code || !name) { err.textContent = "Bitte Raum-Code und Namen eingeben."; err.classList.remove("hidden"); return; }
+      const btn = f.querySelector("button");
+      btn.disabled = true; btn.textContent = "Verbinde …";
+      try {
+        await joinRoom(code, name);
+        pendingJoin = "";
+        renderPlayer();
+      } catch (ex) {
+        err.textContent = ex.message === "Raum nicht gefunden"
+          ? "Diesen Raum gibt es nicht. Bitte den Code prüfen."
+          : "Keine Verbindung – bist du mit dem Internet verbunden?";
+        err.classList.remove("hidden");
+        btn.disabled = false; btn.textContent = "Beitreten";
+      }
+    });
+  }
+
+  async function joinRoom(code, name) {
+    const api = await Net.init();
+    const meta = await api.get(`rooms/${code}/meta`);
+    if (!meta) throw new Error("Raum nicht gefunden");
+    let keys = store.get("botc.netkeys", null);
+    if (!keys) { keys = await Net.genKeys(); store.set("botc.netkeys", keys); }
+    await api.set(`rooms/${code}/players/${api.uid}`, { name, pub: keys.pub, joined: Date.now() });
+    store.set("botc.myname", name);
+    store.set("botc.online", { code, name });
+    store.del("botc.myrole");
+    store.del("botc.public");
+    pubState = null;
+    await playerConnect();
+  }
+
+  async function playerConnect() {
+    const on = store.get("botc.online", null);
+    if (!on || playerSubs.length) return;
+    let api;
+    try { api = await Net.init(); } catch (e) { return; }
+    const base = `rooms/${on.code}`;
+    let meta, me;
+    try { [meta, me] = await Promise.all([api.get(base + "/meta"), api.get(`${base}/players/${api.uid}`)]); } catch (e) { return; }
+    if (!meta || !me) { leaveRoom(true); notice("Das Online-Spiel ist beendet oder du wurdest entfernt."); return; }
+    const keys = store.get("botc.netkeys", null);
+    const key = await Net.shared(keys.priv, meta.hostPub);
+    playerSubs.push(api.listen(`${base}/players/${api.uid}`, v => {
+      if (!v) { leaveRoom(true); notice("Das Online-Spiel ist beendet oder du wurdest entfernt."); }
+    }));
+    playerSubs.push(api.listen(`${base}/roles/${api.uid}`, async box => {
+      const old = store.get("botc.myrole", null);
+      if (!box) {
+        if (old && old.online) { store.del("botc.myrole"); refreshPlayerView(true); }
+        return;
+      }
+      let info;
+      try { info = await Net.open(key, box); } catch (e) { return; }
+      info.online = on.code;
+      if (old && old.r === info.r && old.pick) info.pick = old.pick;
+      store.set("botc.myrole", info);
+      const changed = !old || old.r !== info.r || old.a !== info.a || JSON.stringify(old.x) !== JSON.stringify(info.x);
+      if (changed) {
+        if (old && old.online) notice("Der Spielleiter hat deine Rolle geändert – schau sie dir an.");
+        refreshPlayerView(true);
+      }
+    }));
+    playerSubs.push(api.listen(`${base}/public`, v => {
+      const before = pubState;
+      pubState = v;
+      store.set("botc.public", v);
+      updateNetBar();
+      if (v && v.winner && !(before && before.winner)) showPublicEnd(v);
+    }));
+  }
+
+  function leaveRoom(silent) {
+    const on = store.get("botc.online", null);
+    playerSubs.forEach(u => u());
+    playerSubs = [];
+    if (on && !silent) Net.init().then(api => api.remove(`rooms/${on.code}/players/${api.uid}`)).catch(() => {});
+    const mine = store.get("botc.myrole", null);
+    if (mine && mine.online) store.del("botc.myrole");
+    store.del("botc.online");
+    store.del("botc.public");
+    pubState = null;
+    refreshPlayerView(true);
+  }
+
+  function refreshPlayerView(full) {
+    const tab = (location.hash.match(/^#\/(\w+)/) || [])[1] || "rolle";
+    if (tab !== "rolle" || !modal.classList.contains("hidden")) return;
+    if (full) renderPlayer(); else updateNetBar();
+  }
+
+  function netbarHtml() {
+    const on = store.get("botc.online", null);
+    if (!on) return "";
+    const p = pubState;
+    const seats = (p && p.seats) || [];
+    return `<section class="panel netbar">
+      <div class="nb-top">${netDot()}<b>Raum ${esc(on.code)}</b><span>· ${esc(on.name)}</span>${p && p.started ? `<span>· 🌙 Nacht ${p.nightNo}</span>` : ""}</div>
+      ${seats.length ? `<details class="nb-players" ${netbarOpen ? "open" : ""}><summary>Mitspieler (${seats.filter(s => s.a).length} von ${seats.length} leben)</summary>
+        <ul>${seats.map(s => `<li class="${s.a ? "" : "dead"}"><span>${esc(s.n)}</span><span>${s.a ? "❤️" : s.g ? "💀 👻 Stimme frei" : "💀"}</span></li>`).join("")}</ul></details>` : ""}
+    </section>`;
+  }
+  let netbarOpen = false;
+  function updateNetBar() {
+    const el = $(".netbar");
+    if (!el) return;
+    const d = el.querySelector("details");
+    if (d) netbarOpen = d.open;
+    const tmp = document.createElement("div");
+    tmp.innerHTML = netbarHtml();
+    if (tmp.firstElementChild) el.replaceWith(tmp.firstElementChild);
+  }
+
+  // Spielende auf den Handys der Spieler
+  function showPublicEnd(p) {
+    const w = p.winner;
+    const mine = store.get("botc.myrole", null);
+    const me = mine && w.reveal[mine.s];
+    const good = w.team === "good";
+    const won = me ? me.good === good : null;
+    const list = w.reveal.map(s => `<li class="${s.good ? "al-good" : "al-evil"} ${s.a ? "" : "dead"}">
+        <span class="er-name">${esc(s.n)}${s.a ? "" : " 💀"}</span>${roleChip(s.r)}
+        ${s.s !== s.r ? `<span class="small">(glaubte: ${esc(roleName(s.s))})</span>` : ""}
+        <span class="er-al">${s.good ? "gut" : "böse"}</span></li>`).join("");
+    openModal(`<div class="endscreen ${w.team}">
+        <div class="end-icon">${good ? "😇" : "😈"}</div>
+        <h1>${good ? "Gut gewinnt!" : "Böse gewinnt!"}</h1>
+        <p class="end-reason">${esc(w.reason)}</p>
+        ${won === null ? "" : `<p class="end-me">${won ? "🎉 Du hast gewonnen!" : "Du hast verloren."}</p>`}
+        <p class="end-sub">Nach ${w.nights} ${w.nights === 1 ? "Nacht" : "Nächten"}.</p>
+      </div>
+      <h3>Auflösung</h3>
+      <ul class="endlist">${list}</ul>
+      ${(w.bluffs || []).length ? `<p class="small">Bluffs des Dämons: ${w.bluffs.map(id => esc(roleName(id))).join(", ")}</p>` : ""}
+      <div class="row center"><button class="btn primary" id="pubendclose">Schließen</button></div>`, "full");
+    $("#pubendclose").addEventListener("click", () => { closeModal(); refreshPlayerView(true); });
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  }
+
+  // Nachricht an den Spielleiter (verschlüsselt)
+  async function sendToHost(msg) {
+    const on = store.get("botc.online", null);
+    if (!on) return false;
+    try {
+      const api = await Net.init();
+      const meta = await api.get(`rooms/${on.code}/meta`);
+      const keys = store.get("botc.netkeys", null);
+      const key = await Net.shared(keys.priv, meta.hostPub);
+      await api.push(`rooms/${on.code}/inbox/${api.uid}`, await Net.seal(key, msg));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // =====================================================================
   //  ROUTER
   // =====================================================================
   function route() {
     const h = location.hash;
+    if (h.startsWith("#join=")) {
+      pendingJoin = h.slice(6).toUpperCase().replace(/[^A-Z0-9]/g, "");
+      history.replaceState(null, "", "#/rolle");
+    }
     if (h.startsWith("#k=")) {
       const info = decodeLink(h.slice(3));
       if (info) store.set("botc.myrole", info);
@@ -1300,6 +1751,11 @@
   }
   window.addEventListener("hashchange", route);
   route();
+  if (Net.configured()) {
+    if (game.online) hostConnect();
+    if (store.get("botc.online", null)) playerConnect();
+  }
+  document.addEventListener("net-status", () => { updateNetBar(); $$(".netdot").forEach(d => d.classList.toggle("on", Net.connected)); });
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     // Neue Version gefunden: einmal neu laden, damit nicht alte und neue Dateien gemischt laufen.

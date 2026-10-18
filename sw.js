@@ -1,8 +1,8 @@
 // Offline-Cache: App funktioniert nach dem ersten Öffnen auch ohne Internet.
 // Bei jeder Änderung an der App VERSION erhöhen (auch die ?v= in index.html).
-const VERSION = "13";
+const VERSION = "15";
 const CACHE = "clocktower-v" + VERSION;
-const FILES = ["./", "index.html", "css/style.css", "js/roles.js", "js/guide.js", "js/app.js", "vendor/qrcode.js",
+const FILES = ["./", "index.html", "css/style.css", "js/roles.js", "js/guide.js", "js/app.js", "js/online.js", "js/firebase-config.js", "vendor/qrcode.js",
   "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -14,6 +14,8 @@ self.addEventListener("activate", e => {
 // Netzwerk zuerst und am Browser-Cache vorbei (damit Updates sofort ankommen), offline aus dem Cache.
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
+  // Nur eigene Dateien cachen – Firebase-Verbindungen laufen direkt übers Netz.
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   const req = e.request.mode === "navigate" ? new Request(e.request.url, { cache: "no-cache" }) : new Request(e.request, { cache: "no-cache" });
   e.respondWith(
     fetch(req).then(res => {
