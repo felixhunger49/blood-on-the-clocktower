@@ -312,3 +312,6 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 
 .useonce { margin-top: .5rem; }
 .btn.used { color: var(--muted); border-style: dashed; }
+
+.philo { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; font-size: .88rem; margin-top: .3rem; width: 100%; }
+.philo select { flex: 1; min-width: 10rem; }

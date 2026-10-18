@@ -567,7 +567,8 @@
           ${s.alive ? "" : `<button class="btn sm" data-ghost="${i}">${s.ghost ? "👻 Stimme frei" : "🚫 Stimme verbraucht"}</button>`}
           <button class="btn sm" data-info="${s.role}">ℹ️</button>
           <button class="btn sm" data-change="${i}" title="Rolle oder Gesinnung ändern">🔁</button>
-          ${ONCE_PER_GAME.includes(s.role) ? `<button class="btn sm ${s.used ? "used" : ""}" data-used="${i}">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>` : ""}
+          ${s.role === "philosopher" ? philoSelect(i) : ""}
+          ${ONCE_PER_GAME.includes(s.role) && s.role !== "philosopher" ? `<button class="btn sm ${s.used ? "used" : ""}" data-used="${i}">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>` : ""}
         </div>
         <input class="note" data-note="${i}" placeholder="Notiz (z. B. vergiftet, geschützt, Ablenker …)" value="${esc(s.note)}">
       </div>`;
@@ -593,12 +594,15 @@
       if (!role || !role[key]) return;
       const holders = ps.filter(s => s.role === id);
       const drunks = ps.filter(s => s.role === "drunk" && shownRole("drunk") === id);
-      if (!holders.length && !drunks.length) return;
-      const who = [...holders.map(s => esc(s.name) + (s.alive ? "" : " †")), ...drunks.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Säufer – Info darf falsch sein)")].join(", ");
+      const philos = ps.filter(s => s.role === "philosopher" && s.gained === id);
+      if (!holders.length && !drunks.length && !philos.length) return;
+      const who = [...holders.map(s => esc(s.name) + (s.alive ? "" : " †") + (philos.length ? " (betrunken durch Philosoph)" : "")),
+        ...drunks.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Säufer – Info darf falsch sein)"),
+        ...philos.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Philosoph)")].join(", ");
       // Tote Spieler haben keine Fähigkeit mehr – außer Rollen, die gerade durch ihren Tod ausgelöst werden.
-      const all = [...holders, ...drunks];
+      const all = [...holders, ...drunks, ...philos];
       const allDead = !ACTS_WHEN_DEAD.includes(id) && all.every(s => !s.alive);
-      const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => s.used || !s.alive);
+      const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => (s.role === "philosopher" && id !== "philosopher" ? s.gainedUsed : s.used) || !s.alive);
       // Der Jongleur erfährt sein Ergebnis nur in der Nacht nach dem ersten Tag.
       const over = id === "juggler" && game.nightNo > 2;
       const inactive = allDead || allUsed || over;
@@ -639,7 +643,8 @@
           <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
             <div class="ns-head">${s.inactive ? `<span class="dead-mark">${s.mark}</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${s.inactive ? s.why : esc(s.text)}</p>
-            ${s.once && !s.inactive ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
+            ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
+            ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
@@ -731,11 +736,19 @@
     $$("[data-useonce]").forEach(b => b.addEventListener("click", e => {
       e.stopPropagation();
       const id = b.dataset.useonce;
-      game.seats.forEach(s => { if (s.alive && (s.role === id || (s.role === "drunk" && shownRole("drunk") === id))) s.used = true; });
+      game.seats.forEach(s => {
+        if (!s.alive) return;
+        if (s.role === id || (s.role === "drunk" && shownRole("drunk") === id)) s.used = true;
+        if (s.role === "philosopher" && s.gained === id) s.gainedUsed = true;
+      });
       const d = game.done[game.nightNo] || [];
       if (!d.includes(id)) game.done[game.nightNo] = [...d, id];
       save(); renderSL();
     }));
+    $$("[data-philo]").forEach(sel => {
+      sel.addEventListener("click", e => e.stopPropagation());
+      sel.addEventListener("change", () => setPhilo(+sel.dataset.philo, sel.value));
+    });
     $$("[data-used]").forEach(b => b.addEventListener("click", () => { const s = game.seats[+b.dataset.used]; s.used = !s.used; save(); renderSL(); }));
     $$(".nightlist li:not(.inactive)").forEach(li => li.addEventListener("click", () => {
       const id = li.dataset.stepId;
@@ -978,6 +991,36 @@
   // Fähigkeiten, die nur einmal pro Spiel wirken.
   const ONCE_PER_GAME = ["courtier", "professor", "seamstress", "philosopher", "assassin", "bonecollector",
     "slayer", "artist", "virgin", "fool", "judge"];
+
+  // Philosoph: Der Spielleiter wählt aus, welche gute Rolle er sich genommen hat.
+  function philoSelect(i) {
+    const s = game.seats[i];
+    const opts = ROLES.filter(r => r.ed === game.edition && (r.t === "townsfolk" || r.t === "outsider") && r.id !== "philosopher");
+    return `<label class="philo">🧠 Gewählte Rolle:
+      <select data-philo="${i}">
+        <option value="">– noch nicht gewählt –</option>
+        ${opts.map(r => `<option value="${r.id}" ${s.gained === r.id ? "selected" : ""}>${esc(r.de)}${game.seats.some(x => x.role === r.id) ? " (im Spiel)" : ""}</option>`).join("")}
+      </select></label>`;
+  }
+  function setPhilo(i, id) {
+    const s = game.seats[i];
+    const tag = "betrunken (Philosoph)";
+    // Alte Wahl zurücknehmen
+    if (s.gained) game.seats.forEach(x => { if (x.role === s.gained && x.note) x.note = x.note.replace(tag, "").replace(/^[,\s]+|[,\s]+$/g, ""); });
+    s.gained = id || null;
+    s.gainedUsed = false;
+    s.used = !!id;
+    if (id) {
+      const d = game.done[game.nightNo] || [];
+      if (!d.includes("philosopher")) game.done[game.nightNo] = [...d, "philosopher"];
+      const victims = game.seats.filter(x => x.role === id);
+      victims.forEach(x => { if (!(x.note || "").includes(tag)) x.note = x.note ? x.note + ", " + tag : tag; });
+      toast(victims.length
+        ? `${s.name} hat jetzt die Fähigkeit „${roleName(id)}“. ${victims.map(x => x.name).join(", ")} ist betrunken.`
+        : `${s.name} hat jetzt die Fähigkeit „${roleName(id)}“.`);
+    }
+    save(); renderSL();
+  }
 
   function evilTeam() {
     const ps = playerSeats();
