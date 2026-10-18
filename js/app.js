@@ -257,9 +257,10 @@
   // =====================================================================
   function newGame() {
     return { step: "setup", edition: "tb", count: 7, names: [], selected: [], seats: [], bluffs: [],
-      drunkShown: null, lunaticShown: null, evilInfo: false, assignedKey: "", night: "first", done: {} };
+      drunkShown: null, lunaticShown: null, evilInfo: false, assignedKey: "", nightNo: 1, done: {} };
   }
   let game = store.get("botc.game", null) || newGame();
+  if (!game.nightNo) { game.nightNo = 1; game.done = {}; delete game.night; } // ältere Spielstände
   const save = () => store.set("botc.game", game);
 
   const playerSeats = () => game.seats.filter(s => !s.trav);
@@ -361,6 +362,7 @@
     game.seats.push(...travellers);
     game.assignedKey = game.selected.slice().sort().join(",") + "|" + game.count;
     game.done = {};
+    game.nightNo = 1;
     game.winner = null;
     game.ignoreEnd = null;
   }
@@ -565,8 +567,9 @@
       </div>`;
     }).join("");
     const alive = ps.filter(s => s.alive && !s.trav).length;
-    const night = game.night === "first" ? NIGHT_FIRST : NIGHT_OTHER;
-    const key = game.night === "first" ? "n1" : "n";
+    const first = game.nightNo === 1;
+    const night = first ? NIGHT_FIRST : NIGHT_OTHER;
+    const key = first ? "n1" : "n";
     const steps = [];
     night.forEach(id => {
       if (NIGHT_STEPS[id]) {
@@ -582,7 +585,7 @@
       const who = [...holders.map(s => esc(s.name) + (s.alive ? "" : " †")), ...drunks.map(s => esc(s.name) + " (Säufer – Info darf falsch sein)")].join(", ");
       steps.push({ id, name: role.de, text: role[key], who, t: role.t });
     });
-    const done = game.done[game.night] || [];
+    const done = game.done[game.nightNo] || [];
     let banner = "";
     if (game.winner) {
       banner = `<section class="panel endbanner ${game.winner.team}">
@@ -604,22 +607,23 @@
     return banner + `
       <section class="panel">
         <h2>Grimoire</h2>
+        <div class="daycount">🌙 Nacht ${game.nightNo} <span>·</span> ☀️ ${game.nightNo > 1 ? `Tag ${game.nightNo - 1} vorbei` : "noch kein Tag"}</div>
         <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${Math.ceil(alive / 2)}</b> Stimmen</p>
         <div class="gseats">${seats}</div>
         <div class="box"><h4>Bluffs</h4><p>${game.bluffs.map(id => roleChip(id)).join(" ")}</p></div>
       </section>
       <section class="panel">
-        <h2>Nachtreihenfolge</h2>
-        <div class="chips">
-          <button class="chip ${game.night === "first" ? "on" : ""}" data-night="first">🌙 Erste Nacht</button>
-          <button class="chip ${game.night === "other" ? "on" : ""}" data-night="other">🌑 Andere Nächte</button>
-        </div>
+        <h2>${first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`}</h2>
+        <p class="small">${steps.filter(st => done.includes(st.id)).length} von ${steps.length} Schritten erledigt</p>
         <ol class="nightlist">${steps.map(s => `
           <li class="${done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
             <div class="ns-head"><input type="checkbox" ${done.includes(s.id) ? "checked" : ""}><b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${esc(s.text)}</p>
           </li>`).join("")}</ol>
-        <div class="row"><button class="btn" id="resetnight">Häkchen zurücksetzen</button></div>
+        <div class="row wrap">
+          <button class="btn primary" id="nextnight">☀️ Tag ${game.nightNo} vorbei → Nacht ${game.nightNo + 1} beginnen</button>
+          ${game.nightNo > 1 ? `<button class="btn sm" id="prevnight">↩︎ Zurück zu Nacht ${game.nightNo - 1}</button>` : ""}
+        </div>
       </section>
       <section class="panel">
         <h2>Spiel beenden</h2>
@@ -699,14 +703,21 @@
     $$("[data-ghost]").forEach(b => b.addEventListener("click", () => { const s = game.seats[+b.dataset.ghost]; s.ghost = !s.ghost; save(); renderSL(); }));
     $$("[data-note]").forEach(inp => inp.addEventListener("input", () => { game.seats[+inp.dataset.note].note = inp.value; save(); }));
     $$("[data-info]").forEach(b => b.addEventListener("click", () => openModal(roleDetail(ROLE_BY_ID[b.dataset.info], true))));
-    $$("[data-night]").forEach(b => b.addEventListener("click", () => { game.night = b.dataset.night; save(); renderSL(); }));
     $$(".nightlist li").forEach(li => li.addEventListener("click", () => {
       const id = li.dataset.stepId;
-      const d = game.done[game.night] = game.done[game.night] || [];
-      game.done[game.night] = d.includes(id) ? d.filter(x => x !== id) : [...d, id];
+      const d = game.done[game.nightNo] || [];
+      game.done[game.nightNo] = d.includes(id) ? d.filter(x => x !== id) : [...d, id];
       save(); renderSL();
     }));
-    $("#resetnight") && $("#resetnight").addEventListener("click", () => { game.done[game.night] = []; save(); renderSL(); });
+    $("#nextnight") && $("#nextnight").addEventListener("click", () => {
+      game.nightNo++;
+      game.done[game.nightNo] = [];
+      save(); renderSL();
+      const nl = $(".nightlist");
+      if (nl) nl.closest(".panel").scrollIntoView({ behavior: "smooth" });
+      toast(`Nacht ${game.nightNo} beginnt`);
+    });
+    $("#prevnight") && $("#prevnight").addEventListener("click", () => { game.nightNo--; save(); renderSL(); });
     $$("[data-change]").forEach(b => b.addEventListener("click", () => changeRole(+b.dataset.change)));
     $$("[data-win]").forEach(b => b.addEventListener("click", () => {
       const team = b.dataset.win;
@@ -761,7 +772,7 @@
         <div class="end-icon">${good ? "😇" : "😈"}</div>
         <h1>${good ? "Gut gewinnt!" : "Böse gewinnt!"}</h1>
         <p class="end-reason">${esc(w.reason)}</p>
-        <p class="end-sub">${good ? "Das Dorf ist gerettet – der Dämon wurde besiegt." : "Die Dunkelheit hat gesiegt – das Dorf ist verloren."}</p>
+        <p class="end-sub">Nach ${game.nightNo} ${game.nightNo === 1 ? "Nacht" : "Nächten"}. ${good ? "Das Dorf ist gerettet – der Dämon wurde besiegt." : "Die Dunkelheit hat gesiegt – das Dorf ist verloren."}</p>
       </div>
       <h3>Auflösung</h3>
       <ul class="endlist">${list}</ul>
@@ -774,7 +785,7 @@
     $("#again").addEventListener("click", () => {
       game.names = playerSeats().map(s => s.name);
       Object.assign(game, { selected: [], seats: [], bluffs: [], drunkShown: null, lunaticShown: null,
-        assignedKey: "", night: "first", done: {}, winner: null, ignoreEnd: null, step: "roles" });
+        assignedKey: "", nightNo: 1, done: {}, winner: null, ignoreEnd: null, step: "roles" });
       save(); closeModal(); renderSL();
     });
   }
