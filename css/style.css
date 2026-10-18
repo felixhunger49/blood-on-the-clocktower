@@ -233,3 +233,11 @@ dl dt { font-weight: 700; margin-top: .5rem; }
 dl dd { margin: 0 0 .3rem 0; color: var(--muted); }
 table.setup { width: 100%; border-collapse: collapse; margin-top: .6rem; font-size: .9rem; }
 table.setup th, table.setup td { padding: .35rem; text-align: center; border-bottom: 1px solid var(--line); }
+
+/* Installieren */
+.install { border-color: var(--accent); }
+.install-row { display: flex; gap: .8rem; align-items: center; }
+.install-icon { width: 56px; height: 56px; border-radius: 13px; flex: none; }
+.install .install-btn { margin-top: .7rem; width: 100%; }
+.install-how { font-size: .88rem; color: var(--muted); margin-top: .6rem; }
+.kbd { display: inline-block; border: 1px solid var(--line); border-radius: 6px; padding: 0 .35rem; background: var(--panel2); }

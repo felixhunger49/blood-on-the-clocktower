@@ -1,1 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#14111c"/><circle cx="32" cy="32" r="22" fill="none" stroke="#c9a24a" stroke-width="4"/><path d="M32 18v14l9 6" fill="none" stroke="#e03131" stroke-width="4" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="75%">
+      <stop offset="0" stop-color="#3a2552"/>
+      <stop offset="1" stop-color="#110d18"/>
+    </radialGradient>
+    <linearGradient id="tower" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2236"/>
+      <stop offset="1" stop-color="#1a1522"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- Mond -->
+  <mask id="moon"><rect width="512" height="512" fill="#fff"/><circle cx="362" cy="120" r="32" fill="#000"/></mask>
+  <circle cx="378" cy="132" r="34" fill="#e9dcb4" mask="url(#moon)"/>
+  <!-- Turm -->
+  <path d="M256 70 L318 168 L194 168 Z" fill="#7a1f24"/>
+  <rect x="200" y="166" width="112" height="250" fill="url(#tower)" stroke="#c9a24a" stroke-width="6"/>
+  <rect x="170" y="408" width="172" height="34" rx="4" fill="#1a1522" stroke="#c9a24a" stroke-width="6"/>
+  <!-- Uhr -->
+  <circle cx="256" cy="246" r="46" fill="#f3ead2" stroke="#c9a24a" stroke-width="8"/>
+  <g stroke="#2a2236" stroke-width="5" stroke-linecap="round">
+    <line x1="256" y1="208" x2="256" y2="216"/><line x1="256" y1="276" x2="256" y2="284"/>
+    <line x1="218" y1="246" x2="226" y2="246"/><line x1="286" y1="246" x2="294" y2="246"/>
+  </g>
+  <g stroke="#b3121b" stroke-width="7" stroke-linecap="round">
+    <line x1="256" y1="246" x2="256" y2="218"/>
+    <line x1="256" y1="246" x2="276" y2="258"/>
+  </g>
+  <circle cx="256" cy="246" r="6" fill="#b3121b"/>
+  <!-- Tür -->
+  <path d="M238 416 V368 a18 18 0 0 1 36 0 V416 Z" fill="#c9a24a"/>
+  <!-- Blutstropfen -->
+  <path d="M256 296 C 256 296 244 312 244 320 a12 12 0 0 0 24 0 C 268 312 256 296 256 296 Z" fill="#d61f2a"/>
+</svg>

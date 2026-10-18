@@ -161,12 +161,48 @@
   }
 
   // =====================================================================
+  //  ZUM STARTBILDSCHIRM HINZUFÜGEN
+  // =====================================================================
+  let installEvent = null;
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    installEvent = e;
+    $$(".install-btn").forEach(b => b.classList.remove("hidden"));
+  });
+  window.addEventListener("appinstalled", () => $$(".install").forEach(el => el.remove()));
+
+  const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+  function installPanel() {
+    if (isStandalone()) return "";
+    const how = isIOS()
+      ? `In <b>Safari</b> unten auf <b>Teilen</b> <span class="kbd">⬆︎</span> tippen, dann <b>„Zum Home-Bildschirm“</b> wählen.`
+      : `Im Browser-Menü <span class="kbd">⋮</span> auf <b>„App installieren“</b> oder <b>„Zum Startbildschirm hinzufügen“</b> tippen.`;
+    return `<section class="panel install">
+      <div class="install-row"><img src="icon-192.png" alt="" class="install-icon">
+        <div><b>Als App aufs Handy</b><p class="small">Ein Icon auf dem Startbildschirm – kein Link mehr eintippen, funktioniert auch offline.</p></div></div>
+      <button class="btn primary install-btn ${installEvent ? "" : "hidden"}">📲 Jetzt installieren</button>
+      <p class="install-how">${how}</p>
+    </section>`;
+  }
+  function bindInstall() {
+    $$(".install-btn").forEach(b => b.addEventListener("click", async () => {
+      if (!installEvent) return;
+      installEvent.prompt();
+      await installEvent.userChoice.catch(() => {});
+      installEvent = null;
+      b.classList.add("hidden");
+    }));
+  }
+
+  // =====================================================================
   //  MEINE ROLLE (Spieler)
   // =====================================================================
   function renderPlayer() {
     const mine = store.get("botc.myrole", null);
     if (!mine) {
-      view.innerHTML = `
+      view.innerHTML = installPanel() + `
         <section class="panel">
           <h2>Deine Rolle</h2>
           <p>Scanne den <b>QR-Code</b> beim Spielleiter, öffne den Link, den er dir geschickt hat, oder gib hier deinen <b>Code</b> ein.</p>
@@ -187,6 +223,7 @@
         store.set("botc.myrole", info);
         renderPlayer();
       });
+      bindInstall();
       return;
     }
     view.innerHTML = `
@@ -733,7 +770,7 @@
   //  ANLEITUNG
   // =====================================================================
   function renderGuide() {
-    view.innerHTML = `<section class="panel"><h2>Anleitung</h2>
+    view.innerHTML = installPanel() + `<section class="panel"><h2>Anleitung</h2>
       ${GUIDE.map((g, i) => `<details class="guide" ${i < 2 ? "open" : ""}><summary>${esc(g.title)}</summary><div class="guide-body">${g.html}</div></details>`).join("")}
       </section>`;
     const tbl = $("#setup-table");
@@ -741,6 +778,7 @@
       tbl.innerHTML = `<table class="setup"><thead><tr><th>Spieler</th><th class="t-townsfolk-text">Dorfb.</th><th class="t-outsider-text">Außens.</th><th class="t-minion-text">Schergen</th><th class="t-demon-text">Dämon</th></tr></thead><tbody>${
         Object.entries(SETUP_COUNTS).map(([n, c]) => `<tr><td>${n}</td>${c.map(x => `<td>${x}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
     }
+    bindInstall();
   }
 
   // =====================================================================
