@@ -346,3 +346,4 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 .notice small { font-weight: 400; opacity: .7; }
 .msglog ul { margin: .2rem 0; padding-left: 1.1rem; }
 .end-me { font-size: 1.3rem; font-weight: 800; }
+.joinform > * { width: 100%; min-width: 0; }

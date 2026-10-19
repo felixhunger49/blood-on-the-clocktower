@@ -263,6 +263,15 @@
   function renderPlayer() {
     const mine = store.get("botc.myrole", null);
     const on = store.get("botc.online", null);
+    // Beitritts-Link gescannt oder „Online-Spiel beitreten“ gewählt: Formular zeigen, auch wenn noch eine alte Rolle gespeichert ist.
+    if (!on && Net.configured() && (pendingJoin || showJoin)) {
+      view.innerHTML = joinPanel() + `
+        ${mine ? `<p class="small center">Deine bisher gespeicherte Rolle wird beim Beitreten ersetzt.</p>` : ""}
+        <div class="row center"><button class="btn" id="canceljoin">Abbrechen</button></div>`;
+      bindJoin();
+      $("#canceljoin").addEventListener("click", () => { pendingJoin = ""; store.del("botc.pendingJoin"); showJoin = false; renderPlayer(); });
+      return;
+    }
     if (!mine && on) {
       view.innerHTML = netbarHtml() + `
         <section class="panel center">
@@ -316,7 +325,7 @@
       <section class="panel muted">
         <div class="row center wrap">
           <a class="btn" href="#/rollen">📖 Alle Rollen ansehen</a>
-          ${on ? `<button id="leaveroom" class="btn danger">Raum verlassen</button>` : `<button id="forget" class="btn danger">Andere Rolle laden</button>`}
+          ${on ? `<button id="leaveroom" class="btn danger">Raum verlassen</button>` : `${Net.configured() ? `<button id="openjoin" class="btn">🌐 Online-Spiel beitreten</button>` : ""}<button id="forget" class="btn danger">Andere Rolle laden</button>`}
         </div>
       </section>`;
     const show = () => { $("#cover").classList.add("hidden"); $("#card").classList.remove("hidden"); };
@@ -328,6 +337,7 @@
       if (confirm("Deine gespeicherte Rolle wirklich entfernen?")) { store.del("botc.myrole"); renderPlayer(); }
     });
     $("#leaveroom") && $("#leaveroom").addEventListener("click", () => { if (confirm("Online-Spiel wirklich verlassen?")) leaveRoom(false); });
+    $("#openjoin") && $("#openjoin").addEventListener("click", () => { showJoin = true; renderPlayer(); window.scrollTo(0, 0); });
   }
 
   // =====================================================================
@@ -1548,7 +1558,8 @@
   // =====================================================================
   let playerSubs = [];
   let pubState = store.get("botc.public", null);
-  let pendingJoin = "";
+  let pendingJoin = store.get("botc.pendingJoin", "");
+  let showJoin = false;
 
   function joinPanel() {
     if (!Net.configured()) return "";
@@ -1579,6 +1590,8 @@
       try {
         await joinRoom(code, name);
         pendingJoin = "";
+        store.del("botc.pendingJoin");
+        showJoin = false;
         renderPlayer();
       } catch (ex) {
         err.textContent = ex.message === "Raum nicht gefunden"
@@ -1733,6 +1746,7 @@
     const h = location.hash;
     if (h.startsWith("#join=")) {
       pendingJoin = h.slice(6).toUpperCase().replace(/[^A-Z0-9]/g, "");
+      store.set("botc.pendingJoin", pendingJoin);
       history.replaceState(null, "", "#/rolle");
     }
     if (h.startsWith("#k=")) {
