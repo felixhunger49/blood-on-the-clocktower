@@ -404,6 +404,8 @@
 
   function autoPick() {
     const ed = game.edition, base = SETUP_COUNTS[game.count];
+    // In kleinen Runden ungeeignete Rollen weglassen
+    const rolesOf = (e, t) => ROLES.filter(r => r.ed === e && r.t === t && !smallExcluded(r.id, game.count));
     const demon = pick(rolesOf(ed, "demon"), 1);
     const minions = pick(rolesOf(ed, "minion"), base[2]);
     let outs = base[1];
@@ -538,6 +540,7 @@
           <button class="btn round" id="plus">+</button>
         </div>
         <p class="small center">${setupLine(game.count)}</p>
+        ${smallGameHint(game.count)}
         <h3>Namen in Sitzreihenfolge (im Uhrzeigersinn)</h3>
         <div class="names">${nm.join("")}</div>
         <div class="row wrap">
@@ -552,6 +555,23 @@
         </div>
       </section>`;
   }
+  function smallGameHint(n) {
+    if (n === 4) return `<div class="box smallhint"><h4>⚠️ 4 Spieler – inoffizielle Notvariante</h4>
+      <p>Offiziell braucht das Spiel mindestens 5 Spieler. Mit 4 gibt es <b>keinen Schergen</b>: 3 Dorfbewohner gegen 1 Dämon.</p>
+      <ul>
+        <li>Das Spiel ist sehr kurz: Gut hat meist nur <b>1–2 Hinrichtungen</b>, um den Dämon zu finden.</li>
+        <li>Die Zufallswahl lässt Rollen weg, die ohne Schergen nichts tun (z. B. Ermittler, Koch) oder sofort entscheiden (z. B. Shabaloth, Vortox).</li>
+        <li>Tipp: <b>Trouble Brewing</b> spielen und am ersten Tag ruhig niemanden hinrichten, wenn die Infos unklar sind.</li>
+        <li>Als Spielleiter darfst du Gut ruhig etwas mehr helfen (klare Infos), damit es spannend bleibt.</li>
+      </ul></div>`;
+    if (n <= 6) return `<div class="box smallhint"><h4>💡 Kleine Runde</h4>
+      <ul>
+        <li>Bei 5–6 Spielern lernen sich die Bösen nicht kennen, und der Dämon bekommt keine Bluffs.</li>
+        <li>Das Spiel dauert nur 2–3 Tage – jede Hinrichtung zählt.</li>
+        <li>Die Zufallswahl lässt Baron, Heiliger, Pate und Fang Gu weg, weil sie kleine Runden kaputt machen.</li>
+      </ul></div>`;
+    return "";
+  }
   const setupLine = n => { const c = SETUP_COUNTS[n]; return `${c[0]} Dorfbewohner · ${c[1]} Außenseiter · ${c[2]} Schergen · ${c[3]} Dämon`; };
 
   function slRoles() {
@@ -562,7 +582,7 @@
       const rs = rolesOf(game.edition, team);
       return `<h3 class="team-h t-${team}-text">${TEAMS[team].plural} <span class="cnt ${ok(team) ? "ok" : "bad"}">${c[team]} / ${fmt(exp[team])}</span></h3>
         <div class="tiles">${rs.map(r => `<button class="tile t-${team} ${game.selected.includes(r.id) ? "on" : ""}" data-role="${r.id}">
-          <b>${esc(r.de)}</b><small>${esc(r.a)}</small>${r.setup ? `<em>${esc(r.setup)}</em>` : ""}</button>`).join("")}</div>`;
+          <b>${esc(r.de)}</b><small>${esc(r.a)}</small>${r.setup ? `<em>${esc(r.setup)}</em>` : ""}${smallExcluded(r.id, game.count) ? `<em>⚠️ ungeeignet bei ${game.count} Spielern</em>` : ""}</button>`).join("")}</div>`;
     };
     const total = game.selected.length;
     let extra = "";
@@ -765,7 +785,7 @@
       save(); renderSL();
     }));
     const setCount = n => {
-      game.count = Math.max(5, Math.min(15, n));
+      game.count = Math.max(4, Math.min(15, n));
       if (game.selected.length && game.selected.length !== game.count) game.selected = [];
       save(); renderSL();
     };
@@ -1312,7 +1332,7 @@
     const tbl = $("#setup-table");
     if (tbl) {
       tbl.innerHTML = `<table class="setup"><thead><tr><th>Spieler</th><th class="t-townsfolk-text">Dorfb.</th><th class="t-outsider-text">Außens.</th><th class="t-minion-text">Schergen</th><th class="t-demon-text">Dämon</th></tr></thead><tbody>${
-        Object.entries(SETUP_COUNTS).map(([n, c]) => `<tr><td>${n}</td>${c.map(x => `<td>${x}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+        Object.entries(SETUP_COUNTS).map(([n, c]) => `<tr><td>${n === "4" ? "4*" : n}</td>${c.map(x => `<td>${x}</td>`).join("")}</tr>`).join("")}</tbody></table><p class="small">* 4 Spieler ist eine inoffizielle Notvariante ohne Schergen.</p>`;
     }
     bindInstall();
   }
@@ -1390,7 +1410,7 @@
     }));
     $("#takelobby") && $("#takelobby").addEventListener("click", () => {
       const order = lobbyOrder();
-      if (order.length < 5) { toast("Es braucht mindestens 5 Spieler."); return; }
+      if (order.length < 4) { toast("Es braucht mindestens 4 Spieler."); return; }
       const ids = order.slice(0, 15);
       if (order.length > 15) toast("Mehr als 15 Spieler – die übrigen kannst du als Reisende hinzufügen.");
       if (game.count !== ids.length) game.selected = [];

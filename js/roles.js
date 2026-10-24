@@ -510,9 +510,19 @@ const NIGHT_OTHER = ["dusk", "barista", "bureaucrat", "thief", "harlot", "boneco
 
 // Rollenverteilung nach Spielerzahl: [Dorfbewohner, Außenseiter, Schergen, Dämonen]
 const SETUP_COUNTS = {
+  4: [3, 0, 0, 1], // inoffizielle Notvariante: 4 Spieler, kein Scherge
   5: [3, 0, 1, 1], 6: [3, 1, 1, 1], 7: [5, 0, 1, 1], 8: [5, 1, 1, 1], 9: [5, 2, 1, 1], 10: [7, 0, 2, 1],
   11: [7, 1, 2, 1], 12: [7, 2, 2, 1], 13: [9, 0, 3, 1], 14: [9, 1, 3, 1], 15: [9, 2, 3, 1]
 };
+
+// Rollen, die in kleinen Runden das Spiel kaputt machen oder nicht funktionieren.
+// Schlüssel = höchste Spielerzahl, ab der die Liste gilt (gilt auch für alle kleineren).
+const SMALL_GAME_EXCLUDE = {
+  6: ["baron", "saint", "godfather", "fanggu"],
+  // Ohne Schergen und mit nur 4 Spielern zusätzlich:
+  4: ["investigator", "chef", "librarian", "clockmaker", "towncrier", "shabaloth", "po", "vortox", "nodashii", "spy", "recluse", "minstrel"]
+};
+const smallExcluded = (id, count) => Object.entries(SMALL_GAME_EXCLUDE).some(([n, ids]) => count <= +n && ids.includes(id));
 
 // Wie stark eine Rolle die Anzahl der Außenseiter verändert.
 const OUTSIDER_MODS = { baron: [2], godfather: [-1, 1], fanggu: [1], vigormortis: [-1] };

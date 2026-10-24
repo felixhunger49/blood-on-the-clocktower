@@ -71,6 +71,15 @@ const GUIDE = [
     <h4>Ende</h4>
     <p>Stirbt der Dämon (und keine Rolle rettet das Spiel, z. B. Scharlachrote Frau), gewinnt sofort Gut. Leben nur noch 2 Spieler, gewinnt Böse. Decke danach das Grimoire auf – das ist oft der lustigste Teil!</p>` },
 
+  { id: "klein", title: "Kleine Runden (4–6 Spieler)", html: `
+    <ul>
+      <li><b>5–6 Spieler</b> sind offiziell erlaubt. Die Bösen lernen sich nicht kennen, der Dämon bekommt keine Bluffs. Das Spiel dauert nur 2–3 Tage.</li>
+      <li><b>Weglassen:</b> Baron (sonst bleibt fast kein Dorfbewohner), Heiliger (ein Fehler beendet das Spiel), Pate und Fang Gu. Die Zufallswahl macht das automatisch.</li>
+      <li><b>Gut geeignet:</b> starke Info-Rollen wie Empath, Wahrsager, Waschfrau und Mönch – Gut hat wenig Zeit.</li>
+      <li><b>4 Spieler</b> (z. B. 5 Leute mit Spielleiter) ist eine <b>inoffizielle Notvariante</b>: 3 Dorfbewohner gegen 1 Dämon, kein Scherge. Rollen, die einen Schergen brauchen (Ermittler, Koch, Bibliothekar …), fallen weg.</li>
+      <li><b>Tipp:</b> Nicht vorschnell hinrichten. Jede falsche Hinrichtung bringt Böse dem Sieg ein großes Stück näher.</li>
+    </ul>` },
+
   { id: "begriffe", title: "Wichtige Begriffe", html: `
     <dl>
       <dt>Betrunken / Vergiftet</dt><dd>Die Fähigkeit wirkt nicht. Der Spieler merkt davon nichts und kann vom Spielleiter falsche Informationen bekommen.</dd>
