@@ -353,3 +353,15 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 
 .box.madness { border: 1px solid var(--warn); }
 .box.madness h4 { color: var(--warn); }
+
+/* Fabelwesen & eigene Rollenliste */
+:root { --fabled: #e8b931; }
+.t-fabled { --c: var(--fabled); }
+.t-fabled-text { color: var(--fabled); }
+.t-fabled-border { border-left: 4px solid var(--fabled) !important; }
+.fabledpick summary { list-style: none; cursor: pointer; }
+.fabledpick summary::-webkit-details-marker { display: none; }
+.box.script { border-left: 4px solid var(--accent); margin-top: .6rem; }
+.tile em.ed { color: var(--muted); }
+.scriptcount { position: sticky; top: 0; background: var(--panel); padding: .4rem 0; z-index: 2; font-weight: 600; font-size: .9rem; }
+.sticky-save { position: sticky; bottom: 0; background: var(--bg); padding: .6rem 0; }

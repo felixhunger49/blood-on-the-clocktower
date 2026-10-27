@@ -97,7 +97,9 @@
   // ---------- Hilfen zu Rollen ----------
   const isGood = (role, align) => role.t === "traveller" ? align !== "e" : TEAMS[role.t].good;
   const teamClass = (role, align) => role.t === "traveller" ? (align === "e" ? "t-evil-trav" : "t-traveller") : "t-" + role.t;
-  const rolesOf = (ed, team) => ROLES.filter(r => r.ed === ed && r.t === team);
+  // Gehört eine Rolle zur Edition? Bei „Eigene Liste“ entscheidet die Rollenliste des Spielleiters.
+  const inEd = (r, ed, script) => ed === "custom" ? (script || game.script || []).includes(r.id) : r.ed === ed;
+  const rolesOf = (ed, team) => ROLES.filter(r => inEd(r, ed) && r.t === team);
   const roleName = id => ROLE_BY_ID[id] ? ROLE_BY_ID[id].de : "?";
 
   // ---------- Rollenkarte ----------
@@ -113,6 +115,7 @@
       if (x.m && x.m.length) evil += `<p>${x.d ? "Weitere Schergen" : "Deine Schergen"}: <b>${x.m.map(esc).join(", ")}</b></p>`;
       if (x.m && !x.m.length && !x.d) evil += `<p>Du hast keine Schergen.</p>`;
       if (x.l) evil += `<p>Der Wahnsinnige (glaubt, Dämon zu sein): <b>${esc(x.l)}</b></p>`;
+      if (x.mo) evil += `<p>Deine Marionette (glaubt, gut zu sein): <b>${esc(x.mo)}</b></p>`;
       if (x.b && x.b.length) evil += `<p>Deine Bluffs (gute Rollen, die nicht im Spiel sind):</p><ul>${x.b.map(id => `<li><b>${esc(roleName(id))}</b> – ${esc(ROLE_BY_ID[id].a)}</li>`).join("")}</ul>`;
       evil += `</div>`;
     }
@@ -208,14 +211,15 @@
     courtier: { title: "Rolle betrunken machen", hint: "Einmal im Spiel: Wähle nachts eine Rolle, die 3 Tage und Nächte betrunken ist.", pool: "all" },
     gambler: { title: "Rolle raten", hint: "Zeige auf einen Spieler und wähle hier die Rolle, die du für seine hältst.", pool: "all" },
     cerenovus: { title: "Wahnsinns-Rolle wählen", hint: "Zeige auf einen Spieler und wähle die gute Rolle, die er morgen spielen muss.", pool: "good" },
-    pithag: { title: "Neue Rolle wählen", hint: "Zeige auf einen Spieler und wähle die Rolle, die er werden soll.", pool: "all" }
+    pithag: { title: "Neue Rolle wählen", hint: "Zeige auf einen Spieler und wähle die Rolle, die er werden soll.", pool: "all" },
+    ojo: { title: "Rolle töten", hint: "Wähle die Rolle, deren Besitzer heute Nacht stirbt.", pool: "all" }
   };
 
   function pickerHtml(mine) {
     const cfg = PICKERS[mine.r];
     if (!cfg) return "";
-    const ed = ROLE_BY_ID[mine.r].ed;
-    const pool = ROLES.filter(r => r.ed === ed && r.t !== "traveller" && r.id !== mine.r && (cfg.pool === "all" || r.t === "townsfolk" || r.t === "outsider"));
+    const ed = mine.sc ? "custom" : ROLE_BY_ID[mine.r].ed;
+    const pool = ROLES.filter(r => inEd(r, ed, mine.sc) && r.t !== "traveller" && r.t !== "fabled" && r.id !== mine.r && (cfg.pool === "all" || r.t === "townsfolk" || r.t === "outsider"));
     const chosen = cfg.keep && mine.pick ? ROLE_BY_ID[mine.pick] : null;
     return `<section class="panel picker">
       <h3>🧠 ${esc(cfg.title)}</h3>
@@ -408,7 +412,7 @@
   function autoPick() {
     const ed = game.edition, base = SETUP_COUNTS[game.count];
     // In kleinen Runden ungeeignete Rollen weglassen
-    const rolesOf = (e, t) => ROLES.filter(r => r.ed === e && r.t === t && !smallExcluded(r.id, game.count));
+    const rolesOf = (e, t) => ROLES.filter(r => inEd(r, e) && r.t === t && !smallExcluded(r.id, game.count));
     const demon = pick(rolesOf(ed, "demon"), 1);
     const minions = pick(rolesOf(ed, "minion"), base[2]);
     let outs = base[1];
@@ -416,7 +420,14 @@
     const outsiderPool = rolesOf(ed, "outsider");
     outs = Math.max(0, Math.min(outs, outsiderPool.length));
     const tf = game.count - outs - base[2] - base[3];
-    const sel = [...demon, ...minions, ...pick(outsiderPool, outs), ...pick(rolesOf(ed, "townsfolk"), tf)];
+    let sel = [...demon, ...minions, ...pick(outsiderPool, outs), ...pick(rolesOf(ed, "townsfolk"), tf)];
+    // Benötigte Partner-Rollen (z. B. Jäger → Jungfer) einwechseln
+    Object.entries(REQUIRES).forEach(([a, bId]) => {
+      if (!sel.some(r => r.id === a) || sel.some(r => r.id === bId)) return;
+      const need = ROLE_BY_ID[bId];
+      const k = sel.findIndex(r => r.t === need.t && r.id !== a);
+      if (k >= 0) sel[k] = need; else sel = sel.filter(r => r.id !== a);
+    });
     game.selected = sel.map(r => r.id);
     refreshHidden();
   }
@@ -425,6 +436,10 @@
   function refreshHidden() {
     const ed = game.edition;
     const inPlay = new Set(game.selected);
+    if (inPlay.has("marionette")) {
+      const free = rolesOf(ed, "townsfolk").filter(r => !inPlay.has(r.id) && r.id !== game.drunkShown).map(r => r.id);
+      if (!game.marionetteShown || inPlay.has(game.marionetteShown) || !free.includes(game.marionetteShown)) game.marionetteShown = pick(free, 1)[0] || null;
+    } else game.marionetteShown = null;
     if (inPlay.has("drunk")) {
       const free = rolesOf(ed, "townsfolk").filter(r => !inPlay.has(r.id)).map(r => r.id);
       if (!game.drunkShown || inPlay.has(game.drunkShown) || !free.includes(game.drunkShown)) game.drunkShown = pick(free, 1)[0] || null;
@@ -434,15 +449,16 @@
       if (!game.lunaticShown || !demons.includes(game.lunaticShown)) game.lunaticShown = game.selected.find(id => ROLE_BY_ID[id].t === "demon") || demons[0];
     } else game.lunaticShown = null;
     // Säufer und Wahnsinniger sind keine sinnvollen Bluffs: Niemand kann behaupten, sie zu sein.
-    const blocked = id => inPlay.has(id) || id === game.drunkShown || id === "drunk" || id === "lunatic";
+    const blocked = id => inPlay.has(id) || id === game.drunkShown || id === game.marionetteShown || id === "drunk" || id === "lunatic";
     if (game.bluffs.length !== 3 || game.bluffs.some(blocked)) {
-      const pool = ROLES.filter(r => r.ed === ed && (r.t === "townsfolk" || r.t === "outsider") && !blocked(r.id)).map(r => r.id);
+      const pool = ROLES.filter(r => inEd(r, ed) && (r.t === "townsfolk" || r.t === "outsider") && !blocked(r.id)).map(r => r.id);
       game.bluffs = pick(pool, 3);
     }
   }
 
   function shownRole(roleId) {
     if (roleId === "drunk" && game.drunkShown) return game.drunkShown;
+    if (roleId === "marionette" && game.marionetteShown) return game.marionetteShown;
     if (roleId === "lunatic" && game.lunaticShown) return game.lunaticShown;
     return roleId;
   }
@@ -468,10 +484,12 @@
     const ps = playerSeats();
     const t = ROLE_BY_ID[seat.role].t;
     const demon = ps.find(s => ROLE_BY_ID[s.role].t === "demon");
-    const minions = ps.filter(s => ROLE_BY_ID[s.role].t === "minion");
+    const minions = ps.filter(s => ROLE_BY_ID[s.role].t === "minion" && s.role !== "marionette");
     const lunatic = ps.find(s => s.role === "lunatic");
+    const mario = ps.find(s => s.role === "marionette");
+    if (seat.role === "marionette") return undefined;
     if (t === "minion") return { d: demon && demon.name, m: minions.filter(s => s !== seat).map(s => s.name) };
-    if (t === "demon") return { m: minions.map(s => s.name), b: game.bluffs, l: lunatic && lunatic.name };
+    if (t === "demon") return { m: minions.map(s => s.name), b: game.bluffs, l: lunatic && lunatic.name, mo: mario && mario.name };
     if (seat.role === "lunatic") {
       // Der Wahnsinnige bekommt plausible, aber falsche Schergen.
       const fake = pick(ps.filter(s => s !== seat), minions.length).map(s => s.name);
@@ -485,6 +503,7 @@
     const shown = shownRole(seat.role);
     const info = { r: shown, n: seat.name, s: i };
     if (seat.trav) info.a = seat.align;
+    if (game.edition === "custom" && PICKERS[shown]) info.sc = game.script;
     const x = evilInfoFor(seat);
     if (x) info.x = x;
     if (seat.madness && seat.madness.night === game.nightNo && seat.alive) info.m = seat.madness.role;
@@ -534,9 +553,10 @@
       <section class="panel">
         <h2>Neues Spiel</h2>
         <h3>Edition</h3>
-        <div class="chips">${Object.entries(EDITIONS).map(([k, e]) =>
-          `<button class="chip ${game.edition === k ? "on" : ""}" data-ed="${k}">${e.name}</button>`).join("")}</div>
+        <div class="chips">${PLAYABLE.map(k =>
+          `<button class="chip ${game.edition === k ? "on" : ""}" data-ed="${k}">${EDITIONS[k].name}</button>`).join("")}</div>
         <p class="small">${esc(EDITIONS[game.edition].desc)}</p>
+        ${game.edition === "custom" ? scriptSummary() : ""}
         <h3>Anzahl Spieler (ohne Spielleiter)</h3>
         <div class="counter">
           <button class="btn round" id="minus">−</button>
@@ -595,6 +615,12 @@
       extra += `<label class="field">Der <b>Säufer</b> glaubt, er sei:
         <select id="drunkShown">${free.map(r => `<option value="${r.id}" ${r.id === game.drunkShown ? "selected" : ""}>${esc(r.de)}</option>`).join("")}</select></label>`;
     }
+    if (game.selected.includes("marionette")) {
+      const free = rolesOf(game.edition, "townsfolk").filter(r => !game.selected.includes(r.id));
+      extra += `<label class="field">Die <b>Marionette</b> glaubt, sie sei:
+        <select id="marionetteShown">${free.map(r => `<option value="${r.id}" ${r.id === game.marionetteShown ? "selected" : ""}>${esc(r.de)}</option>`).join("")}</select></label>
+        <p class="small">⚠️ Setze die Marionette beim Verteilen neben den Dämon.</p>`;
+    }
     if (game.selected.includes("lunatic")) {
       extra += `<label class="field">Der <b>Wahnsinnige</b> glaubt, er sei:
         <select id="lunaticShown">${rolesOf(game.edition, "demon").map(r => `<option value="${r.id}" ${r.id === game.lunaticShown ? "selected" : ""}>${esc(r.de)}</option>`).join("")}</select></label>`;
@@ -605,10 +631,14 @@
       <section class="panel">
         <h2>Rollen für ${game.count} Spieler</h2>
         <p class="small">${esc(EDITIONS[game.edition].name)} · Tippe Rollen an, um sie hinzuzufügen oder zu entfernen.</p>
+        ${requireWarnings()}
         <div class="row wrap"><button class="btn primary" id="auto">🎲 Zufällig auswählen</button><button class="btn" id="clear">Auswahl leeren</button></div>
         ${warn}
         ${extra}
         ${["townsfolk", "outsider", "minion", "demon"].map(teamBlock).join("")}
+        <details class="fabledpick" ${(game.fabled || []).length ? "open" : ""}><summary><h3 class="team-h t-fabled-text">Fabelwesen <span class="small">(optional – Sonderregeln, alle wissen davon)</span></h3></summary>
+          <div class="tiles">${ROLES.filter(r => r.t === "fabled").map(r => `<button class="tile t-fabled ${(game.fabled || []).includes(r.id) ? "on" : ""}" data-fabled="${r.id}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></button>`).join("")}</div>
+        </details>
         <div class="row end"><button class="btn primary" id="next2" ${total === game.count ? "" : "disabled"}>Weiter: Verteilen →</button></div>
       </section>`;
   }
@@ -636,7 +666,7 @@
           ${s.trav ? `<button class="btn sm danger" data-deltrav="${i}">✕</button>` : ""}</div>
       </div>`;
     }).join("");
-    const travOpts = ROLES.filter(r => r.t === "traveller").map(r => `<option value="${r.id}">${esc(r.de)} (${esc(EDITIONS[r.ed].name)})</option>`).join("");
+    const travOpts = ROLES.filter(r => r.t === "traveller" && (game.edition !== "custom" || !(game.script || []).some(id => ROLE_BY_ID[id].t === "traveller") || game.script.includes(r.id))).map(r => `<option value="${r.id}">${esc(r.de)} (${esc(EDITIONS[r.ed].name)})</option>`).join("");
     return `
       <section class="panel">
         <h2>Rollen verteilen</h2>
@@ -710,11 +740,11 @@
       const role = ROLE_BY_ID[id];
       if (!role || !role[key]) return;
       const holders = ps.filter(s => s.role === id);
-      const drunks = ps.filter(s => s.role === "drunk" && shownRole("drunk") === id);
+      const drunks = ps.filter(s => (s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id);
       const philos = ps.filter(s => s.role === "philosopher" && s.gained === id);
       if (!holders.length && !drunks.length && !philos.length) return;
       const who = [...holders.map(s => esc(s.name) + (s.alive ? "" : " †") + (philos.length ? " (betrunken durch Philosoph)" : "")),
-        ...drunks.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Säufer – Info darf falsch sein)"),
+        ...drunks.map(s => esc(s.name) + (s.alive ? "" : " †") + (s.role === "drunk" ? " (Säufer – Info darf falsch sein)" : " (Marionette – Info darf falsch sein)")),
         ...philos.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Philosoph)")].join(", ");
       // Tote Spieler haben keine Fähigkeit mehr – außer Rollen, die gerade durch ihren Tod ausgelöst werden.
       const all = [...holders, ...drunks, ...philos];
@@ -754,6 +784,7 @@
         <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${needed}</b> Stimmen</p>
         <div class="gseats">${seats}</div>
         <div class="box"><h4>Bluffs</h4><p>${game.bluffs.map(id => roleChip(id)).join(" ")}</p></div>
+        ${(game.fabled || []).length ? `<div class="box"><h4>Fabelwesen (öffentlich ansagen)</h4>${game.fabled.map(id => `<p>${roleChip(id)} ${esc(ROLE_BY_ID[id].a)}</p>`).join("")}</div>` : ""}
       </section>
       <section class="panel">
         <h2>${first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`}</h2>
@@ -787,6 +818,7 @@
     // Schritt 1
     $$("[data-ed]").forEach(b => b.addEventListener("click", () => {
       if (game.edition !== b.dataset.ed) { game.edition = b.dataset.ed; game.selected = []; game.bluffs = []; }
+      if (game.edition === "custom" && !(game.script || []).length) { save(); scriptEditor(); return; }
       save(); renderSL();
     }));
     const setCount = n => {
@@ -815,12 +847,19 @@
     // Schritt 2
     $("#auto") && $("#auto").addEventListener("click", () => { autoPick(); save(); renderSL(); });
     $("#clear") && $("#clear").addEventListener("click", () => { game.selected = []; save(); renderSL(); });
-    $$(".tile").forEach(t => t.addEventListener("click", () => {
+    $$(".tile[data-role]").forEach(t => t.addEventListener("click", () => {
       const id = t.dataset.role;
       game.selected = game.selected.includes(id) ? game.selected.filter(x => x !== id) : [...game.selected, id];
       refreshHidden(); save(); renderSL();
     }));
+    $$("[data-fabled]").forEach(t => t.addEventListener("click", () => {
+      const id = t.dataset.fabled, f = game.fabled || [];
+      game.fabled = f.includes(id) ? f.filter(x => x !== id) : [...f, id];
+      save(); renderSL();
+    }));
+    $("#editscript") && $("#editscript").addEventListener("click", scriptEditor);
     $("#drunkShown") && $("#drunkShown").addEventListener("change", e => { game.drunkShown = e.target.value; game.bluffs = game.bluffs.filter(b => b !== game.drunkShown); refreshHidden(); save(); });
+    $("#marionetteShown") && $("#marionetteShown").addEventListener("change", e => { game.marionetteShown = e.target.value; game.bluffs = game.bluffs.filter(b => b !== game.marionetteShown); refreshHidden(); save(); });
     $("#lunaticShown") && $("#lunaticShown").addEventListener("change", e => { game.lunaticShown = e.target.value; save(); });
     $("#next2") && $("#next2").addEventListener("click", () => goStep("assign"));
 
@@ -1052,7 +1091,7 @@
   // Rolle oder Gesinnung eines Spielers während des Spiels ändern (Imp-Wechsel, Scharlachrote Frau, Grubenhexe …).
   function changeRole(i) {
     const s = game.seats[i];
-    const pool = ROLES.filter(r => s.trav ? r.t === "traveller" : (r.ed === game.edition && r.t !== "traveller"));
+    const pool = ROLES.filter(r => s.trav ? r.t === "traveller" : (inEd(r, game.edition) && r.t !== "traveller" && r.t !== "fabled"));
     openModal(`<h2>${esc(s.name)}</h2>
       <label class="field">Neue Rolle:
         <select id="newrole">${pool.map(r => `<option value="${r.id}" ${r.id === s.role ? "selected" : ""}>${esc(r.de)} (${TEAMS[r.t].name})</option>`).join("")}</select></label>
@@ -1079,11 +1118,86 @@
     });
   }
 
+  // =====================================================================
+  //  EIGENE ROLLENLISTE
+  // =====================================================================
+  function scriptCounts(list) {
+    const c = { townsfolk: 0, outsider: 0, minion: 0, demon: 0, traveller: 0 };
+    list.forEach(id => { const r = ROLE_BY_ID[id]; if (r && c[r.t] !== undefined) c[r.t]++; });
+    return c;
+  }
+  function scriptSummary() {
+    const sc = game.script || [];
+    const c = scriptCounts(sc);
+    const max = SETUP_COUNTS[15];
+    const warn = [];
+    if (!c.demon) warn.push("mindestens 1 Dämon");
+    if (c.townsfolk < SETUP_COUNTS[game.count][0] + 2) warn.push(`mehr Dorfbewohner (mind. ${SETUP_COUNTS[game.count][0] + 2} empfohlen)`);
+    if (c.minion < SETUP_COUNTS[game.count][2]) warn.push(`mind. ${SETUP_COUNTS[game.count][2]} Schergen`);
+    return `<div class="box script">
+      <h4>📜 Deine Rollenliste (${sc.length} Rollen)</h4>
+      <p class="small">${c.townsfolk} Dorfbewohner · ${c.outsider} Außenseiter · ${c.minion} Schergen · ${c.demon} Dämonen${c.traveller ? ` · ${c.traveller} Reisende` : ""}</p>
+      ${warn.length ? `<p class="warnmsg">Für ${game.count} Spieler fehlt noch: ${warn.join(", ")}.</p>` : ""}
+      <button class="btn primary" id="editscript">✏️ Rollenliste bearbeiten</button>
+    </div>`;
+  }
+  function requireWarnings() {
+    const w = Object.entries(REQUIRES).filter(([a, b]) => game.selected.includes(a) && !game.selected.includes(b))
+      .map(([a, b]) => `${roleName(a)} braucht ${roleName(b)}`);
+    return w.length ? `<p class="warnmsg">⚠️ ${w.join(" · ")} im Spiel.</p>` : "";
+  }
+  let scriptFilter = "all";
+  function scriptEditor() {
+    const sc = new Set(game.script || []);
+    const draw = () => {
+      const c = scriptCounts([...sc]);
+      const list = ROLES.filter(r => r.t !== "fabled" && (scriptFilter === "all" || r.ed === scriptFilter));
+      openModal(`<h2>📜 Eigene Rollenliste</h2>
+        <p class="small">Tippe Rollen an, die in deinem Spiel vorkommen dürfen. Die Zufallswahl nimmt dann nur Rollen aus dieser Liste.</p>
+        <div class="chips">
+          <button class="chip" data-preset="tb">+ Trouble Brewing</button>
+          <button class="chip" data-preset="bmr">+ Bad Moon Rising</button>
+          <button class="chip" data-preset="snv">+ Sects &amp; Violets</button>
+          <button class="chip" data-preset="exp">+ Experimentelle</button>
+          <button class="chip" data-preset="none">Liste leeren</button>
+        </div>
+        <div class="chips">${["all", "tb", "bmr", "snv", "exp"].map(k => `<button class="chip ${scriptFilter === k ? "on" : ""}" data-sfilter="${k}">${k === "all" ? "Alle zeigen" : EDITIONS[k].name}</button>`).join("")}</div>
+        <p class="scriptcount">${sc.size} gewählt: ${c.townsfolk} Dorfb. · ${c.outsider} Außens. · ${c.minion} Schergen · ${c.demon} Dämonen · ${c.traveller} Reisende</p>
+        ${["townsfolk", "outsider", "minion", "demon", "traveller"].map(t => {
+          const rs = list.filter(r => r.t === t);
+          return rs.length ? `<h3 class="team-h t-${t}-text">${TEAMS[t].plural}</h3><div class="tiles">${rs.map(r =>
+            `<button class="tile t-${t} ${sc.has(r.id) ? "on" : ""}" data-sid="${r.id}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small><em class="ed">${esc(EDITIONS[r.ed].name)}</em></button>`).join("")}</div>` : "";
+        }).join("")}
+        <div class="row end sticky-save"><button class="btn primary" id="savescript">Übernehmen</button></div>`, "full");
+      $$("[data-sid]").forEach(b => b.addEventListener("click", () => {
+        const id = b.dataset.sid;
+        sc.has(id) ? sc.delete(id) : sc.add(id);
+        b.classList.toggle("on");
+        const c2 = scriptCounts([...sc]);
+        $(".scriptcount").textContent = `${sc.size} gewählt: ${c2.townsfolk} Dorfb. · ${c2.outsider} Außens. · ${c2.minion} Schergen · ${c2.demon} Dämonen · ${c2.traveller} Reisende`;
+      }));
+      $$("[data-preset]").forEach(b => b.addEventListener("click", () => {
+        const k = b.dataset.preset;
+        if (k === "none") sc.clear();
+        else ROLES.filter(r => r.ed === k && r.t !== "fabled").forEach(r => sc.add(r.id));
+        draw();
+      }));
+      $$("[data-sfilter]").forEach(b => b.addEventListener("click", () => { scriptFilter = b.dataset.sfilter; draw(); }));
+      $("#savescript").addEventListener("click", () => {
+        game.script = ROLES.filter(r => sc.has(r.id)).map(r => r.id);
+        game.selected = game.selected.filter(id => sc.has(id));
+        game.bluffs = [];
+        save(); closeModal(); renderSL();
+      });
+    };
+    draw();
+  }
+
   // Cerenovus: Spieler muss morgen „verrückt“ danach sein, eine gute Rolle zu sein.
   function madnessDialog(i) {
     const s = game.seats[i];
     const cur = s.madness && s.madness.night === game.nightNo ? s.madness.role : (game.lastPicks || {}).cerenovus;
-    const pool = ROLES.filter(r => r.ed === game.edition && (r.t === "townsfolk" || r.t === "outsider"));
+    const pool = ROLES.filter(r => inEd(r, game.edition) && (r.t === "townsfolk" || r.t === "outsider"));
     openModal(`<h2>😵 Wahnsinn für ${esc(s.name)}</h2>
       <p class="small">Der Cerenovus hat diesen Spieler gewählt. Er muss morgen überzeugend behaupten, diese Rolle zu sein – sonst darfst du ihn hinrichten lassen.</p>
       <label class="field">Rolle:
@@ -1149,12 +1263,12 @@
   const ACTS_WHEN_DEAD = ["ravenkeeper", "sage", "moonchild", "sweetheart", "barber"];
   // Fähigkeiten, die nur einmal pro Spiel wirken.
   const ONCE_PER_GAME = ["courtier", "professor", "seamstress", "philosopher", "assassin", "bonecollector",
-    "slayer", "artist", "virgin", "fool", "judge"];
+    "slayer", "artist", "virgin", "fool", "judge", "huntsman", "nightwatchman", "golem"];
 
   // Philosoph: Der Spielleiter wählt aus, welche gute Rolle er sich genommen hat.
   function philoSelect(i) {
     const s = game.seats[i];
-    const opts = ROLES.filter(r => r.ed === game.edition && (r.t === "townsfolk" || r.t === "outsider") && r.id !== "philosopher");
+    const opts = ROLES.filter(r => inEd(r, game.edition) && (r.t === "townsfolk" || r.t === "outsider") && r.id !== "philosopher");
     return `<label class="philo">🧠 Gewählte Rolle:
       <select data-philo="${i}">
         <option value="">– noch nicht gewählt –</option>
@@ -1331,7 +1445,7 @@
         <input id="lexq" class="search" placeholder="🔍 Rolle suchen …" value="${esc(lexFilter.q)}">
         <div class="chips">
           <button class="chip ${lexFilter.ed === "all" ? "on" : ""}" data-led="all">Alle</button>
-          ${Object.entries(EDITIONS).map(([k, e]) => `<button class="chip ${lexFilter.ed === k ? "on" : ""}" data-led="${k}">${e.name}</button>`).join("")}
+          ${Object.entries(EDITIONS).filter(([k]) => k !== "custom").map(([k, e]) => `<button class="chip ${lexFilter.ed === k ? "on" : ""}" data-led="${k}">${e.name}</button>`).join("")}
         </div>
         <div class="chips">
           <button class="chip ${lexFilter.team === "all" ? "on" : ""}" data-lteam="all">Alle Typen</button>
@@ -1345,7 +1459,7 @@
         && (lexFilter.team === "all" || r.t === lexFilter.team)
         && (!q || (r.de + " " + r.en + " " + r.a).toLowerCase().includes(q)));
       let html = "";
-      Object.keys(EDITIONS).forEach(ed => {
+      Object.keys(EDITIONS).filter(k => k !== "custom").forEach(ed => {
         const part = list.filter(r => r.ed === ed);
         if (!part.length) return;
         html += `<section class="panel"><h2>${esc(EDITIONS[ed].name)} <span class="small">(${esc(EDITIONS[ed].de)})</span></h2>`;
@@ -1533,6 +1647,7 @@
     const w = game.winner;
     return {
       nightNo: game.nightNo || 1,
+      fabled: game.fabled || [],
       started: game.seats.length > 0 && game.step !== "setup",
       seats: game.seats.map(s => ({ n: s.name, a: !!s.alive, g: !!s.ghost, t: !!s.trav })),
       winner: w ? {
@@ -1748,6 +1863,7 @@
     const p = pubState;
     const seats = (p && p.seats) || [];
     return `<section class="panel netbar">
+      ${p && (p.fabled || []).length ? `<p class="small">✨ Fabelwesen: ${p.fabled.map(id => `<b>${esc(roleName(id))}</b> – ${esc(ROLE_BY_ID[id] ? ROLE_BY_ID[id].a : "")}`).join("<br>")}</p>` : ""}
       <div class="nb-top">${netDot()}<b>Raum ${esc(on.code)}</b><span>· ${esc(on.name)}</span>${p && p.started ? `<span>· 🌙 Nacht ${p.nightNo}</span>` : ""}</div>
       ${seats.length ? `<details class="nb-players" ${netbarOpen ? "open" : ""}><summary>Mitspieler (${seats.filter(s => s.a).length} von ${seats.length} leben)</summary>
         <ul>${seats.map(s => `<li class="${s.a ? "" : "dead"}"><span>${esc(s.n)}</span><span>${s.a ? "❤️" : s.g ? "💀 👻 Stimme frei" : "💀"}</span></li>`).join("")}</ul></details>` : ""}

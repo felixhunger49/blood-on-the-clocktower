@@ -71,12 +71,29 @@ const GUIDE = [
     <h4>Ende</h4>
     <p>Stirbt der Dämon (und keine Rolle rettet das Spiel, z. B. Scharlachrote Frau), gewinnt sofort Gut. Leben nur noch 2 Spieler, gewinnt Böse. Decke danach das Grimoire auf – das ist oft der lustigste Teil!</p>` },
 
+  { id: "liste", title: "Eigene Rollenliste & Fabelwesen", html: `
+    <h4>Eigene Rollenliste</h4>
+    <ol>
+      <li>Unter „Spielleiter → 1 · Spiel“ die Edition <b>„Eigene Liste“</b> wählen.</li>
+      <li>Im Editor Rollen antippen – aus allen drei Editionen und den <b>experimentellen Rollen</b>. Mit „+ Trouble Brewing“ usw. übernimmst du eine ganze Edition auf einmal.</li>
+      <li>Danach funktioniert alles wie gewohnt: Die Zufallswahl, Bluffs, Säufer, Philosoph usw. nehmen nur Rollen aus deiner Liste.</li>
+    </ol>
+    <p class="hint">Tipp: Eine gute Liste hat etwa 13 Dorfbewohner, 4 Außenseiter, 4 Schergen und 1–4 Dämonen. Manche Rollen brauchen Partner: Jäger → Jungfer, Chorknabe → König. Die App ergänzt sie automatisch.</p>
+    <h4>Fabelwesen</h4>
+    <p>Fabelwesen sind keine Spieler-Rollen, sondern <b>Sonderregeln</b>, die der Spielleiter öffentlich ansagt. Du wählst sie unter „2 · Rollen“ ganz unten. Im Online-Spiel sehen alle Spieler, welche Fabelwesen gelten.</p>
+    <ul>
+      <li><b>Spielzeugmacher</b> – ideal für 5–6 Spieler: Die Bösen lernen sich trotzdem kennen, dafür lässt der Dämon mindestens eine Nacht aus.</li>
+      <li><b>Engel</b> und <b>Buddhist</b> – schützen und fördern neue Spieler.</li>
+      <li><b>Revolutionär</b> – für zwei Spieler, die im selben Team sein wollen.</li>
+    </ul>` },
+
   { id: "klein", title: "Kleine Runden (4–6 Spieler)", html: `
     <ul>
       <li><b>5–6 Spieler</b> sind offiziell erlaubt. Die Bösen lernen sich nicht kennen, der Dämon bekommt keine Bluffs. Das Spiel dauert nur 2–3 Tage.</li>
       <li><b>Weglassen:</b> Baron (sonst bleibt fast kein Dorfbewohner), Heiliger (ein Fehler beendet das Spiel), Pate und Fang Gu. Die Zufallswahl macht das automatisch.</li>
       <li><b>Gut geeignet:</b> starke Info-Rollen wie Empath, Wahrsager, Waschfrau und Mönch – Gut hat wenig Zeit.</li>
       <li><b>4 Spieler</b> (z. B. 5 Leute mit Spielleiter) ist eine <b>inoffizielle Notvariante</b>: 3 Dorfbewohner gegen 1 Dämon, kein Scherge. Rollen, die einen Schergen brauchen (Ermittler, Koch, Bibliothekar …), fallen weg.</li>
+      <li><b>Fabelwesen „Spielzeugmacher“:</b> Bei 5–6 Spielern lernen sich die Bösen damit trotzdem kennen – das macht kleine Runden ausgeglichener.</li>
       <li><b>Tipp:</b> Nicht vorschnell hinrichten. Jede falsche Hinrichtung bringt Böse dem Sieg ein großes Stück näher.</li>
     </ul>` },
 
