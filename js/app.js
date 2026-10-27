@@ -128,6 +128,9 @@
           <div class="box ability"><h4>Deine Fähigkeit</h4><p>${esc(role.a)}</p></div>
           <div class="box"><h4>So funktioniert's</h4><p>${esc(role.e)}</p></div>
           ${role.tip ? `<div class="box"><h4>💡 Tipp</h4><p>${esc(role.tip)}</p></div>` : ""}
+          ${info.m && ROLE_BY_ID[info.m] ? `<div class="box madness"><h4>😵 Wahnsinn</h4>
+            <p>Du musst am Tag <b>überzeugend behaupten, ${esc(ROLE_BY_ID[info.m].de)} zu sein</b>. Tust du es nicht, kann der Spielleiter dich hinrichten lassen.</p>
+            <p class="small">${esc(ROLE_BY_ID[info.m].de)}: ${esc(ROLE_BY_ID[info.m].a)}</p></div>` : ""}
           ${evil}
           <div class="box win"><h4>🏆 Dein Ziel</h4><p>${good
             ? "Du bist <b>gut</b>. Finde den Dämon und lass ihn hinrichten. Gut gewinnt, wenn der Dämon stirbt."
@@ -484,6 +487,7 @@
     if (seat.trav) info.a = seat.align;
     const x = evilInfoFor(seat);
     if (x) info.x = x;
+    if (seat.madness && seat.madness.night === game.nightNo && seat.alive) info.m = seat.madness.role;
     return info;
   }
   function seatCode(seat, i) {
@@ -679,6 +683,7 @@
           ${s.alive ? "" : `<button class="btn sm" data-ghost="${i}">${s.ghost ? "👻 Stimme frei" : "🚫 Stimme verbraucht"}</button>`}
           <button class="btn sm" data-info="${s.role}">ℹ️</button>
           <button class="btn sm" data-change="${i}" title="Rolle oder Gesinnung ändern">🔁</button>
+          ${s.alive && game.seats.some(x => x.role === "cerenovus") ? `<button class="btn sm ${s.madness && s.madness.night === game.nightNo ? "used" : ""}" data-mad="${i}" title="Wahnsinn (Cerenovus)">😵${s.madness && s.madness.night === game.nightNo ? " " + esc(roleName(s.madness.role)) : ""}</button>` : ""}
           ${s.role === "philosopher" ? philoSelect(i) : ""}
           ${ONCE_PER_GAME.includes(s.role) && s.role !== "philosopher" ? `<button class="btn sm ${s.used ? "used" : ""}" data-used="${i}">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>` : ""}
         </div>
@@ -884,6 +889,7 @@
     $("#prevnight") && $("#prevnight").addEventListener("click", () => { game.nightNo--; save(); renderSL(); });
     bindDay();
     $$("[data-change]").forEach(b => b.addEventListener("click", () => changeRole(+b.dataset.change)));
+    $$("[data-mad]").forEach(b => b.addEventListener("click", () => madnessDialog(+b.dataset.mad)));
     $$("[data-win]").forEach(b => b.addEventListener("click", () => {
       const team = b.dataset.win;
       const reason = b.dataset.reason || ($("#winreason") && $("#winreason").value.trim()) ||
@@ -1056,13 +1062,50 @@
           <option value="g" ${s.align === "g" ? "selected" : ""}>Gut</option>
           <option value="e" ${s.align === "e" ? "selected" : ""}>Böse</option>
         </select></label>
-      <p class="small">Danach bekommt der Spieler einen neuen Code/QR-Code unter „3 · Verteilen“, falls er seine neue Rolle nachlesen soll.</p>
-      <div class="row end"><button class="btn primary" id="saverole">Speichern</button></div>`);
+      <p class="small">${game.online && s.pid ? "🌐 Der Spieler sieht seine neue Rolle automatisch auf seinem Handy." : "Zeig dem Spieler seine neue Rolle (Knopf unten) oder gib ihm unter „3 · Verteilen“ einen neuen QR-Code."}</p>
+      <div class="row end"><button class="btn" id="showrole">📱 Dem Spieler zeigen</button><button class="btn primary" id="saverole">Speichern</button></div>`);
+    $("#showrole").addEventListener("click", () => {
+      const r = ROLE_BY_ID[$("#newrole").value];
+      openModal(`<div class="nightshow pickshow"><p class="ns-label">${esc(s.name)}</p><h2>Du bist jetzt</h2>
+        <div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div></div>
+        <div class="row center"><button class="btn big" id="showdone">✓ Fertig</button></div>`, "full night");
+      $("#showdone").addEventListener("click", () => { closeModal(); changeRole(i); });
+    });
     $("#saverole").addEventListener("click", () => {
       s.role = $("#newrole").value;
       s.align = $("#newalign").value || (s.trav ? "g" : undefined);
       game.ignoreEnd = null;
       save(); closeModal(); renderSL();
+    });
+  }
+
+  // Cerenovus: Spieler muss morgen „verrückt“ danach sein, eine gute Rolle zu sein.
+  function madnessDialog(i) {
+    const s = game.seats[i];
+    const cur = s.madness && s.madness.night === game.nightNo ? s.madness.role : (game.lastPicks || {}).cerenovus;
+    const pool = ROLES.filter(r => r.ed === game.edition && (r.t === "townsfolk" || r.t === "outsider"));
+    openModal(`<h2>😵 Wahnsinn für ${esc(s.name)}</h2>
+      <p class="small">Der Cerenovus hat diesen Spieler gewählt. Er muss morgen überzeugend behaupten, diese Rolle zu sein – sonst darfst du ihn hinrichten lassen.</p>
+      <label class="field">Rolle:
+        <select id="madrole">${pool.map(r => `<option value="${r.id}" ${r.id === cur ? "selected" : ""}>${esc(r.de)}</option>`).join("")}</select></label>
+      <p class="small">${game.online && s.pid ? "🌐 Der Spieler sieht den Wahnsinn automatisch auf seiner Rollenkarte – bis zur nächsten Nacht." : "Zeig es dem Spieler mit dem Knopf „Dem Spieler zeigen“."}</p>
+      <div class="row wrap end">
+        ${s.madness ? `<button class="btn danger" id="madclear">Entfernen</button>` : ""}
+        <button class="btn" id="madshow">📱 Dem Spieler zeigen</button>
+        <button class="btn primary" id="madsave">Speichern</button>
+      </div>`);
+    const store_ = () => { s.madness = { role: $("#madrole").value, night: game.nightNo }; save(); };
+    $("#madsave").addEventListener("click", () => { store_(); closeModal(); renderSL(); });
+    $("#madclear") && $("#madclear").addEventListener("click", () => { delete s.madness; save(); closeModal(); renderSL(); });
+    $("#madshow").addEventListener("click", () => {
+      store_();
+      const r = ROLE_BY_ID[s.madness.role];
+      openModal(`<div class="nightshow pickshow"><p class="ns-label">${esc(s.name)} · 😵 Wahnsinn</p>
+        <h2>Morgen musst du überzeugend behaupten, das zu sein:</h2>
+        <div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div>
+        <p class="ns-hint">Sonst kann der Spielleiter dich hinrichten lassen.</p></div>
+        <div class="row center"><button class="btn big" id="maddone">✓ Fertig</button></div>`, "full night");
+      $("#maddone").addEventListener("click", () => { closeModal(); renderSL(); });
     });
   }
 
@@ -1558,6 +1601,7 @@
     const name = i >= 0 ? game.seats[i].name : (lobby[uid] && lobby[uid].name) || "?";
     const text = `${name} (${roleName(msg.role)}) wählt: ${roleName(msg.pick)}`;
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
+    game.lastPicks = Object.assign(game.lastPicks || {}, { [msg.role]: msg.pick });
     if (i >= 0 && game.seats[i].role === "philosopher") setPhilo(i, msg.pick);
     else { save(); refreshHostView(); }
     notice("📨 " + text);
@@ -1663,9 +1707,10 @@
       info.online = on.code;
       if (old && old.r === info.r && old.pick) info.pick = old.pick;
       store.set("botc.myrole", info);
-      const changed = !old || old.r !== info.r || old.a !== info.a || JSON.stringify(old.x) !== JSON.stringify(info.x);
+      const changed = !old || old.r !== info.r || old.a !== info.a || old.m !== info.m || JSON.stringify(old.x) !== JSON.stringify(info.x);
       if (changed) {
-        if (old && old.online) notice("Der Spielleiter hat deine Rolle geändert – schau sie dir an.");
+        if (info.m && (!old || old.m !== info.m)) notice("😵 Du bist verrückt! Schau auf deine Rollenkarte, welche Rolle du am Tag behaupten musst.");
+        else if (old && old.online && old.r !== info.r) notice("Der Spielleiter hat deine Rolle geändert – schau sie dir an.");
         refreshPlayerView(true);
       }
     }));

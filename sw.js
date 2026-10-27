@@ -1,6 +1,6 @@
 // Offline-Cache: App funktioniert nach dem ersten Öffnen auch ohne Internet.
 // Bei jeder Änderung an der App VERSION erhöhen (auch die ?v= in index.html).
-const VERSION = "19";
+const VERSION = "20";
 const CACHE = "clocktower-v" + VERSION;
 const FILES = ["./", "index.html", "css/style.css", "js/roles.js", "js/guide.js", "js/app.js", "js/online.js", "js/firebase-config.js", "vendor/qrcode.js",
   "manifest.webmanifest", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];

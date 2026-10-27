@@ -350,3 +350,6 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 
 .smallhint { border-left: 4px solid var(--warn); margin-top: .8rem; }
 .smallhint ul { margin: .3rem 0; padding-left: 1.1rem; font-size: .9rem; }
+
+.box.madness { border: 1px solid var(--warn); }
+.box.madness h4 { color: var(--warn); }
