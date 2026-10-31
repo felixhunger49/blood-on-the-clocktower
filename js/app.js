@@ -131,6 +131,8 @@
           <div class="box ability"><h4>Deine Fähigkeit</h4><p>${esc(role.a)}</p></div>
           <div class="box"><h4>So funktioniert's</h4><p>${esc(role.e)}</p></div>
           ${role.tip ? `<div class="box"><h4>💡 Tipp</h4><p>${esc(role.tip)}</p></div>` : ""}
+          ${(info.i || []).length ? `<div class="box infos"><h4>🌙 Deine Infos vom Spielleiter</h4><ul>${info.i.map(x =>
+            `<li><b>Nacht ${x.n}:</b> ${(x.r || []).map(id => esc(roleName(id))).join(" / ")}${x.t ? ` – ${esc(x.t)}` : ""}</li>`).join("")}</ul></div>` : ""}
           ${info.m && ROLE_BY_ID[info.m] ? `<div class="box madness"><h4>😵 Wahnsinn</h4>
             <p>Du musst am Tag <b>überzeugend behaupten, ${esc(ROLE_BY_ID[info.m].de)} zu sein</b>. Tust du es nicht, kann der Spielleiter dich hinrichten lassen.</p>
             <p class="small">${esc(ROLE_BY_ID[info.m].de)}: ${esc(ROLE_BY_ID[info.m].a)}</p></div>` : ""}
@@ -507,6 +509,7 @@
     const x = evilInfoFor(seat);
     if (x) info.x = x;
     if (seat.madness && seat.madness.night === game.nightNo && seat.alive) info.m = seat.madness.role;
+    if ((seat.infos || []).length) info.i = seat.infos.slice(-10);
     return info;
   }
   function seatCode(seat, i) {
@@ -795,6 +798,7 @@
             <p>${s.inactive ? s.why : esc(s.text)}</p>
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
+            ${SHOW_ROLE.includes(s.id) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 Rolle zeigen${game.online ? " / senden" : ""}</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
@@ -893,6 +897,7 @@
     $$("[data-note]").forEach(inp => inp.addEventListener("input", () => { game.seats[+inp.dataset.note].note = inp.value; save(); }));
     $$("[data-info]").forEach(b => b.addEventListener("click", () => openModal(roleDetail(ROLE_BY_ID[b.dataset.info], true))));
     $$(".showevil").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); showEvilInfo(b.dataset.show); }));
+    $$(".showinfo").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); infoDialog(b.dataset.infoStep); }));
     $$("[data-useonce]").forEach(b => b.addEventListener("click", e => {
       e.stopPropagation();
       const id = b.dataset.useonce;
@@ -1191,6 +1196,91 @@
       });
     };
     draw();
+  }
+
+  // =====================================================================
+  //  ROLLEN-INFO ZEIGEN (Totengräber, Rabenhüter, Waschfrau …)
+  // =====================================================================
+  // Nacht-Schritte, bei denen der Spielleiter eine oder mehrere Rollen zeigt.
+  const SHOW_ROLE = ["undertaker", "ravenkeeper", "washerwoman", "librarian", "investigator", "grandmother",
+    "dreamer", "king", "pixie", "godfather", "sage", "noble"];
+  const INFO_HINT = {
+    undertaker: "Rolle des heute Hingerichteten",
+    ravenkeeper: "Rolle des Spielers, auf den der Rabenhüter zeigt",
+    washerwoman: "Dorfbewohner-Rolle – dazu zwei Spieler nennen",
+    librarian: "Außenseiter-Rolle – dazu zwei Spieler nennen",
+    investigator: "Schergen-Rolle – dazu zwei Spieler nennen",
+    grandmother: "Rolle des Enkelkinds – dazu den Spieler nennen",
+    dreamer: "Eine gute und eine böse Rolle (eine stimmt)",
+    king: "Eine lebende Rolle",
+    pixie: "Eine Dorfbewohner-Rolle im Spiel",
+    godfather: "Die Außenseiter im Spiel",
+    sage: "Zwei Spieler nennen, einer ist der Dämon",
+    noble: "Drei Spieler nennen, genau einer ist böse"
+  };
+
+  // Wer wacht bei diesem Nacht-Schritt auf? (inkl. Säufer, Marionette, Philosoph)
+  const stepHolders = id => game.seats.map((s, i) => [s, i]).filter(([s]) =>
+    s.role === id || ((s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id) || (s.role === "philosopher" && s.gained === id));
+
+  function infoDialog(stepId) {
+    const holders = stepHolders(stepId);
+    if (!holders.length) return;
+    // Vorschlag: beim Totengräber die Rolle des heute Hingerichteten
+    let pre = [];
+    if (stepId === "undertaker") {
+      const day = (game.days || {})[game.nightNo - 1];
+      if (day && day.exec && day.exec !== "none" && game.seats[day.exec.seat]) pre = [game.seats[day.exec.seat].role];
+    }
+    if (stepId === "godfather") pre = playerSeats().filter(s => ROLE_BY_ID[s.role].t === "outsider").map(s => s.role).slice(0, 2);
+    const pool = ROLES.filter(r => r.t !== "fabled" && (inEd(r, game.edition) || game.selected.includes(r.id)));
+    const opts = sel => `<option value="">–</option>${["townsfolk", "outsider", "minion", "demon", "traveller"].map(t => {
+      const l = pool.filter(r => r.t === t);
+      return l.length ? `<optgroup label="${TEAMS[t].plural}">${l.map(r => `<option value="${r.id}" ${r.id === sel ? "selected" : ""}>${esc(r.de)}</option>`).join("")}</optgroup>` : "";
+    }).join("")}`;
+    const noRole = ["sage", "noble"].includes(stepId);
+    openModal(`<h2>📱 ${esc(roleName(stepId))}: Info zeigen</h2>
+      <p class="small">${esc(INFO_HINT[stepId] || "")}${stepId === "undertaker" && !pre.length ? " – heute wurde niemand über den Abstimmungs-Helfer hingerichtet, bitte selbst wählen." : ""}</p>
+      ${holders.length > 1 ? `<label class="field">Für: <select id="inforcpt">${holders.map(([s, i]) => `<option value="${i}">${esc(s.name)}${s.role !== stepId ? ` (${esc(roleName(s.role))})` : ""}</option>`).join("")}</select></label>`
+        : `<p>Für: <b>${esc(holders[0][0].name)}</b>${holders[0][0].role !== stepId ? ` <span class="small">(${esc(roleName(holders[0][0].role))} – Info darf falsch sein)</span>` : ""}</p>`}
+      ${noRole ? "" : `<label class="field">Rolle: <select id="inforole1">${opts(pre[0])}</select></label>
+      <label class="field">2. Rolle (optional): <select id="inforole2">${opts(pre[1])}</select></label>`}
+      <label class="field">Zusatz (optional): <input id="infotext" placeholder="z. B. einer von: Anna, Ben"></label>
+      <div class="row wrap end">
+        <button class="btn" id="infoshow">📱 Zeigen</button>
+        ${game.online ? `<button class="btn primary" id="infosend">🌐 Aufs Handy senden</button>` : ""}
+      </div>`);
+    const collect = () => {
+      const i = holders.length > 1 ? +$("#inforcpt").value : holders[0][1];
+      const r = noRole ? [] : [$("#inforole1").value, $("#inforole2").value].filter(Boolean);
+      return { i, r, t: $("#infotext").value.trim() };
+    };
+    const store_ = ({ i, r, t }) => {
+      const s = game.seats[i];
+      s.infos = [...(s.infos || []), { n: game.nightNo, r, t }].slice(-10);
+      const d = game.done[game.nightNo] || [];
+      if (!d.includes(stepId)) game.done[game.nightNo] = [...d, stepId];
+      save();
+    };
+    $("#infoshow").addEventListener("click", () => {
+      const c = collect();
+      if (!c.r.length && !c.t) { toast("Bitte eine Rolle oder einen Zusatz angeben."); return; }
+      store_(c);
+      openModal(`<div class="nightshow pickshow">
+          <p class="ns-label">${esc(game.seats[c.i].name)} · ${esc(roleName(stepId))}</p>
+          ${c.r.map(id => { const r = ROLE_BY_ID[id]; return `<div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div>`; }).join("")}
+          ${c.t ? `<p class="ns-text">${esc(c.t)}</p>` : ""}
+        </div>
+        <div class="row center"><button class="btn big" id="infodone">✓ Fertig – verdecken</button></div>`, "full night");
+      $("#infodone").addEventListener("click", () => { closeModal(); renderSL(); });
+    });
+    $("#infosend") && $("#infosend").addEventListener("click", () => {
+      const c = collect();
+      if (!c.r.length && !c.t) { toast("Bitte eine Rolle oder einen Zusatz angeben."); return; }
+      store_(c);
+      closeModal(); renderSL();
+      toast(game.seats[c.i].pid ? `An ${game.seats[c.i].name} gesendet` : `${game.seats[c.i].name} ist nicht online – bitte zeigen`);
+    });
   }
 
   // Cerenovus: Spieler muss morgen „verrückt“ danach sein, eine gute Rolle zu sein.
@@ -1822,9 +1912,11 @@
       info.online = on.code;
       if (old && old.r === info.r && old.pick) info.pick = old.pick;
       store.set("botc.myrole", info);
-      const changed = !old || old.r !== info.r || old.a !== info.a || old.m !== info.m || JSON.stringify(old.x) !== JSON.stringify(info.x);
+      const newInfo = JSON.stringify((old && old.i) || []) !== JSON.stringify(info.i || []) && (info.i || []).length > ((old && old.i) || []).length;
+      const changed = !old || newInfo || old.r !== info.r || old.a !== info.a || old.m !== info.m || JSON.stringify(old.x) !== JSON.stringify(info.x);
       if (changed) {
-        if (info.m && (!old || old.m !== info.m)) notice("😵 Du bist verrückt! Schau auf deine Rollenkarte, welche Rolle du am Tag behaupten musst.");
+        if (newInfo && old) notice("🌙 Neue Info vom Spielleiter – schau auf deine Rollenkarte.");
+        else if (info.m && (!old || old.m !== info.m)) notice("😵 Du bist verrückt! Schau auf deine Rollenkarte, welche Rolle du am Tag behaupten musst.");
         else if (old && old.online && old.r !== info.r) notice("Der Spielleiter hat deine Rolle geändert – schau sie dir an.");
         refreshPlayerView(true);
       }

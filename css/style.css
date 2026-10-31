@@ -365,3 +365,8 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 .tile em.ed { color: var(--muted); }
 .scriptcount { position: sticky; top: 0; background: var(--panel); padding: .4rem 0; z-index: 2; font-weight: 600; font-size: .9rem; }
 .sticky-save { position: sticky; bottom: 0; background: var(--bg); padding: .6rem 0; }
+
+.box.infos { border: 1px solid var(--good); }
+.box.infos ul { margin: .3rem 0; padding-left: 1.1rem; }
+.ns-text { font-size: 1.4rem; font-weight: 700; margin-top: 1rem; }
+.nightshow .ns-bluff + .ns-bluff { margin-top: .6rem; }
