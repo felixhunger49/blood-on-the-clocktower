@@ -798,3 +798,59 @@ const OUTSIDER_MODS = { baron: [2], godfather: [-1, 1], fanggu: [1], vigormortis
 const REQUIRES = { huntsman: "damsel", choirboy: "king" };
 
 const ROLE_BY_ID = Object.fromEntries(ROLES.map((r, i) => [r.id, Object.assign(r, { idx: i })]));
+
+// Marker (Erinnerungs-Plättchen) im Grimoire.
+// k = Schlüssel, i = Symbol, l = Name, d = Erklärung für den Spielleiter, n = verschwindet in der nächsten Nacht
+const GENERIC_MARKERS = [
+  { k: "poison", i: "🧪", l: "Vergiftet", d: "Die Fähigkeit dieses Spielers wirkt nicht, und er kann falsche Infos bekommen – ohne es zu wissen. Meist vom Giftmischer (gilt diese Nacht und den nächsten Tag)." },
+  { k: "drunk", i: "🍺", l: "Betrunken", d: "Wie vergiftet: Fähigkeit wirkt nicht, Infos dürfen falsch sein. Kommt z. B. von Seemann, Wirt, Höfling, Minnesänger, Schläger oder Liebling." },
+  { k: "protect", i: "🛡️", l: "Geschützt", d: "Kann heute Nacht nicht durch den Dämon sterben (z. B. Mönch, Wirt). Verschwindet automatisch in der nächsten Nacht.", n: true },
+  { k: "herring", i: "🐟", l: "Ablenker", d: "Ein guter Spieler, den der Wahrsager trotzdem als Dämon sieht („Red Herring“). Vor Spielbeginn festlegen." },
+  { k: "target", i: "🎯", l: "Ziel", d: "Für Angriffe oder Wahlen heute Nacht, damit du nichts vergisst. Verschwindet automatisch in der nächsten Nacht.", n: true },
+  { k: "noability", i: "🚫", l: "Keine Fähigkeit", d: "Die Fähigkeit ist verbraucht oder verloren (z. B. Jungfrau nach der ersten Nominierung, Dämonenjäger nach dem Schuss, Narr nach dem ersten Tod)." },
+  { k: "diedtoday", i: "⚰️", l: "Heute gestorben", d: "Für Rollen, die darauf reagieren, ob heute jemand gestorben ist (z. B. Pate, Zombuul, Barbier). Verschwindet in der nächsten Nacht.", n: true },
+  { k: "evil", i: "😈", l: "Böse geworden", d: "Der Spieler hat die Seite gewechselt (z. B. durch Schläger, Mezepheles, Oger). Stelle die Gesinnung zusätzlich mit 🔁 um, damit das Spielende stimmt." },
+  { k: "star", i: "⭐", l: "Merken", d: "Freier Marker für alles, was du dir merken willst – schreib es in die Notiz dazu." }
+];
+
+// Rollen-Marker: werden nur angeboten, wenn die Rolle im Spiel ist.
+const ROLE_MARKERS = {
+  washerwoman: [{ k: "ww_ok", i: "🧺", l: "Waschfrau: richtig", d: "Dieser Spieler hat die Rolle, die du der Waschfrau gezeigt hast." }, { k: "ww_no", i: "🧺✖", l: "Waschfrau: falsch", d: "Der zweite Spieler, den du der Waschfrau gezeigt hast (hat die Rolle nicht)." }],
+  librarian: [{ k: "lib_ok", i: "📚", l: "Bibliothekar: richtig", d: "Dieser Spieler hat die Außenseiter-Rolle, die du dem Bibliothekar gezeigt hast." }, { k: "lib_no", i: "📚✖", l: "Bibliothekar: falsch", d: "Der zweite gezeigte Spieler (hat die Rolle nicht)." }],
+  investigator: [{ k: "inv_ok", i: "🔎", l: "Ermittler: richtig", d: "Dieser Spieler hat die Schergen-Rolle, die du dem Ermittler gezeigt hast." }, { k: "inv_no", i: "🔎✖", l: "Ermittler: falsch", d: "Der zweite gezeigte Spieler (hat die Rolle nicht)." }],
+  butler: [{ k: "master", i: "🎩", l: "Meister", d: "Der Butler darf morgen nur abstimmen, wenn dieser Spieler auch abstimmt." }],
+  undertaker: [{ k: "executed", i: "⚰️", l: "Hingerichtet", d: "Wurde heute hingerichtet – seine Rolle zeigst du heute Nacht dem Totengräber.", n: true }],
+  scarletwoman: [{ k: "isdemon", i: "👑", l: "Ist jetzt der Dämon", d: "Die Scharlachrote Frau hat übernommen. Rolle zusätzlich mit 🔁 auf den Dämon ändern." }],
+  grandmother: [{ k: "grandchild", i: "👶", l: "Enkelkind", d: "Tötet der Dämon diesen Spieler, stirbt auch die Großmutter." }],
+  exorcist: [{ k: "chosen", i: "✝️", l: "Vom Exorzisten gewählt", d: "Darf nicht noch einmal direkt hintereinander gewählt werden. Ist es der Dämon, wacht er heute Nacht nicht auf.", n: true }],
+  tealady: [{ k: "cantdie", i: "🫖", l: "Kann nicht sterben", d: "Beide lebenden Nachbarn der Teedame sind gut – dieser Spieler kann nicht sterben." }],
+  moonchild: [{ k: "mc_chosen", i: "🌙", l: "Vom Mondkind gewählt", d: "Ist dieser Spieler gut, stirbt er heute Nacht.", n: true }],
+  lunatic: [{ k: "lun_attack", i: "🗡️", l: "Angriff des Wahnsinnigen", d: "Wen der Wahnsinnige „angegriffen“ hat – stirbt nicht, aber der echte Dämon erfährt es.", n: true }],
+  devilsadvocate: [{ k: "survives", i: "⚖️", l: "Überlebt Hinrichtung", d: "Wird dieser Spieler morgen hingerichtet, stirbt er nicht.", n: true }],
+  po: [{ k: "po_charged", i: "💥", l: "Po: 3 Angriffe", d: "Der Po hat letzte Nacht niemanden gewählt – heute Nacht darf er 3 Spieler töten." }],
+  shabaloth: [{ k: "sh_alive", i: "🔄", l: "Kann wiederkommen", d: "Ein Opfer des Shabaloth, das du wiederbeleben darfst." }],
+  mathematician: [{ k: "abnormal", i: "❗", l: "Fähigkeit fehlerhaft", d: "Zählt für den Mathematiker: Diese Fähigkeit hat heute nicht normal funktioniert.", n: true }],
+  flowergirl: [{ k: "demonvoted", i: "🌸", l: "Dämon hat abgestimmt", d: "Für das Blumenmädchen: Der Dämon hat heute abgestimmt.", n: true }],
+  towncrier: [{ k: "minionnom", i: "📣", l: "Scherge hat nominiert", d: "Für den Ausrufer: Ein Scherge hat heute nominiert.", n: true }],
+  juggler: [{ k: "jug_ok", i: "🤹", l: "Jongleur: richtig geraten", d: "Diese Vermutung des Jongleurs stimmt – zähle die Marker für seine Info." }],
+  barber: [{ k: "haircut", i: "✂️", l: "Haarschnitt heute Nacht", d: "Der Barbier ist gestorben: Der Dämon darf heute Nacht zwei Spieler ihre Rollen tauschen lassen.", n: true }],
+  eviltwin: [{ k: "twin", i: "👯", l: "Zwilling", d: "Der gute Zwilling. Wird er hingerichtet, gewinnt Böse. Gut kann nicht gewinnen, solange beide Zwillinge leben." }],
+  witch: [{ k: "cursed", i: "🧹", l: "Verflucht", d: "Nominiert dieser Spieler morgen, stirbt er sofort.", n: true }],
+  fanggu: [{ k: "jumped", i: "🦇", l: "Sprung verbraucht", d: "Der Fang Gu ist schon einmal in einen Außenseiter gesprungen – das geht nur einmal." }],
+  vigormortis: [{ k: "vg_ability", i: "🧟", l: "Behält Fähigkeit", d: "Ein vom Vigormortis getöteter Scherge: Er behält seine Fähigkeit, ein Dorfbewohner-Nachbar ist vergiftet." }],
+  balloonist: [{ k: "seen", i: "🎈", l: "Gesehen", d: "Diesen Spieler hat der Ballonfahrer schon gezeigt bekommen." }],
+  bountyhunter: [{ k: "bounty", i: "💰", l: "Bekannt", d: "Der böse Spieler, den der Kopfgeldjäger kennt. Stirbt er, bekommt der Kopfgeldjäger einen neuen." }],
+  preacher: [{ k: "sermon", i: "📖", l: "Bei der Predigt", d: "Vom Prediger gewählter Scherge – er hat keine Fähigkeit mehr." }],
+  widow: [{ k: "knows", i: "🕸️", l: "Weiß von der Witwe", d: "Dieser gute Spieler weiß, dass eine Witwe im Spiel ist." }],
+  fearmonger: [{ k: "fear", i: "😱", l: "Gefürchtet", d: "Nominiert der Angstmacher diesen Spieler und er wird hingerichtet, verliert sein Team." }],
+  harpy: [{ k: "harpy1", i: "🦅", l: "Harpyie: muss beschuldigen", d: "Muss morgen verrückt danach sein, dass der zweite Spieler böse ist.", n: true }, { k: "harpy2", i: "🦅²", l: "Harpyie: Beschuldigter", d: "Der Spieler, den der erste beschuldigen muss.", n: true }],
+  lleech: [{ k: "host", i: "🩸", l: "Wirt des Lleech", d: "Vergiftet. Der Lleech stirbt nur, wenn dieser Spieler stirbt." }],
+  lilmonsta: [{ k: "babysitter", i: "🍼", l: "Passt auf Lil' Monsta auf", d: "Dieser Scherge „ist“ heute der Dämon.", n: true }],
+  ogre: [{ k: "friend", i: "🤝", l: "Freund des Ogers", d: "Der Oger hat die Gesinnung dieses Spielers übernommen." }],
+  mezepheles: [{ k: "word", i: "🔤", l: "Hat das Wort gesagt", d: "Hat das geheime Wort gesagt – wird heute Nacht böse.", n: true }],
+  king: [{ k: "kingknown", i: "🤴", l: "König (dem Dämon bekannt)", d: "Der Dämon weiß, dass dieser Spieler der König ist." }],
+  goblin: [{ k: "claimed", i: "🗣️", l: "Hat Kobold behauptet", d: "Wird dieser Spieler heute hingerichtet, gewinnt Böse.", n: true }]
+};
+// Rollen, die einen allgemeinen Marker typischerweise benutzen – nur als Hinweis im Erklärungstext.
+const allMarkers = () => [...GENERIC_MARKERS, ...Object.entries(ROLE_MARKERS).flatMap(([r, list]) => list.map(m => ({ ...m, role: r })))];
+const markerByKey = k => allMarkers().find(m => m.k === k);

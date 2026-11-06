@@ -934,7 +934,7 @@
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
       game.vote = null;
       // Schutz- und Ziel-Marker gelten nur für eine Nacht
-      game.seats.forEach(x => { x.marks = (x.marks || []).filter(m => !NIGHT_ONLY_MARKS.includes(m)); });
+      game.seats.forEach(x => { x.marks = (x.marks || []).filter(m => !(markerByKey(m) || {}).n); });
       game.nightNo++;
       game.done[game.nightNo] = [];
       save(); renderSL();
@@ -1141,11 +1141,23 @@
   // =====================================================================
   //  MARKER, SITZKREIS, SPIELER-FENSTER
   // =====================================================================
-  const MARKERS = [["poison", "🧪", "Vergiftet"], ["drunk", "🍺", "Betrunken"], ["protect", "🛡️", "Geschützt"],
-    ["herring", "🐟", "Ablenker"], ["target", "🎯", "Ziel"], ["star", "⭐", "Merken"]];
-  const NIGHT_ONLY_MARKS = ["protect", "target"];
+  // Marker-Daten stehen in roles.js (GENERIC_MARKERS, ROLE_MARKERS).
+  // Rollen-Marker, die zu den Rollen im Spiel passen (inkl. Philosophen-Wahl und Säufer-Rolle)
+  function markersInPlay() {
+    const ids = new Set();
+    game.seats.forEach(x => { ids.add(x.role); ids.add(shownRole(x.role)); if (x.gained) ids.add(x.gained); });
+    return Object.entries(ROLE_MARKERS).filter(([r]) => ids.has(r)).flatMap(([r, list]) => list.map(m => ({ ...m, role: r })));
+  }
+  // Erklärungen für die anderen Zustände im Spieler-Fenster
+  const STATUS_HELP = {
+    alive: "Tote Spieler bleiben im Spiel: Sie reden mit, dürfen aber nicht nominieren und haben ihre Fähigkeit verloren (Ausnahmen: z. B. Rabenhüter, Mondkind).",
+    ghost: "Jeder Tote hat genau eine Stimme für den Rest des Spiels. Hat er sie benutzt, ist sie weg. Der Abstimmungs-Helfer verbraucht sie automatisch.",
+    mad: "„Verrückt“ (Cerenovus): Der Spieler muss morgen überzeugend behaupten, die gezeigte Rolle zu sein. Tut er es nicht, darfst du ihn hinrichten lassen.",
+    used: "Fähigkeiten „einmal pro Spiel“: Ist sie benutzt, wird der Nacht-Schritt grau und der Spieler nicht mehr geweckt.",
+    note: "Freie Notiz nur für dich, z. B. „Meister des Butlers“ oder „hat Jungfrau behauptet“."
+  };
   const marksHtml = s => (s.marks || []).length
-    ? `<span class="marks">${s.marks.map(m => { const k = MARKERS.find(x => x[0] === m); return k ? `<span title="${k[2]}">${k[1]}</span>` : ""; }).join("")}</span>` : "";
+    ? `<span class="marks">${s.marks.map(m => { const k = markerByKey(m); return k ? `<span title="${esc(k.l)}">${k.i}</span>` : ""; }).join("")}</span>` : "";
 
   function circleHtml() {
     const ps = game.seats;
@@ -1159,7 +1171,7 @@
         <span class="tk-no">${i + 1}</span>
         <span class="tk-name">${esc(s.name)}</span>
         <span class="tk-role">${esc(r.de)}</span>
-        <span class="tk-marks">${s.alive ? "" : s.ghost ? "💀👻" : "💀"}${(s.marks || []).map(m => (MARKERS.find(x => x[0] === m) || [])[1] || "").join("")}${s.madness && s.madness.night === game.nightNo ? "😵" : ""}${s.used ? "✔" : ""}</span>
+        <span class="tk-marks">${s.alive ? "" : s.ghost ? "💀👻" : "💀"}${(s.marks || []).map(m => (markerByKey(m) || {}).i || "").join("")}${s.madness && s.madness.night === game.nightNo ? "😵" : ""}${s.used ? "✔" : ""}</span>
       </button>`;
     }).join("");
     const alive = ps.filter(s => s.alive && !s.trav).length;
@@ -1170,6 +1182,9 @@
   }
 
   // Alles zu einem Spieler in einem Fenster (aus Kreis oder Liste)
+  const helpBtn = key => `<button class="helpbtn" data-help="${key}" aria-label="Erklärung">ⓘ</button>`;
+  const markerChip = (s, m) => `<span class="mkchip"><button class="chip ${(s.marks || []).includes(m.k) ? "on" : ""}" data-mk="${m.k}">${m.i} ${esc(m.l)}${m.n ? " 🌙" : ""}</button>${helpBtn(m.k)}</span>`;
+
   function seatModal(i) {
     const s = game.seats[i];
     if (!s) return;
@@ -1179,18 +1194,20 @@
       <p>${roleChip(s.role, s.trav || s.align ? (seatGood(s) ? " · gut" : " · böse") : "")}
         ${shown !== s.role ? `<span class="small">(glaubt: ${esc(roleName(shown))})</span>` : ""}</p>
       <div class="row wrap">
-        <button class="btn" data-m="alive">${s.alive ? "❤️ lebt → tot setzen" : "💀 tot → wiederbeleben"}</button>
-        ${s.alive ? "" : `<button class="btn" data-m="ghost">${s.ghost ? "👻 Geisterstimme frei" : "🚫 Stimme verbraucht"}</button>`}
+        <span class="hint-pair"><button class="btn" data-m="alive">${s.alive ? "❤️ lebt → tot setzen" : "💀 tot → wiederbeleben"}</button>${helpBtn("s:alive")}</span>
+        ${s.alive ? "" : `<span class="hint-pair"><button class="btn" data-m="ghost">${s.ghost ? "👻 Geisterstimme frei" : "🚫 Stimme verbraucht"}</button>${helpBtn("s:ghost")}</span>`}
       </div>
+      <div class="mkhelp hidden" id="mkhelp"></div>
       <h3>Marker</h3>
-      <div class="chips">${MARKERS.map(([k, ico, label]) => `<button class="chip ${(s.marks || []).includes(k) ? "on" : ""}" data-mk="${k}">${ico} ${label}</button>`).join("")}</div>
-      <p class="small">🛡️ Geschützt und 🎯 Ziel verschwinden automatisch in der nächsten Nacht.</p>
-      <label class="field">Notiz: <input id="m-note" value="${esc(s.note || "")}" placeholder="z. B. Meister des Butlers"></label>
+      <p class="small">Tippe ⓘ für eine Erklärung. Marker mit 🌙 verschwinden in der nächsten Nacht von selbst.</p>
+      <div class="mkgrid">${GENERIC_MARKERS.map(m => markerChip(s, m)).join("")}</div>
+      ${markersInPlay().length ? `<h4 class="mk-sub">Marker der Rollen im Spiel</h4><div class="mkgrid">${markersInPlay().map(m => markerChip(s, m)).join("")}</div>` : ""}
+      <label class="field">Notiz ${helpBtn("s:note")}: <input id="m-note" value="${esc(s.note || "")}" placeholder="z. B. Meister des Butlers"></label>
       <div class="row wrap">
         <button class="btn" data-m="info">ℹ️ Rolle</button>
         <button class="btn" data-m="change">🔁 Rolle ändern</button>
-        ${cer ? `<button class="btn" data-m="mad">😵 Wahnsinn</button>` : ""}
-        ${ONCE_PER_GAME.includes(s.role) && s.role !== "philosopher" ? `<button class="btn ${s.used ? "used" : ""}" data-m="used">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>` : ""}
+        ${cer ? `<span class="hint-pair"><button class="btn" data-m="mad">😵 Wahnsinn</button>${helpBtn("s:mad")}</span>` : ""}
+        ${ONCE_PER_GAME.includes(s.role) && s.role !== "philosopher" ? `<span class="hint-pair"><button class="btn ${s.used ? "used" : ""}" data-m="used">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>${helpBtn("s:used")}</span>` : ""}
       </div>
       ${s.role === "philosopher" ? philoSelect(i) : ""}
       <div class="row end"><button class="btn primary" data-m="close">Fertig</button></div>`);
@@ -1202,6 +1219,19 @@
       again();
     }));
     root.querySelector("#m-note").addEventListener("input", e => { s.note = e.target.value; save(); });
+    // ⓘ-Erklärungen
+    root.querySelectorAll("[data-help]").forEach(b => b.addEventListener("click", e => {
+      e.preventDefault(); e.stopPropagation();
+      const key = b.dataset.help, box = root.querySelector("#mkhelp");
+      let title, text;
+      if (key.startsWith("s:")) { title = { alive: "Lebt / tot", ghost: "Geisterstimme", mad: "Wahnsinn", used: "Fähigkeit benutzt", note: "Notiz" }[key.slice(2)]; text = STATUS_HELP[key.slice(2)]; }
+      else { const m = markerByKey(key); title = `${m.i} ${m.l}${m.role ? ` (${roleName(m.role)})` : ""}`; text = m.d + (m.n ? " 🌙 Verschwindet in der nächsten Nacht." : ""); }
+      const same = !box.classList.contains("hidden") && box.dataset.key === key;
+      box.dataset.key = key;
+      box.innerHTML = `<b>${esc(title)}</b><p>${esc(text)}</p>`;
+      box.classList.toggle("hidden", same);
+      if (!same) box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }));
     root.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => {
       const a = b.dataset.m;
       if (a === "alive") { s.alive = !s.alive; if (s.alive) s.ghost = true; again(); }
