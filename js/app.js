@@ -289,8 +289,9 @@
           <p>Raum <b>${esc(on.code)}</b> als <b>${esc(on.name)}</b>.</p>
           <p class="small">Warte, bis der Spielleiter die Rollen verteilt – deine Rolle erscheint dann automatisch hier.</p>
           <button class="btn danger" id="leaveroom">Raum verlassen</button>
-        </section>`;
+        </section>` + notesHtml();
       $("#leaveroom").addEventListener("click", () => { if (confirm("Online-Spiel wirklich verlassen?")) leaveRoom(false); });
+      bindNotes();
       return;
     }
     if (!mine) {
@@ -331,6 +332,7 @@
           <div class="row center"><button id="hide" class="btn">🙈 Wieder verdecken</button></div>
         </div>
       </section>
+      ${notesHtml()}
       <section class="panel muted">
         <div class="row center wrap">
           <a class="btn" href="#/rollen">📖 Alle Rollen ansehen</a>
@@ -341,6 +343,7 @@
     $("#cover").addEventListener("click", show);
     $("#cover").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") show(); });
     bindPicker(mine);
+    bindNotes();
     $("#hide").addEventListener("click", () => { $("#card").classList.add("hidden"); $("#cover").classList.remove("hidden"); window.scrollTo(0, 0); });
     $("#forget") && $("#forget").addEventListener("click", () => {
       if (confirm("Deine gespeicherte Rolle wirklich entfernen?")) { store.del("botc.myrole"); renderPlayer(); }
@@ -710,12 +713,14 @@
           <b>${esc(s.name)}</b>
           ${roleChip(s.role, s.trav || s.align ? (seatGood(s) ? " · gut" : " · böse") : "")}
           ${shown !== s.role ? `<span class="small">(glaubt: ${esc(roleName(shown))})</span>` : ""}
+          ${marksHtml(s)}
         </div>
         <div class="g-ctl">
           <button class="btn sm" data-alive="${i}">${s.alive ? "❤️ lebt" : "💀 tot"}</button>
           ${s.alive ? "" : `<button class="btn sm" data-ghost="${i}">${s.ghost ? "👻 Stimme frei" : "🚫 Stimme verbraucht"}</button>`}
           <button class="btn sm" data-info="${s.role}">ℹ️</button>
           <button class="btn sm" data-change="${i}" title="Rolle oder Gesinnung ändern">🔁</button>
+          <button class="btn sm" data-seatmodal="${i}" title="Marker setzen">🏷️</button>
           ${s.alive && game.seats.some(x => x.role === "cerenovus") ? `<button class="btn sm ${s.madness && s.madness.night === game.nightNo ? "used" : ""}" data-mad="${i}" title="Wahnsinn (Cerenovus)">😵${s.madness && s.madness.night === game.nightNo ? " " + esc(roleName(s.madness.role)) : ""}</button>` : ""}
           ${s.role === "philosopher" ? philoSelect(i) : ""}
           ${ONCE_PER_GAME.includes(s.role) && s.role !== "philosopher" ? `<button class="btn sm ${s.used ? "used" : ""}" data-used="${i}">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>` : ""}
@@ -785,7 +790,12 @@
         ${(game.log || []).length ? `<div class="box msglog"><h4>📨 Meldungen von Spielern</h4><ul>${game.log.slice(-5).reverse().map(l => `<li>${esc(l.text)}</li>`).join("")}</ul></div>` : ""}
         <div class="daycount">🌙 Nacht ${game.nightNo} <span>·</span> ☀️ ${game.nightNo > 1 ? `Tag ${game.nightNo - 1} vorbei` : "noch kein Tag"}</div>
         <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${needed}</b> Stimmen</p>
-        <div class="gseats">${seats}</div>
+        ${timerBox()}
+        <div class="chips viewtoggle">
+          <button class="chip ${game.circle ? "" : "on"}" data-gview="list">☰ Liste</button>
+          <button class="chip ${game.circle ? "on" : ""}" data-gview="circle">◯ Sitzkreis</button>
+        </div>
+        ${game.circle ? circleHtml() : `<div class="gseats">${seats}</div>`}
         <div class="box"><h4>Bluffs</h4><p>${game.bluffs.map(id => roleChip(id)).join(" ")}</p></div>
         ${(game.fabled || []).length ? `<div class="box"><h4>Fabelwesen (öffentlich ansagen)</h4>${game.fabled.map(id => `<p>${roleChip(id)} ${esc(ROLE_BY_ID[id].a)}</p>`).join("")}</div>` : ""}
       </section>
@@ -923,6 +933,8 @@
     }));
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
       game.vote = null;
+      // Schutz- und Ziel-Marker gelten nur für eine Nacht
+      game.seats.forEach(x => { x.marks = (x.marks || []).filter(m => !NIGHT_ONLY_MARKS.includes(m)); });
       game.nightNo++;
       game.done[game.nightNo] = [];
       save(); renderSL();
@@ -933,6 +945,9 @@
     $("#prevnight") && $("#prevnight").addEventListener("click", () => { game.nightNo--; save(); renderSL(); });
     bindDay();
     $$("[data-change]").forEach(b => b.addEventListener("click", () => changeRole(+b.dataset.change)));
+    $$("[data-seatmodal]").forEach(b => b.addEventListener("click", () => seatModal(+b.dataset.seatmodal)));
+    $$("[data-gview]").forEach(b => b.addEventListener("click", () => { game.circle = b.dataset.gview === "circle"; save(); renderSL(); }));
+    bindTimer();
     $$("[data-mad]").forEach(b => b.addEventListener("click", () => madnessDialog(+b.dataset.mad)));
     $$("[data-win]").forEach(b => b.addEventListener("click", () => {
       const team = b.dataset.win;
@@ -1121,6 +1136,196 @@
       game.ignoreEnd = null;
       save(); closeModal(); renderSL();
     });
+  }
+
+  // =====================================================================
+  //  MARKER, SITZKREIS, SPIELER-FENSTER
+  // =====================================================================
+  const MARKERS = [["poison", "🧪", "Vergiftet"], ["drunk", "🍺", "Betrunken"], ["protect", "🛡️", "Geschützt"],
+    ["herring", "🐟", "Ablenker"], ["target", "🎯", "Ziel"], ["star", "⭐", "Merken"]];
+  const NIGHT_ONLY_MARKS = ["protect", "target"];
+  const marksHtml = s => (s.marks || []).length
+    ? `<span class="marks">${s.marks.map(m => { const k = MARKERS.find(x => x[0] === m); return k ? `<span title="${k[2]}">${k[1]}</span>` : ""; }).join("")}</span>` : "";
+
+  function circleHtml() {
+    const ps = game.seats;
+    const n = ps.length;
+    const size = n <= 8 ? "lg" : n <= 12 ? "md" : "sm";
+    const tokens = ps.map((s, i) => {
+      const a = (i / n) * 2 * Math.PI;
+      const x = 50 + 40 * Math.sin(a), y = 50 - 40 * Math.cos(a);
+      const r = ROLE_BY_ID[s.role];
+      return `<button class="token t-${r.t} ${s.alive ? "" : "dead"}" style="left:${x}%;top:${y}%" data-seatmodal="${i}">
+        <span class="tk-no">${i + 1}</span>
+        <span class="tk-name">${esc(s.name)}</span>
+        <span class="tk-role">${esc(r.de)}</span>
+        <span class="tk-marks">${s.alive ? "" : s.ghost ? "💀👻" : "💀"}${(s.marks || []).map(m => (MARKERS.find(x => x[0] === m) || [])[1] || "").join("")}${s.madness && s.madness.night === game.nightNo ? "😵" : ""}${s.used ? "✔" : ""}</span>
+      </button>`;
+    }).join("");
+    const alive = ps.filter(s => s.alive && !s.trav).length;
+    return `<div class="circle size-${size}">
+      <div class="circle-mid"><b>🌙 Nacht ${game.nightNo}</b><span>${alive} leben</span><span>${votesNeeded()} Stimmen nötig</span><small>Spieler antippen</small></div>
+      ${tokens}
+    </div>`;
+  }
+
+  // Alles zu einem Spieler in einem Fenster (aus Kreis oder Liste)
+  function seatModal(i) {
+    const s = game.seats[i];
+    if (!s) return;
+    const shown = shownRole(s.role);
+    const cer = s.alive && game.seats.some(x => x.role === "cerenovus");
+    openModal(`<h2>${i + 1}. ${esc(s.name)}</h2>
+      <p>${roleChip(s.role, s.trav || s.align ? (seatGood(s) ? " · gut" : " · böse") : "")}
+        ${shown !== s.role ? `<span class="small">(glaubt: ${esc(roleName(shown))})</span>` : ""}</p>
+      <div class="row wrap">
+        <button class="btn" data-m="alive">${s.alive ? "❤️ lebt → tot setzen" : "💀 tot → wiederbeleben"}</button>
+        ${s.alive ? "" : `<button class="btn" data-m="ghost">${s.ghost ? "👻 Geisterstimme frei" : "🚫 Stimme verbraucht"}</button>`}
+      </div>
+      <h3>Marker</h3>
+      <div class="chips">${MARKERS.map(([k, ico, label]) => `<button class="chip ${(s.marks || []).includes(k) ? "on" : ""}" data-mk="${k}">${ico} ${label}</button>`).join("")}</div>
+      <p class="small">🛡️ Geschützt und 🎯 Ziel verschwinden automatisch in der nächsten Nacht.</p>
+      <label class="field">Notiz: <input id="m-note" value="${esc(s.note || "")}" placeholder="z. B. Meister des Butlers"></label>
+      <div class="row wrap">
+        <button class="btn" data-m="info">ℹ️ Rolle</button>
+        <button class="btn" data-m="change">🔁 Rolle ändern</button>
+        ${cer ? `<button class="btn" data-m="mad">😵 Wahnsinn</button>` : ""}
+        ${ONCE_PER_GAME.includes(s.role) && s.role !== "philosopher" ? `<button class="btn ${s.used ? "used" : ""}" data-m="used">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>` : ""}
+      </div>
+      ${s.role === "philosopher" ? philoSelect(i) : ""}
+      <div class="row end"><button class="btn primary" data-m="close">Fertig</button></div>`);
+    const root = $("#modal-content");
+    const again = () => { save(); renderSL(); seatModal(i); };
+    root.querySelectorAll("[data-mk]").forEach(b => b.addEventListener("click", () => {
+      const k = b.dataset.mk, m = s.marks || [];
+      s.marks = m.includes(k) ? m.filter(x => x !== k) : [...m, k];
+      again();
+    }));
+    root.querySelector("#m-note").addEventListener("input", e => { s.note = e.target.value; save(); });
+    root.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => {
+      const a = b.dataset.m;
+      if (a === "alive") { s.alive = !s.alive; if (s.alive) s.ghost = true; again(); }
+      else if (a === "ghost") { s.ghost = !s.ghost; again(); }
+      else if (a === "used") { s.used = !s.used; again(); }
+      else if (a === "info") openModal(roleDetail(ROLE_BY_ID[s.role], true));
+      else if (a === "change") changeRole(i);
+      else if (a === "mad") madnessDialog(i);
+      else { closeModal(); renderSL(); }
+    }));
+    root.querySelectorAll("[data-philo]").forEach(sel => sel.addEventListener("change", () => { setPhilo(i, sel.value); seatModal(i); }));
+  }
+
+  // =====================================================================
+  //  TIMER FÜR DIE TAGESPHASE
+  // =====================================================================
+  const fmtTime = ms => { const t = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
+  // Restzeit eines Timer-Zustands { end, left, running } in Millisekunden (null = kein Timer)
+  const timerLeft = t => !t ? null : t.running ? t.end - Date.now() : (t.left || 0);
+
+  function timerBox() {
+    const t = game.timer;
+    const left = timerLeft(t);
+    return `<div class="box timerbox">
+      <div class="tb-row"><h4>⏱️ Timer</h4><span class="timerval big ${left !== null && left <= 0 ? "over" : ""}">${left === null ? "–:––" : fmtTime(left)}</span></div>
+      <div class="chips">${[2, 3, 5, 8, 10].map(m => `<button class="chip" data-tmin="${m}">${m} min</button>`).join("")}</div>
+      <div class="row wrap">
+        ${t && t.running ? `<button class="btn" id="tpause">⏸️ Pause</button>` : t && t.left > 0 ? `<button class="btn primary" id="tstart">▶️ Weiter</button>` : ""}
+        ${t && (t.running || t.left > 0) ? `<button class="btn" id="tplus">+1 min</button>` : ""}
+        ${t ? `<button class="btn" id="treset">⏹️ Stopp</button>` : ""}
+      </div>
+      ${game.online ? `<p class="small">🌐 Die Spieler sehen den Timer auf ihrem Handy.</p>` : ""}
+    </div>`;
+  }
+  function bindTimer() {
+    $$("[data-tmin]").forEach(b => b.addEventListener("click", () => {
+      game.timer = { running: true, end: Date.now() + +b.dataset.tmin * 60000, left: 0, rang: false };
+      unlockAudio(); save(); renderSL();
+    }));
+    $("#tpause") && $("#tpause").addEventListener("click", () => { game.timer = { running: false, left: timerLeft(game.timer), rang: false }; save(); renderSL(); });
+    $("#tstart") && $("#tstart").addEventListener("click", () => { game.timer = { running: true, end: Date.now() + game.timer.left, left: 0, rang: false }; unlockAudio(); save(); renderSL(); });
+    $("#tplus") && $("#tplus").addEventListener("click", () => {
+      const t = game.timer;
+      if (t.running) t.end = Math.max(t.end, Date.now()) + 60000; else t.left = (t.left || 0) + 60000;
+      t.rang = false; save(); renderSL();
+    });
+    $("#treset") && $("#treset").addEventListener("click", () => { game.timer = null; save(); renderSL(); });
+  }
+
+  // Ton am Ende (Browser erlauben Ton erst nach einer Berührung)
+  let audioCtx = null;
+  function unlockAudio() {
+    try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch (e) { /* kein Ton */ }
+  }
+  function beep() {
+    if (!audioCtx) return;
+    try {
+      [0, 0.35, 0.7].forEach(off => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(0.25, audioCtx.currentTime + off);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + off + 0.3);
+        o.start(audioCtx.currentTime + off); o.stop(audioCtx.currentTime + off + 0.3);
+      });
+    } catch (e) { /* kein Ton */ }
+  }
+  document.addEventListener("click", unlockAudio, { once: true });
+
+  // Läuft jede Sekunde: Anzeigen aktualisieren, kleine Uhr oben einblenden, am Ende Alarm.
+  let lastRangKey = "";
+  function tickTimer() {
+    const host = game.timer && (game.timer.running || game.timer.left > 0) ? game.timer : null;
+    const pub = !host && pubState && pubState.timer && (pubState.timer.running || pubState.timer.left > 0) ? pubState.timer : null;
+    const t = host || pub;
+    const left = timerLeft(t);
+    $$(".timerval").forEach(el => { el.textContent = left === null ? "–:––" : fmtTime(left); el.classList.toggle("over", left !== null && left <= 0); });
+    let chip = $("#timerchip");
+    if (t) {
+      if (!chip) {
+        chip = document.createElement("button");
+        chip.id = "timerchip";
+        chip.addEventListener("click", () => { if (host) location.hash = "#/sl"; });
+        document.body.appendChild(chip);
+      }
+      chip.textContent = (t.running ? "⏱️ " : "⏸️ ") + fmtTime(left);
+      chip.classList.toggle("over", left <= 0);
+    } else if (chip) chip.remove();
+    // Alarm genau einmal pro Ablauf
+    if (t && t.running && left <= 0 && left > -10000) {
+      const key = String(t.end);
+      if (lastRangKey !== key) {
+        lastRangKey = key;
+        beep();
+        if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
+        notice("⏰ Die Zeit ist um!");
+      }
+    }
+  }
+  setInterval(tickTimer, 1000);
+
+  // =====================================================================
+  //  NOTIZEN DER SPIELER (bleiben nur auf dem eigenen Handy)
+  // =====================================================================
+  function notesHtml() {
+    const notes = store.get("botc.notes", {});
+    const seats = (pubState && pubState.seats) || [];
+    return `<details class="panel notes" ${notesOpen ? "open" : ""}>
+      <summary><h3>📝 Meine Notizen</h3></summary>
+      <p class="small">Nur auf deinem Handy gespeichert – niemand sonst sieht sie.</p>
+      ${seats.length ? `<div class="notelist">${seats.map(s => `<label class="noterow ${s.a ? "" : "dead"}"><span>${esc(s.n)}${s.a ? "" : " 💀"}</span>
+        <input data-pnote="${esc(s.n)}" value="${esc(notes["p:" + s.n] || "")}" placeholder="behauptet … / Verdacht …"></label>`).join("")}</div>` : ""}
+      <textarea id="gnote" rows="5" placeholder="Wer hat was behauptet? Wem traust du? Was hast du erfahren?">${esc(notes.general || "")}</textarea>
+      <div class="row end"><button class="btn sm danger" id="clearnotes">Notizen löschen</button></div>
+    </details>`;
+  }
+  let notesOpen = false;
+  function bindNotes() {
+    const d = $(".notes");
+    if (!d) return;
+    d.addEventListener("toggle", () => { notesOpen = d.open; });
+    const put = (k, v) => { const n = store.get("botc.notes", {}); n[k] = v; store.set("botc.notes", n); };
+    $("#gnote").addEventListener("input", e => put("general", e.target.value));
+    $$("[data-pnote]").forEach(inp => inp.addEventListener("input", () => put("p:" + inp.dataset.pnote, inp.value)));
+    $("#clearnotes").addEventListener("click", () => { if (confirm("Alle Notizen löschen?")) { store.del("botc.notes"); renderPlayer(); } });
   }
 
   // =====================================================================
@@ -1738,6 +1943,7 @@
     return {
       nightNo: game.nightNo || 1,
       fabled: game.fabled || [],
+      timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0 } : null,
       started: game.seats.length > 0 && game.step !== "setup",
       seats: game.seats.map(s => ({ n: s.name, a: !!s.alive, g: !!s.ghost, t: !!s.trav })),
       winner: w ? {
@@ -1880,6 +2086,7 @@
     if (!keys) { keys = await Net.genKeys(); store.set("botc.netkeys", keys); }
     await api.set(`rooms/${code}/players/${api.uid}`, { name, pub: keys.pub, joined: Date.now() });
     store.set("botc.myname", name);
+    if ((store.get("botc.online", null) || {}).code !== code) store.del("botc.notes");
     store.set("botc.online", { code, name });
     store.del("botc.myrole");
     store.del("botc.public");
@@ -1926,6 +2133,11 @@
       pubState = v;
       store.set("botc.public", v);
       updateNetBar();
+      const seatSig = x => JSON.stringify(((x && x.seats) || []).map(s => [s.n, s.a]));
+      const a = document.activeElement;
+      if (seatSig(before) !== seatSig(v) && $(".notes") && !(a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA"))) {
+        const tmp = document.createElement("div"); tmp.innerHTML = notesHtml(); $(".notes").replaceWith(tmp.firstElementChild); bindNotes();
+      }
       if (v && v.winner && !(before && before.winner)) showPublicEnd(v);
     }));
   }
