@@ -38,7 +38,12 @@ const GUIDE = [
       <li>Spieler sehen oben, wer lebt, wer tot ist, wer noch eine Geisterstimme hat und welche Nacht ist.</li>
       <li><b>Philosoph &amp; Co.</b> schicken ihre Wahl direkt an den Spielleiter – er bekommt eine Meldung, der Philosoph wird automatisch eingetragen.</li>
       <li>Beim <b>Spielende</b> sehen alle den Sieger-Bildschirm mit Auflösung und ob sie gewonnen haben.</li>
-      <li><b>Nachtaktionen am Handy</b> (optional, im Grimoire bei der Nacht einschalten): Mit „🌙 Alle wecken“ bekommen alle lebenden Online-Spieler gleichzeitig einen Nacht-Bildschirm. Wer eine Aktion hat (Mönch, Giftmischer, Imp, Wahrsager …), tippt sein Ziel an – alle anderen tippen nur „OK“, damit niemand merkt, wer etwas tut. Die Wahl erscheint im Grimoire, passende Marker (z. B. 🛡️ Geschützt, 🧪 Vergiftet) werden automatisch gesetzt. Infos zurück schickst du mit „📱 Info / senden“ beim jeweiligen Schritt.</li>
+      <li><b>Nachtaktionen am Handy</b> (optional, im Grimoire bei der Nacht einschalten). Zwei Modi:
+        <ul>
+          <li><b>🌙 Alle auf einmal</b> – schnell: Alle lebenden Online-Spieler bekommen gleichzeitig einen Nacht-Bildschirm. Du wertest die Wahlen danach in der Reihenfolge der Liste aus.</li>
+          <li><b>🪜 Schritt für Schritt</b> – regelgenau: Die App geht die offizielle Nachtreihenfolge durch. Bei jedem Schritt vibrieren <i>alle</i> Handys; nur wer dran ist, bekommt die echte Aufgabe. Mit „▶ Nächster Schritt“ geht es weiter, nachdem du ausgewertet und Infos geschickt hast. Der Rabenhüter kommt nur dran, wenn er gestorben ist.</li>
+        </ul>
+        In beiden Modi tippen Spieler ohne Aufgabe eine <b>Schein-Auswahl</b> an, die ignoriert wird – so sieht von außen jeder gleich aus. Passende Marker (🛡️ Geschützt, 🧪 Vergiftet …) setzt die App automatisch, Infos schickst du mit „📱 Info / senden“.</li>
     </ol>
     <p class="hint">Fällt das Internet aus, macht der Spielleiter einfach offline weiter – das Grimoire liegt auf seinem Handy. Spieler ohne Verbindung bekommen ihre Rolle per QR-Code oder Code.</p>` },
 

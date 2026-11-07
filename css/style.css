@@ -426,3 +426,5 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 .pickbtn.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 25%, var(--panel2)); }
 .pickbtn.dead { opacity: .6; }
 .nightact select { width: 100%; margin: .6rem 0; }
+
+.seqbox { background: var(--panel); border-radius: 10px; padding: .6rem .8rem; margin-top: .5rem; }

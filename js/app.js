@@ -940,6 +940,7 @@
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
       game.vote = null;
       game.asks = {};
+      game.seq = null;
       // Schutz- und Ziel-Marker gelten nur für eine Nacht
       game.seats.forEach(x => { x.marks = (x.marks || []).filter(m => !(markerByKey(m) || {}).n); });
       game.nightNo++;
@@ -1502,15 +1503,37 @@
     if (!game.online) return "";
     if (!game.nightActions) return `<div class="box nabar"><label class="switch"><input type="checkbox" id="natoggle">
       <span><b>📲 Nachtaktionen am Handy</b> – Spieler wählen ihre Ziele auf dem eigenen Handy, statt zu zeigen.</span></label></div>`;
+    const seq = game.seq && game.seq.night === game.nightNo ? game.seq : null;
     const asks = Object.values(game.asks || {}).filter(a => a.night === game.nightNo);
-    const real = asks.filter(a => !a.sleep);
+    let body;
+    if (seq && !seq.done) {
+      const answered = asks.filter(a => a.done).length;
+      const results = (game.acts || []).filter(x => x.night === game.nightNo && x.round === seq.round);
+      body = `<div class="seqbox">
+        <p><b>Schritt ${seq.count}: ${esc(roleName(seq.step))}</b> · ${answered} von ${asks.length} Handys haben geantwortet</p>
+        ${results.length ? `<p class="okmsg">✅ ${results.map(x => `${esc(game.seats[x.i].name)}: ${x.skip ? "nichts" : esc(describePick(x))}`).join(" · ")}</p>` : `<p class="small wait">⏳ warte auf die Wahl …</p>`}
+        <p class="small">Werte jetzt diesen Schritt aus und schick nötige Infos (Knopf „📱 Info“ in der Liste). Dann weiter.</p>
+        <div class="row wrap"><button class="btn primary" id="seqnext">▶ Nächster Schritt</button><button class="btn" id="seqstop">⏹ Beenden</button></div>
+      </div>`;
+    } else {
+      const real = asks.filter(a => !a.sleep);
+      body = `${seq && seq.done ? `<p class="okmsg">✅ Alle Schritte dieser Nacht sind durch.</p>` : ""}
+      <div class="row wrap">
+        <button class="btn primary" id="naall">🌙 Alle auf einmal</button>
+        <button class="btn" id="naseq">🪜 Schritt für Schritt</button>
+        ${asks.length && !seq ? `<span class="small">${real.filter(a => a.done).length} von ${real.length} Aktionen beantwortet</span>` : ""}
+      </div>
+      <p class="small"><b>Alle auf einmal:</b> schnell – alle wählen gleichzeitig, du wertest danach in der Reihenfolge der Liste aus.<br>
+      <b>Schritt für Schritt:</b> regelgenau – bei jedem Schritt der Nachtreihenfolge sind alle Handys dran; nur wer wirklich dran ist, bekommt die echte Aufgabe.</p>`;
+    }
     return `<div class="box nabar">
-      <label class="switch"><input type="checkbox" id="natoggle" checked><span><b>📲 Nachtaktionen am Handy</b> sind an.</span></label>
-      <p class="small">„Alle wecken“ schickt allen lebenden Online-Spielern gleichzeitig einen Nacht-Bildschirm – wer eine Aktion hat, wählt dort, alle anderen tippen nur „OK“. So merkt niemand, wer etwas tut.</p>
-      <div class="row wrap"><button class="btn primary" id="naall">🌙 Alle wecken</button>
-        ${asks.length ? `<span class="small">${real.filter(a => a.done).length} von ${real.length} Aktionen beantwortet</span>` : ""}</div>
+      <label class="switch"><input type="checkbox" id="natoggle" checked><span><b>📲 Nachtaktionen am Handy</b> sind an. Spieler ohne Aufgabe bekommen eine Schein-Auswahl, damit niemand auffällt.</span></label>
+      ${body}
     </div>`;
   }
+
+  // Letztes Ergebnis eines Spielers für einen Schritt in dieser Nacht
+  const lastAct = (i, step) => (game.acts || []).filter(x => x.night === game.nightNo && x.i === i && x.step === step).pop();
 
   function actionStatusHtml(stepId) {
     if (!ACTIONS[stepId]) return "";
@@ -1518,39 +1541,80 @@
     if (!rows.length) return "";
     return `<div class="actstat">${rows.map(([x, i]) => {
       const a = (game.asks || {})[i];
+      const r = lastAct(i, stepId);
       const online = x.pid && lobby[x.pid];
+      const pending = a && a.night === game.nightNo && !a.done && a.step === stepId;
       let st;
-      if (a && a.night === game.nightNo && a.done) st = `<span class="okmsg">✅ ${a.skip ? "nichts gewählt" : esc(describePick(a))}</span>${online ? ` <button class="btn sm" data-ask="${i}">neu fragen</button>` : ""}`;
+      if (pending) st = `<span class="wait">⏳ wartet …</span>`;
+      else if (r) st = `<span class="okmsg">✅ ${r.skip ? "nichts gewählt" : esc(describePick(r))}</span>${online && !game.seq ? ` <button class="btn sm" data-ask="${i}">neu fragen</button>` : ""}`;
       else if (!online) st = `<span class="small">nicht online – bitte wie gewohnt wecken</span>`;
-      else if (!a || a.night !== game.nightNo) st = `<button class="btn sm" data-ask="${i}">📲 Aufs Handy schicken</button>`;
-      else if (!a.done) st = `<span class="wait">⏳ wartet …</span> <button class="btn sm" data-ask="${i}">erneut</button>`;
-      else st = `<span class="okmsg">✅ ${a.skip ? "nichts gewählt" : esc(describePick(a))}</span> <button class="btn sm" data-ask="${i}">neu fragen</button>`;
+      else st = game.seq && game.seq.night === game.nightNo && !game.seq.done ? `<span class="small">kommt in der Reihenfolge dran</span>` : `<button class="btn sm" data-ask="${i}">📲 Aufs Handy schicken</button>`;
       return `<div class="actrow"><b>${esc(x.name)}:</b> ${st}</div>`;
     }).join("")}</div>`;
   }
   const describePick = a => [(a.picks || []).map(k => game.seats[k] ? game.seats[k].name : "?").join(", "), a.role ? roleName(a.role) : ""].filter(Boolean).join(" · ");
 
-  function askSeat(i, sleep) {
+  // Anfrage an ein Handy. sleep = Schein-Auswahl (keine echte Aktion)
+  function askSeat(i, sleep, step, round) {
     const x = game.seats[i];
     game.asks = game.asks || {};
-    game.asks[i] = { id: `${game.nightNo}-${i}-${randInt(1e6)}`, night: game.nightNo, step: sleep ? null : actingRole(x), sleep: !!sleep };
+    game.asks[i] = { id: `${game.nightNo}-${i}-${randInt(1e6)}`, night: game.nightNo, step: sleep ? null : (step || actingRole(x)), sleep: !!sleep, round: round || null };
+  }
+
+  // Wer handelt in diesem Schritt? (online, lebt – oder tot, wenn der Tod die Aktion auslöst)
+  function actorsFor(stepId) {
+    const role = ROLE_BY_ID[stepId], key = game.nightNo === 1 ? "n1" : "n";
+    if (!ACTIONS[stepId] || !role || !role[key]) return [];
+    return game.seats.map((x, i) => i).filter(i => {
+      const x = game.seats[i];
+      if (actingRole(x) !== stepId || !x.pid) return false;
+      if (ONCE_PER_GAME.includes(stepId) && x.used) return false;
+      if (stepId === "philosopher" && x.gained) return false;
+      return ACTS_WHEN_DEAD.includes(stepId) ? true : x.alive;
+    }).filter(i => ACTS_WHEN_DEAD.includes(stepId) ? !game.seats[i].alive : true);
+  }
+
+  // Schritt für Schritt: nächsten Schritt mit Aktion suchen und alle Handys wecken
+  function seqAdvance() {
+    const order = game.nightNo === 1 ? NIGHT_FIRST : NIGHT_OTHER;
+    const seq = game.seq;
+    let pos = seq.pos + 1;
+    while (pos < order.length && !actorsFor(order[pos]).length) pos++;
+    if (pos >= order.length) { seq.done = true; game.asks = {}; save(); renderSL(); toast("Alle Schritte dieser Nacht sind durch"); return; }
+    const step = order[pos], actors = actorsFor(step);
+    seq.pos = pos; seq.step = step; seq.round = (seq.round || 0) + 1; seq.count = (seq.count || 0) + 1;
+    game.asks = {};
+    game.seats.forEach((x, i) => {
+      if (!x.pid || !lobby[x.pid]) return;
+      if (actors.includes(i)) askSeat(i, false, step, seq.round);
+      else if (x.alive) askSeat(i, true, null, seq.round);
+    });
+    save(); renderSL();
   }
 
   function bindNightActions() {
-    $("#natoggle") && $("#natoggle").addEventListener("change", e => { game.nightActions = e.target.checked; game.asks = {}; save(); renderSL(); });
+    $("#natoggle") && $("#natoggle").addEventListener("change", e => { game.nightActions = e.target.checked; game.asks = {}; game.seq = null; save(); renderSL(); });
     $("#naall") && $("#naall").addEventListener("click", () => {
+      game.seq = null;
       const first = game.nightNo === 1, key = first ? "n1" : "n";
       let n = 0;
       game.seats.forEach((x, i) => {
         if (!x.alive || !x.pid || !lobby[x.pid]) return;
         const r = actingRole(x), role = ROLE_BY_ID[r];
-        const acts = ACTIONS[r] && role && role[key] && !(ONCE_PER_GAME.includes(r) && x.used) && !(r === "philosopher" && x.gained);
+        const acts = ACTIONS[r] && role && role[key] && !ACTS_WHEN_DEAD.includes(r) && !(ONCE_PER_GAME.includes(r) && x.used) && !(r === "philosopher" && x.gained);
         askSeat(i, !acts);
         if (acts) n++;
       });
       save(); renderSL();
       toast(`Alle geweckt – ${n} mit Aktion`);
     });
+    $("#naseq") && $("#naseq").addEventListener("click", () => { game.seq = { night: game.nightNo, pos: -1, round: 0, count: 0 }; seqAdvance(); });
+    $("#seqnext") && $("#seqnext").addEventListener("click", () => {
+      const open = Object.values(game.asks || {}).filter(a => !a.done).length;
+      if (open && !confirm(`${open} Handy(s) haben noch nicht geantwortet. Trotzdem weiter?`)) return;
+      seqAdvance();
+    });
+    $("#seqstop") && $("#seqstop").addEventListener("click", () => { game.seq = null; game.asks = {}; save(); renderSL(); });
     $$("[data-ask]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); askSeat(+b.dataset.ask, false); save(); renderSL(); }));
   }
 
@@ -1560,22 +1624,25 @@
     if (i < 0 || !a || a.id !== msg.id) return;
     a.done = true;
     if (a.sleep) { save(); refreshHostView(); return; }
-    a.skip = !!msg.skip;
-    a.picks = (msg.picks || []).filter(k => game.seats[k]);
-    a.role = msg.role && ROLE_BY_ID[msg.role] ? msg.role : null;
+    const r = { night: game.nightNo, i, step: a.step, round: a.round, skip: !!msg.skip,
+      picks: (msg.picks || []).filter(k => game.seats[k]), role: msg.role && ROLE_BY_ID[msg.role] ? msg.role : null };
+    game.acts = [...(game.acts || []).filter(x => x.night >= game.nightNo - 1), r];
     const x = game.seats[i];
-    const def = ACTIONS[a.step] || {};
+    const def = ACTIONS[r.step] || {};
     // Marker automatisch setzen
-    if (!a.skip && def.mark) a.picks.forEach(k => { const t = game.seats[k]; t.marks = [...new Set([...(t.marks || []), def.mark])]; });
-    if (!a.skip && a.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [a.step]: a.role });
-    const text = `🌙 ${x.name} (${roleName(a.step)}): ${a.skip ? "nichts" : describePick(a)}`;
+    if (!r.skip && def.mark) r.picks.forEach(k => { const t = game.seats[k]; t.marks = [...new Set([...(t.marks || []), def.mark])]; });
+    if (!r.skip && r.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [r.step]: r.role });
+    const text = `🌙 ${x.name} (${roleName(r.step)}): ${r.skip ? "nichts" : describePick(r)}`;
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
-    if (!a.skip && a.step === "philosopher" && a.role && x.role === "philosopher") setPhilo(i, a.role);
+    if (!r.skip && r.step === "philosopher" && r.role && x.role === "philosopher") setPhilo(i, r.role);
     else { save(); refreshHostView(); }
     notice(text);
   }
 
   // ---------- Spieler-Seite ----------
+  // Schein-Aufgabe für alle, die gerade nicht dran sind – sieht genauso aus wie eine echte.
+  const FAKE_ACTION = { n: 1, self: true, text: "Du hast gerade nichts zu tun. Tippe trotzdem einen beliebigen Spieler an und bestätige – damit niemand merkt, wer wirklich wach ist." };
+
   function showNightPrompt(mine) {
     const q = mine.q;
     if (!q || (store.get("botc.answered", []) || []).includes(q.id)) return;
@@ -1584,22 +1651,16 @@
       const ans = store.get("botc.answered", []) || [];
       store.set("botc.answered", [...ans, q.id].slice(-50));
       sendToHost(Object.assign({ type: "action", id: q.id }, payload)).then(ok => {
-        $("#modal-content").innerHTML = `<div class="nightshow"><div class="cover-icon">${ok ? "✅" : "⚠️"}</div>
-          <h2>${ok ? "Gesendet" : "Nicht gesendet"}</h2><p class="ns-hint">${ok ? "Schließ die Augen – der Spielleiter macht weiter." : "Keine Verbindung – zeig dem Spielleiter deine Wahl."}</p>
+        if (!$(".nightact")) return; // schon die nächste Aufgabe offen
+        $("#modal-content").innerHTML = `<div class="nightshow nightsent"><div class="cover-icon">${ok ? "🌙" : "⚠️"}</div>
+          <h2>${ok ? "Augen zu" : "Nicht gesendet"}</h2><p class="ns-hint">${ok ? "Deine Wahl ist angekommen. Lass das Handy liegen – es vibriert, wenn du wieder etwas tun sollst." : "Keine Verbindung – zeig dem Spielleiter deine Wahl."}</p>
           <div class="row center"><button class="btn big" id="ndone">OK</button></div></div>`;
         $("#ndone").addEventListener("click", () => { closeModal(); refreshPlayerView(true); });
       });
     };
-    if (q.sleep) {
-      openModal(`<div class="nightshow"><div class="cover-icon">🌙</div><h2>Nacht</h2>
-        <p class="ns-hint">Du hast heute Nacht nichts zu tun. Tippe auf OK und schließ die Augen.</p>
-        <div class="row center"><button class="btn big" id="nok">OK</button></div></div>`, "full night");
-      $("#nok").addEventListener("click", () => done({}));
-      if (navigator.vibrate) navigator.vibrate(150);
-      return;
-    }
-    const def = ACTIONS[q.step] || { n: 1 };
+    const def = q.sleep ? FAKE_ACTION : (ACTIONS[q.step] || { n: 1 });
     const min = def.min !== undefined ? def.min : (def.optional ? 0 : def.n);
+    const close = $(".nightsent"); if (close) closeModal();
     const list = seats.map((x, k) => ({ ...x, k })).filter(x => (def.self || x.k !== mine.s) && (def.onlyDead ? !x.a : (x.a || def.dead)));
     let pool = [];
     if (def.role) {
@@ -1607,8 +1668,8 @@
       pool = ROLES.filter(r => inEd(r, ed, mine.sc) && !["traveller", "fabled"].includes(r.t) && (def.role === "all" || r.t === "townsfolk" || r.t === "outsider"));
     }
     openModal(`<div class="nightshow nightact">
-        <p class="ns-label">🌙 ${esc(roleName(q.step))}</p>
-        <h2>Du bist wach</h2>
+        <p class="ns-label">🌙 Nacht</p>
+        <h2>${q.sleep ? "Schein-Auswahl" : esc(roleName(q.step))}</h2>
         <p class="ns-hint">${esc(def.text || "")}</p>
         ${def.n ? `<div class="pickgrid">${list.map(x => `<button class="pickbtn ${x.a ? "" : "dead"}" data-pk="${x.k}">${esc(x.n)}${x.a ? "" : " 💀"}</button>`).join("")}</div>
           <p class="small" id="pkcount">0 von ${def.n} gewählt</p>` : ""}
@@ -2355,7 +2416,7 @@
       store.set("botc.myrole", info);
       if (info.q && !(store.get("botc.answered", []) || []).includes(info.q.id)) {
         store.set("botc.myrole", info);
-        if (modal.classList.contains("hidden") || !$(".nightact, .nightshow")) showNightPrompt(info);
+        if (modal.classList.contains("hidden") || $(".nightsent") || !$(".nightact, .nightshow")) showNightPrompt(info);
       }
       const newInfo = JSON.stringify((old && old.i) || []) !== JSON.stringify(info.i || []) && (info.i || []).length > ((old && old.i) || []).length;
       const changed = !old || newInfo || old.r !== info.r || old.a !== info.a || old.m !== info.m || JSON.stringify(old.x) !== JSON.stringify(info.x);
