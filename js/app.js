@@ -344,6 +344,7 @@
     $("#cover").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") show(); });
     bindPicker(mine);
     bindNotes();
+    if (mine.q && modal.classList.contains("hidden")) showNightPrompt(mine);
     $("#hide").addEventListener("click", () => { $("#card").classList.add("hidden"); $("#cover").classList.remove("hidden"); window.scrollTo(0, 0); });
     $("#forget") && $("#forget").addEventListener("click", () => {
       if (confirm("Deine gespeicherte Rolle wirklich entfernen?")) { store.del("botc.myrole"); renderPlayer(); }
@@ -513,6 +514,8 @@
     if (x) info.x = x;
     if (seat.madness && seat.madness.night === game.nightNo && seat.alive) info.m = seat.madness.role;
     if ((seat.infos || []).length) info.i = seat.infos.slice(-10);
+    const ask = (game.asks || {})[i];
+    if (nightOn() && ask && ask.night === game.nightNo && !ask.done) info.q = { id: ask.id, step: ask.step, sleep: !!ask.sleep };
     return info;
   }
   function seatCode(seat, i) {
@@ -802,13 +805,15 @@
       <section class="panel">
         <h2>${first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`}</h2>
         <p class="small">${steps.filter(st => !st.inactive && done.includes(st.id)).length} von ${steps.filter(st => !st.inactive).length} Schritten erledigt${steps.some(st => st.inactive) ? " · grau = tot oder benutzt, entfällt" : ""}</p>
+        ${nightActionsBar(steps)}
         <ol class="nightlist">${steps.map(s => `
           <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
             <div class="ns-head">${s.inactive ? `<span class="dead-mark">${s.mark}</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${s.inactive ? s.why : esc(s.text)}</p>
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
-            ${SHOW_ROLE.includes(s.id) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 Rolle zeigen${game.online ? " / senden" : ""}</button>` : ""}
+            ${!s.inactive && nightOn() ? actionStatusHtml(s.id) : ""}
+            ${(SHOW_ROLE.includes(s.id) || (nightOn() && ROLE_BY_ID[s.id])) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
@@ -908,6 +913,7 @@
     $$("[data-info]").forEach(b => b.addEventListener("click", () => openModal(roleDetail(ROLE_BY_ID[b.dataset.info], true))));
     $$(".showevil").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); showEvilInfo(b.dataset.show); }));
     $$(".showinfo").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); infoDialog(b.dataset.infoStep); }));
+    bindNightActions();
     $$("[data-useonce]").forEach(b => b.addEventListener("click", e => {
       e.stopPropagation();
       const id = b.dataset.useonce;
@@ -933,6 +939,7 @@
     }));
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
       game.vote = null;
+      game.asks = {};
       // Schutz- und Ziel-Marker gelten nur für eine Nacht
       game.seats.forEach(x => { x.marks = (x.marks || []).filter(m => !(markerByKey(m) || {}).n); });
       game.nightNo++;
@@ -1434,6 +1441,202 @@
   }
 
   // =====================================================================
+  //  NACHTAKTIONEN AM HANDY (nur online, vom Spielleiter an/aus)
+  // =====================================================================
+  // n = Anzahl Spieler, min = Mindestzahl, self = darf sich selbst wählen, dead = darf Tote wählen,
+  // role = wählt (zusätzlich) eine Rolle ("good" | "all"), mark = Marker, der automatisch gesetzt wird
+  const ACTIONS = {
+    fortuneteller: { n: 2, self: true, text: "Wähle zwei Spieler: Ist einer davon der Dämon?" },
+    monk: { n: 1, mark: "protect", text: "Wähle einen Spieler, den du heute Nacht beschützt." },
+    butler: { n: 1, mark: "master", text: "Wähle deinen Meister für morgen." },
+    poisoner: { n: 1, self: true, mark: "poison", text: "Wähle einen Spieler, den du vergiftest." },
+    imp: { n: 1, self: true, mark: "target", text: "Wähle einen Spieler, der stirbt (dich selbst = Sternenwechsel)." },
+    ravenkeeper: { n: 1, self: true, dead: true, text: "Du bist gestorben: Wähle einen Spieler und erfahre seine Rolle." },
+    sailor: { n: 1, self: true, text: "Wähle einen Spieler: Er oder du ist betrunken." },
+    chambermaid: { n: 2, text: "Wähle zwei Spieler: Wie viele davon sind heute aufgewacht?" },
+    exorcist: { n: 1, mark: "chosen", text: "Wähle einen Spieler (nicht denselben wie letzte Nacht)." },
+    innkeeper: { n: 2, self: true, mark: "protect", text: "Wähle zwei Spieler, die heute nicht sterben können." },
+    gambler: { n: 1, role: "all", text: "Wähle einen Spieler und rate seine Rolle." },
+    courtier: { n: 0, role: "all", optional: true, text: "Willst du eine Rolle betrunken machen? (einmal pro Spiel)" },
+    professor: { n: 1, dead: true, onlyDead: true, optional: true, text: "Willst du einen toten Spieler wiederbeleben? (einmal pro Spiel)" },
+    devilsadvocate: { n: 1, self: true, mark: "survives", text: "Wähle einen Spieler, der eine Hinrichtung morgen überlebt." },
+    assassin: { n: 1, optional: true, text: "Willst du jemanden töten, egal wie geschützt? (einmal pro Spiel)" },
+    godfather: { n: 1, optional: true, text: "Ist heute ein Außenseiter gestorben? Dann wähle ein Opfer." },
+    zombuul: { n: 1, optional: true, mark: "target", text: "Ist heute niemand gestorben? Dann wähle ein Opfer." },
+    pukka: { n: 1, mark: "poison", text: "Wähle einen Spieler, den du vergiftest (er stirbt in der nächsten Nacht)." },
+    shabaloth: { n: 2, self: true, text: "Wähle zwei Spieler, die sterben." },
+    po: { n: 3, min: 0, self: true, text: "Wähle einen Spieler – oder niemanden, um nächste Nacht drei zu töten. (Wenn du letzte Nacht niemanden gewählt hast: bis zu drei.)" },
+    lunatic: { n: 1, self: true, text: "Wähle einen Spieler, den du angreifst." },
+    dreamer: { n: 1, text: "Wähle einen Spieler und erfahre zwei mögliche Rollen." },
+    snakecharmer: { n: 1, text: "Wähle einen Spieler: Ist es der Dämon, tauscht ihr." },
+    seamstress: { n: 2, optional: true, text: "Willst du zwei Spieler vergleichen? (einmal pro Spiel)" },
+    philosopher: { n: 0, role: "good", optional: true, text: "Willst du eine gute Rolle übernehmen? (einmal pro Spiel)" },
+    witch: { n: 1, self: true, mark: "cursed", text: "Wähle einen Spieler, den du verfluchst." },
+    cerenovus: { n: 1, self: true, role: "good", text: "Wähle einen Spieler und die Rolle, die er morgen spielen muss." },
+    pithag: { n: 1, self: true, role: "all", text: "Wähle einen Spieler und die Rolle, die er werden soll." },
+    fanggu: { n: 1, self: true, mark: "target", text: "Wähle einen Spieler, der stirbt." },
+    vigormortis: { n: 1, self: true, mark: "target", text: "Wähle einen Spieler, der stirbt." },
+    nodashii: { n: 1, self: true, mark: "target", text: "Wähle einen Spieler, der stirbt." },
+    vortox: { n: 1, self: true, mark: "target", text: "Wähle einen Spieler, der stirbt." },
+    villageidiot: { n: 1, text: "Wähle einen Spieler und erfahre seine Gesinnung." },
+    huntsman: { n: 1, optional: true, text: "Willst du jemanden als Jungfer prüfen? (einmal pro Spiel)" },
+    nightwatchman: { n: 1, optional: true, text: "Willst du dich jemandem zeigen? (einmal pro Spiel)" },
+    preacher: { n: 1, mark: "sermon", text: "Wähle einen Spieler für deine Predigt." },
+    lleech: { n: 1, self: true, mark: "target", text: "Wähle einen Spieler (erste Nacht: deinen Wirt)." },
+    ojo: { n: 0, role: "all", text: "Wähle eine Rolle: Ihr Besitzer stirbt." },
+    alhadikhia: { n: 3, min: 0, self: true, text: "Wähle bis zu drei Spieler." },
+    harpy: { n: 2, self: true, text: "Wähle zwei Spieler (der erste muss den zweiten beschuldigen)." },
+    fearmonger: { n: 1, mark: "fear", text: "Wähle einen Spieler, den du fürchten lässt." },
+    widow: { n: 1, self: true, mark: "poison", text: "Wähle einen Spieler, den du vergiftest." },
+    ogre: { n: 1, mark: "friend", text: "Wähle einen Spieler, dessen Gesinnung du übernimmst." },
+    bureaucrat: { n: 1, text: "Wähle einen Spieler: Seine Stimme zählt morgen dreifach." },
+    thief: { n: 1, text: "Wähle einen Spieler: Seine Stimme zählt morgen negativ." },
+    harlot: { n: 1, text: "Wähle einen Spieler, den du besuchst." },
+    bonecollector: { n: 1, dead: true, onlyDead: true, optional: true, text: "Willst du einem Toten seine Fähigkeit zurückgeben? (einmal pro Spiel)" }
+  };
+  const nightOn = () => !!(game.online && game.nightActions);
+  // Als welche Rolle handelt dieser Spieler? (Säufer/Marionette glauben an ihre Rolle, Philosoph an die gewählte)
+  const actingRole = x => x.role === "philosopher" && x.gained ? x.gained : shownRole(x.role);
+
+  function nightActionsBar(steps) {
+    if (!game.online) return "";
+    if (!game.nightActions) return `<div class="box nabar"><label class="switch"><input type="checkbox" id="natoggle">
+      <span><b>📲 Nachtaktionen am Handy</b> – Spieler wählen ihre Ziele auf dem eigenen Handy, statt zu zeigen.</span></label></div>`;
+    const asks = Object.values(game.asks || {}).filter(a => a.night === game.nightNo);
+    const real = asks.filter(a => !a.sleep);
+    return `<div class="box nabar">
+      <label class="switch"><input type="checkbox" id="natoggle" checked><span><b>📲 Nachtaktionen am Handy</b> sind an.</span></label>
+      <p class="small">„Alle wecken“ schickt allen lebenden Online-Spielern gleichzeitig einen Nacht-Bildschirm – wer eine Aktion hat, wählt dort, alle anderen tippen nur „OK“. So merkt niemand, wer etwas tut.</p>
+      <div class="row wrap"><button class="btn primary" id="naall">🌙 Alle wecken</button>
+        ${asks.length ? `<span class="small">${real.filter(a => a.done).length} von ${real.length} Aktionen beantwortet</span>` : ""}</div>
+    </div>`;
+  }
+
+  function actionStatusHtml(stepId) {
+    if (!ACTIONS[stepId]) return "";
+    const rows = game.seats.map((x, i) => [x, i]).filter(([x]) => actingRole(x) === stepId && (x.alive || ACTS_WHEN_DEAD.includes(stepId)));
+    if (!rows.length) return "";
+    return `<div class="actstat">${rows.map(([x, i]) => {
+      const a = (game.asks || {})[i];
+      const online = x.pid && lobby[x.pid];
+      let st;
+      if (a && a.night === game.nightNo && a.done) st = `<span class="okmsg">✅ ${a.skip ? "nichts gewählt" : esc(describePick(a))}</span>${online ? ` <button class="btn sm" data-ask="${i}">neu fragen</button>` : ""}`;
+      else if (!online) st = `<span class="small">nicht online – bitte wie gewohnt wecken</span>`;
+      else if (!a || a.night !== game.nightNo) st = `<button class="btn sm" data-ask="${i}">📲 Aufs Handy schicken</button>`;
+      else if (!a.done) st = `<span class="wait">⏳ wartet …</span> <button class="btn sm" data-ask="${i}">erneut</button>`;
+      else st = `<span class="okmsg">✅ ${a.skip ? "nichts gewählt" : esc(describePick(a))}</span> <button class="btn sm" data-ask="${i}">neu fragen</button>`;
+      return `<div class="actrow"><b>${esc(x.name)}:</b> ${st}</div>`;
+    }).join("")}</div>`;
+  }
+  const describePick = a => [(a.picks || []).map(k => game.seats[k] ? game.seats[k].name : "?").join(", "), a.role ? roleName(a.role) : ""].filter(Boolean).join(" · ");
+
+  function askSeat(i, sleep) {
+    const x = game.seats[i];
+    game.asks = game.asks || {};
+    game.asks[i] = { id: `${game.nightNo}-${i}-${randInt(1e6)}`, night: game.nightNo, step: sleep ? null : actingRole(x), sleep: !!sleep };
+  }
+
+  function bindNightActions() {
+    $("#natoggle") && $("#natoggle").addEventListener("change", e => { game.nightActions = e.target.checked; game.asks = {}; save(); renderSL(); });
+    $("#naall") && $("#naall").addEventListener("click", () => {
+      const first = game.nightNo === 1, key = first ? "n1" : "n";
+      let n = 0;
+      game.seats.forEach((x, i) => {
+        if (!x.alive || !x.pid || !lobby[x.pid]) return;
+        const r = actingRole(x), role = ROLE_BY_ID[r];
+        const acts = ACTIONS[r] && role && role[key] && !(ONCE_PER_GAME.includes(r) && x.used) && !(r === "philosopher" && x.gained);
+        askSeat(i, !acts);
+        if (acts) n++;
+      });
+      save(); renderSL();
+      toast(`Alle geweckt – ${n} mit Aktion`);
+    });
+    $$("[data-ask]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); askSeat(+b.dataset.ask, false); save(); renderSL(); }));
+  }
+
+  function onPlayerAction(uid, msg) {
+    const i = game.seats.findIndex(x => x.pid === uid);
+    const a = (game.asks || {})[i];
+    if (i < 0 || !a || a.id !== msg.id) return;
+    a.done = true;
+    if (a.sleep) { save(); refreshHostView(); return; }
+    a.skip = !!msg.skip;
+    a.picks = (msg.picks || []).filter(k => game.seats[k]);
+    a.role = msg.role && ROLE_BY_ID[msg.role] ? msg.role : null;
+    const x = game.seats[i];
+    const def = ACTIONS[a.step] || {};
+    // Marker automatisch setzen
+    if (!a.skip && def.mark) a.picks.forEach(k => { const t = game.seats[k]; t.marks = [...new Set([...(t.marks || []), def.mark])]; });
+    if (!a.skip && a.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [a.step]: a.role });
+    const text = `🌙 ${x.name} (${roleName(a.step)}): ${a.skip ? "nichts" : describePick(a)}`;
+    game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
+    if (!a.skip && a.step === "philosopher" && a.role && x.role === "philosopher") setPhilo(i, a.role);
+    else { save(); refreshHostView(); }
+    notice(text);
+  }
+
+  // ---------- Spieler-Seite ----------
+  function showNightPrompt(mine) {
+    const q = mine.q;
+    if (!q || (store.get("botc.answered", []) || []).includes(q.id)) return;
+    const seats = (pubState && pubState.seats) || [];
+    const done = (payload) => {
+      const ans = store.get("botc.answered", []) || [];
+      store.set("botc.answered", [...ans, q.id].slice(-50));
+      sendToHost(Object.assign({ type: "action", id: q.id }, payload)).then(ok => {
+        $("#modal-content").innerHTML = `<div class="nightshow"><div class="cover-icon">${ok ? "✅" : "⚠️"}</div>
+          <h2>${ok ? "Gesendet" : "Nicht gesendet"}</h2><p class="ns-hint">${ok ? "Schließ die Augen – der Spielleiter macht weiter." : "Keine Verbindung – zeig dem Spielleiter deine Wahl."}</p>
+          <div class="row center"><button class="btn big" id="ndone">OK</button></div></div>`;
+        $("#ndone").addEventListener("click", () => { closeModal(); refreshPlayerView(true); });
+      });
+    };
+    if (q.sleep) {
+      openModal(`<div class="nightshow"><div class="cover-icon">🌙</div><h2>Nacht</h2>
+        <p class="ns-hint">Du hast heute Nacht nichts zu tun. Tippe auf OK und schließ die Augen.</p>
+        <div class="row center"><button class="btn big" id="nok">OK</button></div></div>`, "full night");
+      $("#nok").addEventListener("click", () => done({}));
+      if (navigator.vibrate) navigator.vibrate(150);
+      return;
+    }
+    const def = ACTIONS[q.step] || { n: 1 };
+    const min = def.min !== undefined ? def.min : (def.optional ? 0 : def.n);
+    const list = seats.map((x, k) => ({ ...x, k })).filter(x => (def.self || x.k !== mine.s) && (def.onlyDead ? !x.a : (x.a || def.dead)));
+    let pool = [];
+    if (def.role) {
+      const ed = mine.sc ? "custom" : (ROLE_BY_ID[mine.r] || {}).ed;
+      pool = ROLES.filter(r => inEd(r, ed, mine.sc) && !["traveller", "fabled"].includes(r.t) && (def.role === "all" || r.t === "townsfolk" || r.t === "outsider"));
+    }
+    openModal(`<div class="nightshow nightact">
+        <p class="ns-label">🌙 ${esc(roleName(q.step))}</p>
+        <h2>Du bist wach</h2>
+        <p class="ns-hint">${esc(def.text || "")}</p>
+        ${def.n ? `<div class="pickgrid">${list.map(x => `<button class="pickbtn ${x.a ? "" : "dead"}" data-pk="${x.k}">${esc(x.n)}${x.a ? "" : " 💀"}</button>`).join("")}</div>
+          <p class="small" id="pkcount">0 von ${def.n} gewählt</p>` : ""}
+        ${def.role ? `<select id="pkrole"><option value="">– Rolle wählen –</option>${pool.map(r => `<option value="${r.id}">${esc(r.de)}</option>`).join("")}</select>` : ""}
+        <div class="row center wrap">
+          ${min === 0 ? `<button class="btn" id="pkskip">Nichts tun</button>` : ""}
+          <button class="btn primary big" id="pkok">Bestätigen</button>
+        </div>
+      </div>`, "full night");
+    const chosen = [];
+    $$("[data-pk]").forEach(b => b.addEventListener("click", () => {
+      const k = +b.dataset.pk, at = chosen.indexOf(k);
+      if (at >= 0) chosen.splice(at, 1);
+      else { if (chosen.length >= def.n) chosen.shift(); chosen.push(k); }
+      $$("[data-pk]").forEach(x => x.classList.toggle("on", chosen.includes(+x.dataset.pk)));
+      $("#pkcount").textContent = `${chosen.length} von ${def.n} gewählt`;
+    }));
+    $("#pkskip") && $("#pkskip").addEventListener("click", () => done({ skip: true }));
+    $("#pkok").addEventListener("click", () => {
+      const role = $("#pkrole") ? $("#pkrole").value : "";
+      if (def.n && chosen.length < Math.max(min, 1) && !(min === 0 && role)) { toast(`Bitte ${def.n === 1 ? "einen Spieler" : `${min || 1}–${def.n} Spieler`} wählen.`); return; }
+      if (def.role && !role && !def.optional) { toast("Bitte eine Rolle wählen."); return; }
+      done({ picks: chosen, role: role || null });
+    });
+    if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
+  }
+
+  // =====================================================================
   //  ROLLEN-INFO ZEIGEN (Totengräber, Rabenhüter, Waschfrau …)
   // =====================================================================
   // Nacht-Schritte, bei denen der Spielleiter eine oder mehrere Rollen zeigt.
@@ -1473,7 +1676,7 @@
       const l = pool.filter(r => r.t === t);
       return l.length ? `<optgroup label="${TEAMS[t].plural}">${l.map(r => `<option value="${r.id}" ${r.id === sel ? "selected" : ""}>${esc(r.de)}</option>`).join("")}</optgroup>` : "";
     }).join("")}`;
-    const noRole = ["sage", "noble"].includes(stepId);
+    const noRole = ["sage", "noble"].includes(stepId) || !SHOW_ROLE.includes(stepId);
     openModal(`<h2>📱 ${esc(roleName(stepId))}: Info zeigen</h2>
       <p class="small">${esc(INFO_HINT[stepId] || "")}${stepId === "undertaker" && !pre.length ? " – heute wurde niemand über den Abstimmungs-Helfer hingerichtet, bitte selbst wählen." : ""}</p>
       ${holders.length > 1 ? `<label class="field">Für: <select id="inforcpt">${holders.map(([s, i]) => `<option value="${i}">${esc(s.name)}${s.role !== stepId ? ` (${esc(roleName(s.role))})` : ""}</option>`).join("")}</select></label>`
@@ -1959,7 +2162,7 @@
     if (tab !== "sl" || !modal.classList.contains("hidden")) return;
     const a = document.activeElement;
     if (a && (a.tagName === "INPUT" || a.tagName === "SELECT")) return;
-    if (game.step === "setup" || game.step === "assign") renderSL();
+    if (game.step === "setup" || game.step === "assign" || game.step === "grim") renderSL();
   }
 
   function scheduleSync() {
@@ -2037,6 +2240,7 @@
   }
 
   function onPlayerMessage(uid, msg) {
+    if (msg.type === "action") return onPlayerAction(uid, msg);
     if (msg.type !== "pick" || !ROLE_BY_ID[msg.pick]) return;
     const i = game.seats.findIndex(s => s.pid === uid);
     const name = i >= 0 ? game.seats[i].name : (lobby[uid] && lobby[uid].name) || "?";
@@ -2149,6 +2353,10 @@
       info.online = on.code;
       if (old && old.r === info.r && old.pick) info.pick = old.pick;
       store.set("botc.myrole", info);
+      if (info.q && !(store.get("botc.answered", []) || []).includes(info.q.id)) {
+        store.set("botc.myrole", info);
+        if (modal.classList.contains("hidden") || !$(".nightact, .nightshow")) showNightPrompt(info);
+      }
       const newInfo = JSON.stringify((old && old.i) || []) !== JSON.stringify(info.i || []) && (info.i || []).length > ((old && old.i) || []).length;
       const changed = !old || newInfo || old.r !== info.r || old.a !== info.a || old.m !== info.m || JSON.stringify(old.x) !== JSON.stringify(info.x);
       if (changed) {

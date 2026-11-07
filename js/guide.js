@@ -38,6 +38,7 @@ const GUIDE = [
       <li>Spieler sehen oben, wer lebt, wer tot ist, wer noch eine Geisterstimme hat und welche Nacht ist.</li>
       <li><b>Philosoph &amp; Co.</b> schicken ihre Wahl direkt an den Spielleiter – er bekommt eine Meldung, der Philosoph wird automatisch eingetragen.</li>
       <li>Beim <b>Spielende</b> sehen alle den Sieger-Bildschirm mit Auflösung und ob sie gewonnen haben.</li>
+      <li><b>Nachtaktionen am Handy</b> (optional, im Grimoire bei der Nacht einschalten): Mit „🌙 Alle wecken“ bekommen alle lebenden Online-Spieler gleichzeitig einen Nacht-Bildschirm. Wer eine Aktion hat (Mönch, Giftmischer, Imp, Wahrsager …), tippt sein Ziel an – alle anderen tippen nur „OK“, damit niemand merkt, wer etwas tut. Die Wahl erscheint im Grimoire, passende Marker (z. B. 🛡️ Geschützt, 🧪 Vergiftet) werden automatisch gesetzt. Infos zurück schickst du mit „📱 Info / senden“ beim jeweiligen Schritt.</li>
     </ol>
     <p class="hint">Fällt das Internet aus, macht der Spielleiter einfach offline weiter – das Grimoire liegt auf seinem Handy. Spieler ohne Verbindung bekommen ihre Rolle per QR-Code oder Code.</p>` },
 

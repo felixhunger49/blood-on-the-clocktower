@@ -415,3 +415,14 @@ table.setup th, table.setup td { padding: .35rem; text-align: center; border-bot
 .mkhelp { background: var(--panel2); border-left: 4px solid var(--accent); border-radius: 10px; padding: .6rem .8rem; margin: .6rem 0; }
 .mkhelp p { margin: .2rem 0 0; font-size: .9rem; }
 .mk-sub { margin: .8rem 0 .2rem; color: var(--muted); }
+
+/* Nachtaktionen */
+.nabar { border-left: 4px solid var(--good); }
+.actstat { margin-top: .4rem; display: grid; gap: .25rem; font-size: .88rem; }
+.actrow { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.wait { color: var(--warn); }
+.nightact .pickgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: .4rem; margin: 1rem 0 .4rem; text-align: left; }
+.pickbtn { background: var(--panel2); color: var(--text); border: 2px solid var(--line); border-radius: 12px; padding: .8rem .6rem; font: inherit; font-weight: 700; cursor: pointer; }
+.pickbtn.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 25%, var(--panel2)); }
+.pickbtn.dead { opacity: .6; }
+.nightact select { width: 100%; margin: .6rem 0; }
