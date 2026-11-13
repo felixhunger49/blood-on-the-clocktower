@@ -132,7 +132,7 @@
           <div class="box"><h4>So funktioniert's</h4><p>${esc(role.e)}</p></div>
           ${role.tip ? `<div class="box"><h4>💡 Tipp</h4><p>${esc(role.tip)}</p></div>` : ""}
           ${(info.i || []).length ? `<div class="box infos"><h4>🌙 Deine Infos vom Spielleiter</h4><ul>${info.i.map(x =>
-            `<li><b>Nacht ${x.n}:</b> ${(x.r || []).map(id => esc(roleName(id))).join(" / ")}${x.t ? ` – ${esc(x.t)}` : ""}</li>`).join("")}</ul></div>` : ""}
+            `<li><b>Nacht ${x.n}:</b> ${[(x.r || []).map(id => esc(roleName(id))).join(" / "), x.t ? esc(x.t) : ""].filter(Boolean).join(" – ")}</li>`).join("")}</ul></div>` : ""}
           ${info.m && ROLE_BY_ID[info.m] ? `<div class="box madness"><h4>😵 Wahnsinn</h4>
             <p>Du musst am Tag <b>überzeugend behaupten, ${esc(ROLE_BY_ID[info.m].de)} zu sein</b>. Tust du es nicht, kann der Spielleiter dich hinrichten lassen.</p>
             <p class="small">${esc(ROLE_BY_ID[info.m].de)}: ${esc(ROLE_BY_ID[info.m].a)}</p></div>` : ""}
@@ -820,7 +820,7 @@
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${!s.inactive && nightOn() ? actionStatusHtml(s.id) : ""}
-            ${(SHOW_ROLE.includes(s.id) || (nightOn() && ROLE_BY_ID[s.id])) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
+            ${(SHOW_ROLE.includes(s.id) || (game.online && ROLE_BY_ID[s.id])) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"} <small>(hier)</small></button>` : ""}
             ${s.show && game.online ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
           </li>`).join("")}</ol>
@@ -1768,7 +1768,7 @@
         : `<p>Für: <b>${esc(holders[0][0].name)}</b>${holders[0][0].role !== stepId ? ` <span class="small">(${esc(roleName(holders[0][0].role))} – Info darf falsch sein)</span>` : ""}</p>`}
       ${noRole ? "" : `<label class="field">Rolle: <select id="inforole1">${opts(pre[0])}</select></label>
       <label class="field">2. Rolle (optional): <select id="inforole2">${opts(pre[1])}</select></label>`}
-      <label class="field">Zusatz (optional): <input id="infotext" placeholder="z. B. einer von: Anna, Ben"></label>
+      <label class="field">Zusatz (optional): <input id="infotext" placeholder="${SHOW_ROLE.includes(stepId) ? "z. B. einer von: Anna, Ben" : "z. B. 1 · Ja · Nein"}"></label>
       <div class="row wrap end">
         <button class="btn" id="infoshow">📱 Zeigen</button>
         ${game.online ? `<button class="btn primary" id="infosend">🌐 Aufs Handy senden</button>` : ""}
