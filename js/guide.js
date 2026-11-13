@@ -45,6 +45,7 @@ const GUIDE = [
         </ul>
         In beiden Modi tippen Spieler ohne Aufgabe eine <b>Schein-Auswahl</b> an, die ignoriert wird – so sieht von außen jeder gleich aus. Passende Marker (🛡️ Geschützt, 🧪 Vergiftet …) setzt die App automatisch, Infos schickst du mit „📱 Info / senden“.</li>
     </ol>
+    <p class="hint">Im Online-Spiel hält die App den <b>Bildschirm wach</b> (bei Spielern und beim Spielleiter), denn bei ausgeschaltetem Bildschirm kommen keine Aufgaben oder Infos an. Die App muss dafür geöffnet bleiben. Das kostet etwas mehr Akku.</p>
     <p class="hint">Fällt das Internet aus, macht der Spielleiter einfach offline weiter – das Grimoire liegt auf seinem Handy. Spieler ohne Verbindung bekommen ihre Rolle per QR-Code oder Code.</p>` },
 
   { id: "vorbereitung", title: "Spielleiter: Vorbereitung", html: `

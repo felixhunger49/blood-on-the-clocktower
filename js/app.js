@@ -2520,6 +2520,7 @@
       ${p && (p.fabled || []).length ? `<p class="small">✨ Fabelwesen: ${p.fabled.map(id => `<b>${esc(roleName(id))}</b> – ${esc(ROLE_BY_ID[id] ? ROLE_BY_ID[id].a : "")}`).join("<br>")}</p>` : ""}
       <div class="nb-top">${netDot()}<b>Raum ${esc(on.code)}</b><span>· ${esc(on.name)}</span>${p && p.started ? `<span>· 🌙 Nacht ${p.nightNo}</span>` : ""}</div>
       ${seats.length ? `<details class="nb-players" ${netbarOpen ? "open" : ""}><summary>Mitspieler (${seats.filter(s => s.a).length} von ${seats.length} leben)</summary>
+        <p class="small">${"wakeLock" in navigator ? "🔆 Der Bildschirm bleibt an, solange du im Spiel bist – so verpasst du nachts nichts." : "⚠️ Dieses Handy kann den Bildschirm nicht selbst wach halten. Stell die automatische Sperre für das Spiel aus."}</p>
         <ul>${seats.map(s => `<li class="${s.a ? "" : "dead"}"><span>${esc(s.n)}</span><span>${s.a ? "❤️" : s.g ? "💀 👻 Stimme frei" : "💀"}</span></li>`).join("")}</ul></details>` : ""}
     </section>`;
   }
@@ -2616,6 +2617,33 @@
     navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {});
   }
 
+  // =====================================================================
+  //  BILDSCHIRM WACH HALTEN (im Online-Spiel)
+  // =====================================================================
+  // Bei ausgeschaltetem Bildschirm kommen keine Aufgaben, Infos oder Timer an.
+  // Deshalb bleibt der Bildschirm an, solange dieses Handy in einem Online-Spiel ist.
+  let wakeLock = null;
+  async function keepAwake() {
+    if (!("wakeLock" in navigator)) return;
+    const want = !!(store.get("botc.online", null) || game.online);
+    if (want && !wakeLock && document.visibilityState === "visible") {
+      try {
+        const lock = await navigator.wakeLock.request("screen");
+        wakeLock = lock;
+        lock.addEventListener("release", () => { if (wakeLock === lock) wakeLock = null; });
+      } catch (e) { /* z. B. Energiesparmodus – später erneut versuchen */ }
+    } else if (!want && wakeLock) {
+      const lock = wakeLock;
+      wakeLock = null;
+      lock.release().catch(() => {});
+    }
+  }
+  // Das System gibt die Sperre frei, sobald die App in den Hintergrund geht – beim Zurückkommen neu anfordern.
+  document.addEventListener("visibilitychange", keepAwake);
+  document.addEventListener("click", keepAwake);
+  setInterval(keepAwake, 10000);
+  keepAwake();
+
   // Für Tests im Browser
-  window.__botc = { makeCode, readCode, encodeLink, decodeLink };
+  window.__botc = { makeCode, readCode, encodeLink, decodeLink, awake: () => !!wakeLock };
 })();
