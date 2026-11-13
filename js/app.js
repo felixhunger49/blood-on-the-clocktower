@@ -323,7 +323,7 @@
     view.innerHTML = netbarHtml() + `
       <section class="reveal-wrap">
         <div id="cover" class="cover" role="button" tabindex="0">
-          <div class="cover-icon">🕰️</div>
+          <img class="cover-img" src="icon-192.png" alt="">
           <div class="cover-title">${mine.n ? esc(mine.n) + ", deine" : "Deine"} Rolle ist verdeckt</div>
           <div class="cover-sub">Achte darauf, dass niemand mitschaut.<br>Dann tippe hier, um sie anzuzeigen.</div>
         </div>
@@ -1264,7 +1264,7 @@
     const t = game.timer;
     const left = timerLeft(t);
     return `<div class="box timerbox">
-      <div class="tb-row"><h4>⏱️ Timer</h4><span class="timerval big ${left !== null && left <= 0 ? "over" : ""}">${left === null ? "–:––" : fmtTime(left)}</span></div>
+      <div class="tb-row"><h4>⏱️ Timer</h4><span class="timerval big ${left !== null && left <= 0 ? "over" : ""}">${left === null ? "0:00" : fmtTime(left)}</span></div>
       <div class="chips">${[2, 3, 5, 8, 10].map(m => `<button class="chip" data-tmin="${m}">${m} min</button>`).join("")}</div>
       <div class="row wrap">
         ${t && t.running ? `<button class="btn" id="tpause">⏸️ Pause</button>` : t && t.left > 0 ? `<button class="btn primary" id="tstart">▶️ Weiter</button>` : ""}
@@ -1315,7 +1315,7 @@
     const pub = !host && pubState && pubState.timer && (pubState.timer.running || pubState.timer.left > 0) ? pubState.timer : null;
     const t = host || pub;
     const left = timerLeft(t);
-    $$(".timerval").forEach(el => { el.textContent = left === null ? "–:––" : fmtTime(left); el.classList.toggle("over", left !== null && left <= 0); });
+    $$(".timerval").forEach(el => { el.textContent = left === null ? "0:00" : fmtTime(left); el.classList.toggle("over", left !== null && left <= 0); });
     let chip = $("#timerchip");
     if (t) {
       if (!chip) {
