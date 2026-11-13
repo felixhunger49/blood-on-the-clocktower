@@ -477,3 +477,6 @@ img.logo { width: 30px; height: 30px; border-radius: 8px; box-shadow: 0 0 0 1px 
 .notice { animation-name: toast-in; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 .token .tk-name, .token .tk-role { max-width: 86%; }
+
+.pidsel { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .88rem; }
+.pidsel select { flex: 1; min-width: 9rem; padding: .35rem .5rem; }

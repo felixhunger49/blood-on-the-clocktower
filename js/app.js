@@ -676,6 +676,7 @@
         <div class="seat-top"><span class="seatno">${i + 1}</span><b class="seatname">${esc(s.name)}</b>${onlineBadge(s)}
           ${shown !== s.role ? `<span class="small">sieht: ${esc(roleName(shown))}</span>` : ""}</div>
         <div class="seat-mid">${sel}</div>
+        ${pidSelect(i)}
         <div class="seat-bot"><code class="code">${seatCode(s, i)}</code>
           <button class="btn sm" data-qr="${i}">📱 QR / Link</button>
           ${s.trav ? `<button class="btn sm danger" data-deltrav="${i}">✕</button>` : ""}</div>
@@ -898,6 +899,7 @@
       save(); renderSL();
     }));
     $$("[data-qr]").forEach(b => b.addEventListener("click", () => showQR(+b.dataset.qr)));
+    $$("[data-pid]").forEach(sel => sel.addEventListener("change", () => { setSeatPid(+sel.dataset.pid, sel.value); renderSL(); }));
     $$("[data-deltrav]").forEach(b => b.addEventListener("click", () => { game.seats.splice(+b.dataset.deltrav, 1); save(); renderSL(); }));
     $("#pass") && $("#pass").addEventListener("click", () => passMode(0));
     $("#reshuffle") && $("#reshuffle").addEventListener("click", () => {
@@ -1230,6 +1232,7 @@
       <p class="small">Tippe ⓘ für eine Erklärung. Marker mit 🌙 verschwinden in der nächsten Nacht von selbst.</p>
       <div class="mkgrid">${GENERIC_MARKERS.map(m => markerChip(s, m)).join("")}</div>
       ${markersInPlay().length ? `<h4 class="mk-sub">Marker der Rollen im Spiel</h4><div class="mkgrid">${markersInPlay().map(m => markerChip(s, m)).join("")}</div>` : ""}
+      ${pidSelect(i)}
       <label class="field">Notiz ${helpBtn("s:note")}: <input id="m-note" value="${esc(s.note || "")}" placeholder="z. B. Meister des Butlers"></label>
       <div class="row wrap">
         <button class="btn" data-m="info">ℹ️ Rolle</button>
@@ -1271,6 +1274,7 @@
       else { closeModal(); renderSL(); }
     }));
     root.querySelectorAll("[data-philo]").forEach(sel => sel.addEventListener("change", () => { setPhilo(i, sel.value); seatModal(i); }));
+    root.querySelectorAll("[data-pid]").forEach(sel => sel.addEventListener("change", () => { setSeatPid(i, sel.value); renderSL(); seatModal(i); }));
   }
 
   // =====================================================================
@@ -2115,6 +2119,32 @@
   const roomPath = p => `rooms/${game.online.code}${p ? "/" + p : ""}`;
   const netDot = () => `<span class="netdot ${Net.connected ? "on" : ""}"></span>`;
   const joinUrl = code => appUrl() + "#join=" + code;
+
+  // Online-Spieler nachträglich einem Platz zuordnen (ohne neu zu verteilen)
+  function pidSelect(i) {
+    if (!game.online) return "";
+    const s = game.seats[i];
+    const ids = lobbyOrder();
+    const gone = s.pid && !lobby[s.pid];
+    return `<label class="pidsel">🌐 Handy:
+      <select data-pid="${i}">
+        <option value="">– kein Online-Spieler –</option>
+        ${gone ? `<option value="${esc(s.pid)}" selected>(nicht mehr im Raum)</option>` : ""}
+        ${ids.map(id => {
+          const other = game.seats.findIndex((x, k) => k !== i && x.pid === id);
+          return `<option value="${esc(id)}" ${s.pid === id ? "selected" : ""}>${esc(lobby[id].name)}${other >= 0 ? ` (bisher Platz ${other + 1})` : ""}</option>`;
+        }).join("")}
+      </select></label>`;
+  }
+  function setSeatPid(i, pid) {
+    const s = game.seats[i];
+    // Ein Handy gehört immer nur zu einem Platz
+    if (pid) game.seats.forEach((x, k) => { if (k !== i && x.pid === pid) x.pid = null; });
+    s.pid = pid || null;
+    game.pids = playerSeats().map(x => x.pid || null);
+    save();
+    if (pid && lobby[pid]) toast(`${lobby[pid].name} ist jetzt mit Platz ${i + 1} (${s.name}) verbunden`);
+  }
 
   function onlineBadge(s) {
     if (!game.online || !s.pid) return "";
