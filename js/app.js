@@ -1762,21 +1762,44 @@
       return l.length ? `<optgroup label="${TEAMS[t].plural}">${l.map(r => `<option value="${r.id}" ${r.id === sel ? "selected" : ""}>${esc(r.de)}</option>`).join("")}</optgroup>` : "";
     }).join("")}`;
     const noRole = ["sage", "noble"].includes(stepId) || !SHOW_ROLE.includes(stepId);
+    // Wie die angetippten Spieler in der Info erscheinen
+    const PICK_FMT = {
+      washerwoman: { max: 2, label: "einer von" }, librarian: { max: 2, label: "einer von" }, investigator: { max: 2, label: "einer von" },
+      sage: { max: 2, label: "einer davon ist der Dämon" }, noble: { max: 3, label: "genau einer ist böse" },
+      grandmother: { max: 1, label: "dein Enkelkind" }, steward: { max: 1, label: "guter Spieler" },
+      knight: { max: 2, label: "keiner davon ist der Dämon" }, bountyhunter: { max: 1, label: "böser Spieler" },
+      highpriestess: { max: 1, label: "rede mit" }, balloonist: { max: 1, label: "Spieler" }
+    };
+    const pickCfg = Object.assign({ max: 3, label: "Spieler", ph: "z. B. 1 · Ja · Nein" }, PICK_FMT[stepId] || {});
+    if (PICK_FMT[stepId]) pickCfg.ph = "weitere Angabe (optional)";
+    const picked = [];
+    const pickText = () => picked.length ? `${pickCfg.label}: ${picked.map(k => game.seats[k].name).join(", ")}` : "";
     openModal(`<h2>📱 ${esc(roleName(stepId))}: Info zeigen</h2>
       <p class="small">${esc(INFO_HINT[stepId] || "")}${stepId === "undertaker" && !pre.length ? " – heute wurde niemand über den Abstimmungs-Helfer hingerichtet, bitte selbst wählen." : ""}</p>
       ${holders.length > 1 ? `<label class="field">Für: <select id="inforcpt">${holders.map(([s, i]) => `<option value="${i}">${esc(s.name)}${s.role !== stepId ? ` (${esc(roleName(s.role))})` : ""}</option>`).join("")}</select></label>`
         : `<p>Für: <b>${esc(holders[0][0].name)}</b>${holders[0][0].role !== stepId ? ` <span class="small">(${esc(roleName(holders[0][0].role))} – Info darf falsch sein)</span>` : ""}</p>`}
       ${noRole ? "" : `<label class="field">Rolle: <select id="inforole1">${opts(pre[0])}</select></label>
       <label class="field">2. Rolle (optional): <select id="inforole2">${opts(pre[1])}</select></label>`}
-      <label class="field">Zusatz (optional): <input id="infotext" placeholder="${SHOW_ROLE.includes(stepId) ? "z. B. einer von: Anna, Ben" : "z. B. 1 · Ja · Nein"}"></label>
+      <div class="field"><span>Spieler antippen${pickCfg.max ? ` (bis zu ${pickCfg.max})` : ""}:</span>
+        <div class="infopick">${game.seats.map((x, k) => `<button class="pickbtn sm ${x.alive ? "" : "dead"}" data-ip="${k}">${esc(x.name)}${x.alive ? "" : " 💀"}</button>`).join("")}</div>
+        <p class="small" id="ippreview">${esc(pickCfg.label)}: –</p></div>
+      <label class="field">Zusatz (optional): <input id="infotext" placeholder="${pickCfg.ph}"></label>
       <div class="row wrap end">
         <button class="btn" id="infoshow">📱 Zeigen</button>
         ${game.online ? `<button class="btn primary" id="infosend">🌐 Aufs Handy senden</button>` : ""}
       </div>`);
+    $$("[data-ip]").forEach(b => b.addEventListener("click", () => {
+      const k = +b.dataset.ip, at = picked.indexOf(k);
+      if (at >= 0) picked.splice(at, 1);
+      else { if (pickCfg.max && picked.length >= pickCfg.max) picked.shift(); picked.push(k); }
+      $$("[data-ip]").forEach(x => x.classList.toggle("on", picked.includes(+x.dataset.ip)));
+      $("#ippreview").textContent = `${pickCfg.label}: ${picked.map(k2 => game.seats[k2].name).join(", ") || "–"}`;
+    }));
     const collect = () => {
       const i = holders.length > 1 ? +$("#inforcpt").value : holders[0][1];
       const r = noRole ? [] : [$("#inforole1").value, $("#inforole2").value].filter(Boolean);
-      return { i, r, t: $("#infotext").value.trim() };
+      const t = [pickText(), $("#infotext").value.trim()].filter(Boolean).join(" · ");
+      return { i, r, t };
     };
     const store_ = ({ i, r, t }) => {
       const s = game.seats[i];

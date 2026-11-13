@@ -480,3 +480,6 @@ img.logo { width: 30px; height: 30px; border-radius: 8px; box-shadow: 0 0 0 1px 
 
 .pidsel { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .88rem; }
 .pidsel select { flex: 1; min-width: 9rem; padding: .35rem .5rem; }
+
+.infopick { display: flex; flex-wrap: wrap; gap: .35rem; margin: .35rem 0; }
+.pickbtn.sm { padding: .45rem .65rem; font-size: .88rem; border-radius: 10px; }
