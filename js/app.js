@@ -483,10 +483,16 @@
     game.vote = null;
     game.winner = null;
     game.ignoreEnd = null;
+    game.evilSent = {};
   }
 
   function evilInfoFor(seat) {
-    if (!game.evilInfo || playerSeats().length < 7 || seat.trav) return undefined;
+    // Böse-Infos stehen auf der Karte, wenn der Schalter an ist oder der Spielleiter sie in der Nacht gesendet hat.
+    const sent = game.evilSent || {};
+    if (seat.trav) return undefined;
+    const tt = ROLE_BY_ID[seat.role].t;
+    const allowed = (game.evilInfo && playerSeats().length >= 7) || (tt === "minion" ? sent.minion : sent.demon);
+    if (!allowed) return undefined;
     const ps = playerSeats();
     const t = ROLE_BY_ID[seat.role].t;
     const demon = ps.find(s => ROLE_BY_ID[s.role].t === "demon");
@@ -814,7 +820,8 @@
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${!s.inactive && nightOn() ? actionStatusHtml(s.id) : ""}
             ${(SHOW_ROLE.includes(s.id) || (nightOn() && ROLE_BY_ID[s.id])) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
-            ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"}</button>` : ""}
+            ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"} <small>(hier)</small></button>` : ""}
+            ${s.show && game.online ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
           <button class="btn primary" id="nextnight">☀️ Tag ${game.nightNo} vorbei → Nacht ${game.nightNo + 1} beginnen</button>
@@ -912,6 +919,19 @@
     $$("[data-note]").forEach(inp => inp.addEventListener("input", () => { game.seats[+inp.dataset.note].note = inp.value; save(); }));
     $$("[data-info]").forEach(b => b.addEventListener("click", () => openModal(roleDetail(ROLE_BY_ID[b.dataset.info], true))));
     $$(".showevil").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); showEvilInfo(b.dataset.show); }));
+    $$(".sendevil").forEach(b => b.addEventListener("click", e => {
+      e.stopPropagation();
+      const which = b.dataset.sendevil, key = which === "demoninfo" ? "demon" : "minion";
+      game.evilSent = Object.assign({}, game.evilSent, { [key]: true });
+      // Empfänger: Schergen (ohne Marionette) bzw. Dämon und Wahnsinniger
+      const rc = playerSeats().filter(x => key === "minion" ? (ROLE_BY_ID[x.role].t === "minion" && x.role !== "marionette") : (ROLE_BY_ID[x.role].t === "demon" || x.role === "lunatic"));
+      const off = rc.filter(x => !(x.pid && lobby[x.pid]));
+      const d = game.done[game.nightNo] || [];
+      if (!d.includes(which)) game.done[game.nightNo] = [...d, which];
+      save(); renderSL();
+      if (off.length) notice(`Nicht online: ${off.map(x => x.name).join(", ")} – bitte mit „zeigen (hier)“ das Handy hinhalten.`);
+      else toast(`Gesendet an ${rc.map(x => x.name).join(", ")}`);
+    }));
     $$(".showinfo").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); infoDialog(b.dataset.infoStep); }));
     bindNightActions();
     $$("[data-useonce]").forEach(b => b.addEventListener("click", e => {
@@ -2421,7 +2441,8 @@
       const newInfo = JSON.stringify((old && old.i) || []) !== JSON.stringify(info.i || []) && (info.i || []).length > ((old && old.i) || []).length;
       const changed = !old || newInfo || old.r !== info.r || old.a !== info.a || old.m !== info.m || JSON.stringify(old.x) !== JSON.stringify(info.x);
       if (changed) {
-        if (newInfo && old) notice("🌙 Neue Info vom Spielleiter – schau auf deine Rollenkarte.");
+        if (info.x && JSON.stringify((old && old.x) || null) !== JSON.stringify(info.x) && old) notice("🤫 Geheime Info deines Teams – schau auf deine Rollenkarte.");
+        else if (newInfo && old) notice("🌙 Neue Info vom Spielleiter – schau auf deine Rollenkarte.");
         else if (info.m && (!old || old.m !== info.m)) notice("😵 Du bist verrückt! Schau auf deine Rollenkarte, welche Rolle du am Tag behaupten musst.");
         else if (old && old.online && old.r !== info.r) notice("Der Spielleiter hat deine Rolle geändert – schau sie dir an.");
         refreshPlayerView(true);
