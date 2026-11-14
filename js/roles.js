@@ -797,6 +797,35 @@ const OUTSIDER_MODS = { baron: [2], godfather: [-1, 1], fanggu: [1], vigormortis
 // Rollen, die eine andere Rolle im Spiel voraussetzen.
 const REQUIRES = { huntsman: "damsel", choirboy: "king" };
 
+// Symbol je Rolle (Emoji, damit es auf jedem Handy ohne Bilddateien funktioniert)
+const ROLE_ICONS = {
+  washerwoman: "🧺", librarian: "📚", investigator: "🔎", chef: "🍳", empath: "💞", fortuneteller: "🔮",
+  undertaker: "⚰️", monk: "🙏", ravenkeeper: "🪶", virgin: "🕊️", slayer: "🏹", soldier: "🛡️",
+  mayor: "🏛️", butler: "🛎️", drunk: "🍺", recluse: "🏚️", saint: "😇", poisoner: "🧪",
+  spy: "🕵️", scarletwoman: "💋", baron: "🎩", imp: "😈", grandmother: "👵", sailor: "⚓",
+  chambermaid: "🛏️", exorcist: "✝️", innkeeper: "🍻", gambler: "🎲", gossip: "🗣️", courtier: "🍷",
+  professor: "🎓", minstrel: "🎻", tealady: "🫖", pacifist: "☮️", fool: "🃏", tinker: "🔧",
+  moonchild: "🌙", goon: "👊", lunatic: "🤪", godfather: "🤵", devilsadvocate: "⚖️", assassin: "🗡️",
+  mastermind: "🧠", zombuul: "🧟", pukka: "🐍", shabaloth: "🦑", po: "🔥", clockmaker: "🕰️",
+  dreamer: "💭", snakecharmer: "🎶", mathematician: "🧮", flowergirl: "💐", towncrier: "📣", oracle: "👁️",
+  savant: "📜", seamstress: "🧵", philosopher: "🤔", artist: "🎨", juggler: "🤹", sage: "🦉",
+  mutant: "🧬", sweetheart: "💘", barber: "💈", klutz: "🍌", eviltwin: "👯", witch: "🧙",
+  cerenovus: "🌀", pithag: "🪄", fanggu: "🦇", vigormortis: "💀", nodashii: "🐙", vortox: "🌪️",
+  bureaucrat: "📋", thief: "💰", gunslinger: "🔫", scapegoat: "🐐", beggar: "🥣", apprentice: "🧑‍🎓",
+  matron: "👒", judge: "🔨", bishop: "⛪", voudon: "🪆", barista: "☕", harlot: "💄",
+  butcher: "🔪", bonecollector: "🦴", deviant: "🤡", noble: "👑", pixie: "🧚", highpriestess: "🕯️",
+  balloonist: "🎈", general: "🎖️", villageidiot: "🥴", knight: "⚔️", steward: "🗝️", shugenja: "🧭",
+  huntsman: "🦌", choirboy: "🎵", king: "🤴", bountyhunter: "🎯", nightwatchman: "🔦", preacher: "📖",
+  farmer: "🌾", damsel: "👸", golem: "🗿", heretic: "🔄", politician: "🗳️", puzzlemaster: "🧩",
+  snitch: "🐀", ogre: "👹", boomdandy: "💣", goblin: "👺", marionette: "🎎", mezepheles: "🖋️",
+  psychopath: "🪓", widow: "🕷️", fearmonger: "😱", harpy: "🦅", legion: "👥", alhadikhia: "🏺",
+  leviathan: "🐋", lleech: "🩸", lilmonsta: "👶", ojo: "🧿", f_toymaker: "🧸", f_angel: "👼",
+  f_buddhist: "☸️", f_hellslibrarian: "🤫", f_revolutionary: "✊", f_sentinel: "🗼", f_spiritofivory: "🐘", f_djinn: "🧞",
+  f_duchess: "💎", f_fiddler: "🎼", f_fibbin: "🤥", f_doomsayer: "☄️", f_stormcatcher: "⛈️", f_bootlegger: "🥃",
+  f_gardener: "🌱", f_ferryman: "⛵", f_deusexfiasco: "🎪"
+};
+ROLES.forEach(x => { x.ic = ROLE_ICONS[x.id] || "❔"; });
+
 const ROLE_BY_ID = Object.fromEntries(ROLES.map((r, i) => [r.id, Object.assign(r, { idx: i })]));
 
 // Marker (Erinnerungs-Plättchen) im Grimoire.

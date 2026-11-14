@@ -123,6 +123,7 @@
       <div class="rolecard ${teamClass(role, info.a)}">
         <div class="rc-head">
           ${info.n ? `<div class="rc-for">Für: ${esc(info.n)}</div>` : ""}
+          <div class="rc-icon">${role.ic}</div>
           <div class="rc-name">${esc(role.de)}</div>
           <div class="rc-en">${esc(role.en)}</div>
           <div class="rc-team">${team.name} · ${good ? "Gut 😇" : "Böse 😈"}</div>
@@ -254,7 +255,7 @@
       openModal(`<div class="nightshow pickshow">
           <p class="ns-label">${esc(ROLE_BY_ID[mine.r].de)}${mine.n ? " · " + esc(mine.n) : ""}</p>
           <h2>Ich wähle</h2>
-          <div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div>
+          <div class="ns-bluff t-${r.t}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></div>
           ${mine.online ? `<p id="picksent" class="small">Wird an den Spielleiter gesendet …</p>` : ""}
         </div>
         <div class="row center"><button class="btn big" id="pickdone">✓ Fertig – verdecken</button></div>`, "full night");
@@ -621,7 +622,7 @@
       const rs = rolesOf(game.edition, team);
       return `<h3 class="team-h t-${team}-text">${TEAMS[team].plural} <span class="cnt ${ok(team) ? "ok" : "bad"}">${c[team]} / ${fmt(exp[team])}</span></h3>
         <div class="tiles">${rs.map(r => `<button class="tile t-${team} ${game.selected.includes(r.id) ? "on" : ""}" data-role="${r.id}">
-          <b>${esc(r.de)}</b><small>${esc(r.a)}</small>${r.setup ? `<em>${esc(r.setup)}</em>` : ""}${smallExcluded(r.id, game.count) ? `<em>⚠️ ungeeignet bei ${game.count} Spielern</em>` : ""}</button>`).join("")}</div>`;
+          <b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small>${r.setup ? `<em>${esc(r.setup)}</em>` : ""}${smallExcluded(r.id, game.count) ? `<em>⚠️ ungeeignet bei ${game.count} Spielern</em>` : ""}</button>`).join("")}</div>`;
     };
     const total = game.selected.length;
     let extra = "";
@@ -652,7 +653,7 @@
         ${extra}
         ${["townsfolk", "outsider", "minion", "demon"].map(teamBlock).join("")}
         <details class="fabledpick" ${(game.fabled || []).length ? "open" : ""}><summary><h3 class="team-h t-fabled-text">Fabelwesen <span class="small">(optional – Sonderregeln, alle wissen davon)</span></h3></summary>
-          <div class="tiles">${ROLES.filter(r => r.t === "fabled").map(r => `<button class="tile t-fabled ${(game.fabled || []).includes(r.id) ? "on" : ""}" data-fabled="${r.id}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></button>`).join("")}</div>
+          <div class="tiles">${ROLES.filter(r => r.t === "fabled").map(r => `<button class="tile t-fabled ${(game.fabled || []).includes(r.id) ? "on" : ""}" data-fabled="${r.id}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></button>`).join("")}</div>
         </details>
         <div class="row end"><button class="btn primary" id="next2" ${total === game.count ? "" : "disabled"}>Weiter: Verteilen →</button></div>
       </section>`;
@@ -660,7 +661,7 @@
 
   function roleChip(id, extra = "") {
     const r = ROLE_BY_ID[id];
-    return `<span class="rchip t-${r.t}">${esc(r.de)}${extra}</span>`;
+    return `<span class="rchip t-${r.t}">${r.ic} ${esc(r.de)}${extra}</span>`;
   }
 
   function slAssign() {
@@ -772,7 +773,7 @@
       const over = id === "juggler" && game.nightNo > 2;
       const inactive = allDead || allUsed || over;
       const why = allDead ? "Tot – keine Fähigkeit mehr, nicht wecken." : over ? "Nur in der zweiten Nacht – entfällt." : "Fähigkeit schon benutzt – nicht mehr wecken.";
-      steps.push({ id, name: role.de, text: role[key], who, t: role.t, inactive, why, mark: allDead ? "💀" : "✔", once: ONCE_PER_GAME.includes(id) });
+      steps.push({ id, name: `${role.ic} ${role.de}`, text: role[key], who, t: role.t, inactive, why, mark: allDead ? "💀" : "✔", once: ONCE_PER_GAME.includes(id) });
     });
     const done = game.done[game.nightNo] || [];
     let banner = "";
@@ -1159,7 +1160,7 @@
     $("#showrole").addEventListener("click", () => {
       const r = ROLE_BY_ID[$("#newrole").value];
       openModal(`<div class="nightshow pickshow"><p class="ns-label">${esc(s.name)}</p><h2>Du bist jetzt</h2>
-        <div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div></div>
+        <div class="ns-bluff t-${r.t}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></div></div>
         <div class="row center"><button class="btn big" id="showdone">✓ Fertig</button></div>`, "full night");
       $("#showdone").addEventListener("click", () => { closeModal(); changeRole(i); });
     });
@@ -1203,6 +1204,7 @@
       return `<button class="token t-${r.t} ${s.alive ? "" : "dead"}" style="left:${x}%;top:${y}%" data-seatmodal="${i}">
         <span class="tk-no">${i + 1}</span>
         <span class="tk-name">${esc(s.name)}</span>
+        <span class="tk-ic">${r.ic}</span>
         <span class="tk-role">${esc(r.de)}</span>
         <span class="tk-marks">${s.alive ? "" : s.ghost ? "💀👻" : "💀"}${(s.marks || []).map(m => (markerByKey(m) || {}).i || "").join("")}${s.madness && s.madness.night === game.nightNo ? "😵" : ""}${s.used ? "✔" : ""}</span>
       </button>`;
@@ -1441,7 +1443,7 @@
         ${["townsfolk", "outsider", "minion", "demon", "traveller"].map(t => {
           const rs = list.filter(r => r.t === t);
           return rs.length ? `<h3 class="team-h t-${t}-text">${TEAMS[t].plural}</h3><div class="tiles">${rs.map(r =>
-            `<button class="tile t-${t} ${sc.has(r.id) ? "on" : ""}" data-sid="${r.id}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small><em class="ed">${esc(EDITIONS[r.ed].name)}</em></button>`).join("")}</div>` : "";
+            `<button class="tile t-${t} ${sc.has(r.id) ? "on" : ""}" data-sid="${r.id}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small><em class="ed">${esc(EDITIONS[r.ed].name)}</em></button>`).join("")}</div>` : "";
         }).join("")}
         <div class="row end sticky-save"><button class="btn primary" id="savescript">Übernehmen</button></div>`, "full");
       $$("[data-sid]").forEach(b => b.addEventListener("click", () => {
@@ -1991,7 +1993,7 @@
       store_(c);
       openModal(`<div class="nightshow pickshow">
           <p class="ns-label">${esc(game.seats[c.i].name)} · ${esc(roleName(stepId))}</p>
-          ${c.r.map(id => { const r = ROLE_BY_ID[id]; return `<div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div>`; }).join("")}
+          ${c.r.map(id => { const r = ROLE_BY_ID[id]; return `<div class="ns-bluff t-${r.t}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></div>`; }).join("")}
           ${c.t ? `<p class="ns-text">${esc(c.t)}</p>` : ""}
         </div>
         <div class="row center"><button class="btn big" id="infodone">✓ Fertig – verdecken</button></div>`, "full night");
@@ -2029,7 +2031,7 @@
       const r = ROLE_BY_ID[s.madness.role];
       openModal(`<div class="nightshow pickshow"><p class="ns-label">${esc(s.name)} · 😵 Wahnsinn</p>
         <h2>Morgen musst du überzeugend behaupten, das zu sein:</h2>
-        <div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div>
+        <div class="ns-bluff t-${r.t}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></div>
         <p class="ns-hint">Sonst kann der Spielleiter dich hinrichten lassen.</p></div>
         <div class="row center"><button class="btn big" id="maddone">✓ Fertig</button></div>`, "full night");
       $("#maddone").addEventListener("click", () => { closeModal(); renderSL(); });
@@ -2127,7 +2129,7 @@
         <div class="ns-names">${ev.minions.map(m => `<span>${esc(m.name)}</span>`).join("") || "<span>keine</span>"}</div>
         <h2>Deine Bluffs</h2>
         <p class="ns-hint">Diese guten Rollen sind <b>nicht im Spiel</b> – du kannst gefahrlos behaupten, eine davon zu sein.</p>
-        <div class="ns-bluffs">${game.bluffs.map(id => { const r = ROLE_BY_ID[id]; return `<div class="ns-bluff t-${r.t}"><b>${esc(r.de)}</b><small>${esc(r.a)}</small></div>`; }).join("")}</div>
+        <div class="ns-bluffs">${game.bluffs.map(id => { const r = ROLE_BY_ID[id]; return `<div class="ns-bluff t-${r.t}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></div>`; }).join("")}</div>
       </div>`;
     } else {
       html = `<div class="nightshow">
@@ -2238,7 +2240,7 @@
 
   function roleDetail(r, forST) {
     return `<div class="lex-detail">
-      <div class="lex-title t-${r.t}-text"><b>${esc(r.de)}</b> <span class="small">${esc(r.en)} · ${TEAMS[r.t].name} · ${esc(EDITIONS[r.ed].name)}</span></div>
+      <div class="lex-title t-${r.t}-text"><b>${r.ic} ${esc(r.de)}</b> <span class="small">${esc(r.en)} · ${TEAMS[r.t].name} · ${esc(EDITIONS[r.ed].name)}</span></div>
       <p class="ability-line">${esc(r.a)}</p>
       <p>${esc(r.e)}</p>
       ${r.tip ? `<p><b>💡 Tipp:</b> ${esc(r.tip)}</p>` : ""}
@@ -2280,7 +2282,7 @@
           const tp = part.filter(r => r.t === team);
           if (!tp.length) return;
           html += `<h3 class="team-h t-${team}-text">${TEAMS[team].plural}</h3>`;
-          html += tp.map(r => `<details class="lex t-${team}-border"><summary><b>${esc(r.de)}</b> <span class="small">${esc(r.en)}</span><span class="lex-a">${esc(r.a)}</span></summary>${roleDetail(r, false)}</details>`).join("");
+          html += tp.map(r => `<details class="lex t-${team}-border"><summary><span class="lex-ic">${r.ic}</span><b>${esc(r.de)}</b> <span class="small">${esc(r.en)}</span><span class="lex-a">${esc(r.a)}</span></summary>${roleDetail(r, false)}</details>`).join("");
         });
         html += `</section>`;
       });

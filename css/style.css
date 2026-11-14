@@ -486,3 +486,11 @@ img.logo { width: 30px; height: 30px; border-radius: 8px; box-shadow: 0 0 0 1px 
 
 .sugswitch { margin: .3rem 0 .6rem; }
 .sugbox { border-left: 4px solid var(--ok); font-size: .9rem; }
+
+/* Rollen-Symbole */
+.rc-icon { font-size: 3.2rem; line-height: 1; margin: .2rem 0 .1rem; filter: drop-shadow(0 3px 8px rgba(0,0,0,.45)); }
+.lex-ic { font-size: 1.35rem; margin-right: .45rem; vertical-align: -0.15em; }
+.token .tk-ic { font-size: 1.25rem; line-height: 1.1; }
+.size-sm .token .tk-ic { font-size: 1rem; }
+.size-sm .token .tk-role { display: none; }
+.ns-bluff b { display: flex; align-items: center; gap: .4rem; }
