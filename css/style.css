@@ -483,3 +483,6 @@ img.logo { width: 30px; height: 30px; border-radius: 8px; box-shadow: 0 0 0 1px 
 
 .infopick { display: flex; flex-wrap: wrap; gap: .35rem; margin: .35rem 0; }
 .pickbtn.sm { padding: .45rem .65rem; font-size: .88rem; border-radius: 10px; }
+
+.sugswitch { margin: .3rem 0 .6rem; }
+.sugbox { border-left: 4px solid var(--ok); font-size: .9rem; }

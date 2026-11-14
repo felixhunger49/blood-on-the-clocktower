@@ -812,6 +812,8 @@
       <section class="panel">
         <h2>${first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`}</h2>
         <p class="small">${steps.filter(st => !st.inactive && done.includes(st.id)).length} von ${steps.filter(st => !st.inactive).length} Schritten erledigt${steps.some(st => st.inactive) ? " · grau = tot oder benutzt, entfällt" : ""}</p>
+        <label class="switch sugswitch"><input type="checkbox" id="sugtoggle" ${game.suggest === false ? "" : "checked"}>
+          <span><b>💡 Info-Vorschläge</b> – beim Info-Fenster trägt die App die <i>wahre</i> Info schon ein (du kannst sie ändern).</span></label>
         ${nightActionsBar(steps)}
         <ol class="nightlist">${steps.map(s => `
           <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
@@ -820,7 +822,7 @@
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${!s.inactive && nightOn() ? actionStatusHtml(s.id) : ""}
-            ${(SHOW_ROLE.includes(s.id) || (game.online && ROLE_BY_ID[s.id])) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
+            ${ROLE_BY_ID[s.id] && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"} <small>(hier)</small></button>` : ""}
             ${s.show && game.online ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
           </li>`).join("")}</ol>
@@ -936,6 +938,7 @@
     }));
     $$(".showinfo").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); infoDialog(b.dataset.infoStep); }));
     bindNightActions();
+    $("#sugtoggle") && $("#sugtoggle").addEventListener("change", e => { game.suggest = e.target.checked; save(); });
     $$("[data-useonce]").forEach(b => b.addEventListener("click", e => {
       e.stopPropagation();
       const id = b.dataset.useonce;
@@ -1742,6 +1745,155 @@
     noble: "Drei Spieler nennen, genau einer ist böse"
   };
 
+  // =====================================================================
+  //  INFO-VORSCHLÄGE: die wahre Info ausrechnen
+  // =====================================================================
+  const PICK_DEPENDENT = ["fortuneteller", "villageidiot", "seamstress", "dreamer", "ravenkeeper"];
+  const isEvil = x => !seatGood(x);
+  const isDemonFor = x => ROLE_BY_ID[x.role].t === "demon" || (x.marks || []).includes("herring");
+  const rnd = arr => arr.length ? arr[randInt(arr.length)] : null;
+
+  // Lebende Nachbarn (übersprungen werden Tote), im Kreis
+  function aliveNeighbours(i) {
+    const n = game.seats.length, out = [];
+    for (const dir of [-1, 1]) {
+      for (let k = 1; k < n; k++) {
+        const j = (i + dir * k + n * n) % n;
+        if (j === i) break;
+        if (game.seats[j].alive) { out.push(j); break; }
+      }
+    }
+    return [...new Set(out)];
+  }
+
+  function drunkWarning(i) {
+    const x = game.seats[i];
+    if (!x) return "";
+    if (x.role === "drunk") return "Dieser Spieler ist der Säufer – du darfst (und solltest meist) eine falsche Info geben.";
+    if (x.role === "marionette") return "Dieser Spieler ist die Marionette – die Info darf falsch sein.";
+    const m = x.marks || [];
+    if (m.includes("poison") || m.includes("drunk")) return "Dieser Spieler ist vergiftet bzw. betrunken – die Info darf falsch sein.";
+    if (game.seats.some(y => y.role === "vortox" && y.alive) && ROLE_BY_ID[actingRole(x)].t === "townsfolk") return "Vortox im Spiel: Dorfbewohner-Infos müssen falsch sein!";
+    return "";
+  }
+
+  // Liefert { r: [Rollen], p: [Spieler], t: "Zusatz", text: "Beschreibung" } oder null
+  function suggestInfo(stepId, me, picks) {
+    const S = game.seats, others = S.map((x, k) => k).filter(k => k !== me && !S[k].trav);
+    const name = k => S[k].name;
+    const pair = (cands) => {
+      const a = rnd(cands);
+      if (a === null || a === undefined) return null;
+      const b = rnd(others.filter(k => k !== a));
+      return shuffle([a, b].filter(v => v !== null && v !== undefined));
+    };
+    const withType = t => others.filter(k => ROLE_BY_ID[S[k].role].t === t);
+    switch (stepId) {
+      case "washerwoman": case "librarian": case "investigator": {
+        const t = { washerwoman: "townsfolk", librarian: "outsider", investigator: "minion" }[stepId];
+        const cands = withType(t);
+        if (!cands.length) return { r: [], p: [], t: "0", text: "Keine passende Rolle im Spiel – zeige 0." };
+        const p = pair(cands), right = p.find(k => cands.includes(k));
+        return { r: [S[right].role], p, t: "", text: `${roleName(S[right].role)} – einer von ${p.map(name).join(", ")} (richtig: ${name(right)})` };
+      }
+      case "chef": {
+        const ps = S.filter(x => !x.trav), n = ps.length;
+        let c = 0;
+        for (let k = 0; k < n; k++) if (isEvil(ps[k]) && isEvil(ps[(k + 1) % n])) c++;
+        return { t: String(c), text: `${c} Paar(e) böser Nachbarn` };
+      }
+      case "empath": {
+        const nb = aliveNeighbours(me), c = nb.filter(k => isEvil(S[k])).length;
+        return { t: String(c), text: `${c} – Nachbarn: ${nb.map(name).join(", ")}` };
+      }
+      case "oracle": {
+        const c = S.filter(x => !x.alive && isEvil(x)).length;
+        return { t: String(c), text: `${c} tote(r) böse(r) Spieler` };
+      }
+      case "clockmaker": {
+        const n = S.length, d = S.findIndex(x => ROLE_BY_ID[x.role].t === "demon");
+        const mins = S.map((x, k) => k).filter(k => ROLE_BY_ID[S[k].role].t === "minion");
+        if (d < 0 || !mins.length) return { t: "0", text: "Kein Scherge – zeige 0." };
+        const dist = Math.min(...mins.map(k => Math.min((k - d + n) % n, (d - k + n) % n)));
+        return { t: String(dist), text: `${dist} Schritt(e) vom Dämon zum nächsten Schergen` };
+      }
+      case "fortuneteller": {
+        if (!picks || picks.length < 2) return { text: "Tippe die zwei Spieler an, die der Wahrsager gewählt hat." };
+        const yes = picks.some(k => isDemonFor(S[k]));
+        return { t: yes ? "Ja" : "Nein", text: `${yes ? "Ja" : "Nein"} (Dämon oder 🐟 Ablenker dabei: ${yes ? "ja" : "nein"})` };
+      }
+      case "villageidiot": {
+        if (!picks || !picks.length) return { text: "Tippe den gewählten Spieler an." };
+        const g = seatGood(S[picks[0]]);
+        return { t: g ? "gut" : "böse", text: `${name(picks[0])} ist ${g ? "gut" : "böse"}` };
+      }
+      case "seamstress": {
+        if (!picks || picks.length < 2) return { text: "Tippe die zwei gewählten Spieler an." };
+        const same = seatGood(S[picks[0]]) === seatGood(S[picks[1]]);
+        return { t: same ? "gleiche Gesinnung" : "verschiedene Gesinnung", text: same ? "Gleiche Gesinnung" : "Verschiedene Gesinnung" };
+      }
+      case "dreamer": {
+        if (!picks || !picks.length) return { text: "Tippe den gewählten Spieler an." };
+        const x = S[picks[0]], good = seatGood(x);
+        const other = rnd(ROLES.filter(r => inEd(r, game.edition) && r.id !== x.role && (good ? ["minion", "demon"] : ["townsfolk", "outsider"]).includes(r.t)));
+        const r = shuffle([x.role, other && other.id].filter(Boolean));
+        return { r, p: [picks[0]], text: `${name(picks[0])}: ${r.map(roleName).join(" oder ")} (richtig: ${roleName(x.role)})` };
+      }
+      case "ravenkeeper": {
+        if (!picks || !picks.length) return { text: "Tippe den Spieler an, auf den der Rabenhüter zeigt." };
+        return { r: [S[picks[0]].role], p: [], text: `${name(picks[0])} ist ${roleName(S[picks[0]].role)}` };
+      }
+      case "grandmother": {
+        const k = rnd(others.filter(j => seatGood(S[j])));
+        return k === null ? null : { r: [S[k].role], p: [k], text: `Enkelkind: ${name(k)} (${roleName(S[k].role)})` };
+      }
+      case "steward": {
+        const k = rnd(others.filter(j => seatGood(S[j])));
+        return k === null ? null : { p: [k], text: `Guter Spieler: ${name(k)}` };
+      }
+      case "bountyhunter": {
+        const k = rnd(others.filter(j => isEvil(S[j])));
+        return k === null ? null : { p: [k], text: `Böser Spieler: ${name(k)}` };
+      }
+      case "knight": {
+        const p = shuffle(others.filter(j => ROLE_BY_ID[S[j].role].t !== "demon")).slice(0, 2);
+        return { p, text: `Nicht der Dämon: ${p.map(name).join(", ")}` };
+      }
+      case "noble": {
+        const e = rnd(others.filter(j => isEvil(S[j])));
+        const g = shuffle(others.filter(j => seatGood(S[j]))).slice(0, 2);
+        const p = shuffle([e, ...g].filter(v => v !== null));
+        return { p, text: `Genau einer ist böse: ${p.map(name).join(", ")} (böse: ${e !== null ? name(e) : "–"})` };
+      }
+      case "sage": {
+        const d = S.findIndex(x => ROLE_BY_ID[x.role].t === "demon");
+        if (d < 0) return null;
+        const p = shuffle([d, rnd(others.filter(j => j !== d))].filter(v => v !== null));
+        return { p, text: `Einer davon ist der Dämon: ${p.map(name).join(", ")}` };
+      }
+      case "shugenja": {
+        const n = S.length;
+        let cw = n, ccw = n;
+        for (let k = 1; k < n; k++) { if (isEvil(S[(me + k) % n])) { cw = k; break; } }
+        for (let k = 1; k < n; k++) { if (isEvil(S[(me - k + n) % n])) { ccw = k; break; } }
+        const t = cw === ccw ? "beliebig (gleicher Abstand)" : cw < ccw ? "im Uhrzeigersinn" : "gegen den Uhrzeigersinn";
+        return { t, text: `Nächster Böser: ${t}` };
+      }
+      case "king": {
+        const alive = S.filter(x => x.alive).length, dead = S.length - alive;
+        if (dead < alive) return { text: "Noch nicht: Die Toten sind weniger als die Lebenden – keine Info." };
+        const k = rnd(S.map((x, j) => j).filter(j => S[j].alive && j !== me));
+        return k === null ? null : { r: [S[k].role], text: `Lebende Rolle: ${roleName(S[k].role)} (${name(k)})` };
+      }
+      case "undertaker": {
+        const day = (game.days || {})[game.nightNo - 1];
+        if (!day || !day.exec || day.exec === "none" || !S[day.exec.seat]) return { text: "Heute wurde (laut Abstimmungs-Helfer) niemand hingerichtet – keine Info." };
+        return { r: [S[day.exec.seat].role], text: `${S[day.exec.seat].name} war ${roleName(S[day.exec.seat].role)}` };
+      }
+      default: return null;
+    }
+  }
+
   // Wer wacht bei diesem Nacht-Schritt auf? (inkl. Säufer, Marionette, Philosoph)
   const stepHolders = id => game.seats.map((s, i) => [s, i]).filter(([s]) =>
     s.role === id || ((s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id) || (s.role === "philosopher" && s.gained === id));
@@ -1776,6 +1928,7 @@
     const pickText = () => picked.length ? `${pickCfg.label}: ${picked.map(k => game.seats[k].name).join(", ")}` : "";
     openModal(`<h2>📱 ${esc(roleName(stepId))}: Info zeigen</h2>
       <p class="small">${esc(INFO_HINT[stepId] || "")}${stepId === "undertaker" && !pre.length ? " – heute wurde niemand über den Abstimmungs-Helfer hingerichtet, bitte selbst wählen." : ""}</p>
+      <div class="box sugbox hidden" id="sugbox"></div>
       ${holders.length > 1 ? `<label class="field">Für: <select id="inforcpt">${holders.map(([s, i]) => `<option value="${i}">${esc(s.name)}${s.role !== stepId ? ` (${esc(roleName(s.role))})` : ""}</option>`).join("")}</select></label>`
         : `<p>Für: <b>${esc(holders[0][0].name)}</b>${holders[0][0].role !== stepId ? ` <span class="small">(${esc(roleName(holders[0][0].role))} – Info darf falsch sein)</span>` : ""}</p>`}
       ${noRole ? "" : `<label class="field">Rolle: <select id="inforole1">${opts(pre[0])}</select></label>
@@ -1788,13 +1941,37 @@
         <button class="btn" id="infoshow">📱 Zeigen</button>
         ${game.online ? `<button class="btn primary" id="infosend">🌐 Aufs Handy senden</button>` : ""}
       </div>`);
+    const showPicked = () => {
+      $$("[data-ip]").forEach(x => x.classList.toggle("on", picked.includes(+x.dataset.ip)));
+      $("#ippreview").textContent = `${pickCfg.label}: ${picked.map(k2 => game.seats[k2].name).join(", ") || "–"}`;
+    };
+    // Vorschlag anwenden (nur wenn eingeschaltet)
+    const recipient = () => holders.length > 1 ? +$("#inforcpt").value : holders[0][1];
+    const applySuggestion = (fromPicks) => {
+      if (game.suggest === false) return;
+      const sg = suggestInfo(stepId, recipient(), fromPicks ? picked.slice() : null);
+      const box = $("#sugbox");
+      if (!sg) { box.classList.add("hidden"); return; }
+      if (!fromPicks && sg.p) { picked.length = 0; picked.push(...sg.p.slice(0, pickCfg.max || 3)); showPicked(); }
+      if (sg.r && $("#inforole1")) { $("#inforole1").value = sg.r[0] || ""; $("#inforole2").value = sg.r[1] || ""; }
+      if (sg.t !== undefined) $("#infotext").value = sg.t;
+      const warn = drunkWarning(recipient());
+      box.innerHTML = `💡 <b>Vorschlag (wahre Info):</b> ${esc(sg.text)}${warn ? `<br><span class="warnmsg">⚠️ ${esc(warn)}</span>` : ""}`;
+      box.classList.remove("hidden");
+    };
     $$("[data-ip]").forEach(b => b.addEventListener("click", () => {
       const k = +b.dataset.ip, at = picked.indexOf(k);
       if (at >= 0) picked.splice(at, 1);
       else { if (pickCfg.max && picked.length >= pickCfg.max) picked.shift(); picked.push(k); }
-      $$("[data-ip]").forEach(x => x.classList.toggle("on", picked.includes(+x.dataset.ip)));
-      $("#ippreview").textContent = `${pickCfg.label}: ${picked.map(k2 => game.seats[k2].name).join(", ") || "–"}`;
+      showPicked();
+      if (PICK_DEPENDENT.includes(stepId)) applySuggestion(true);
     }));
+    $("#inforcpt") && $("#inforcpt").addEventListener("change", () => applySuggestion(false));
+    // Bei Rollen, die selbst Spieler gewählt haben, die Wahl aus der Nachtaktion übernehmen
+    const act = lastAct(recipient(), stepId);
+    if (PICK_DEPENDENT.includes(stepId) && act && act.picks && act.picks.length) {
+      picked.length = 0; picked.push(...act.picks.slice(0, pickCfg.max || 3)); showPicked(); applySuggestion(true);
+    } else applySuggestion(false);
     const collect = () => {
       const i = holders.length > 1 ? +$("#inforcpt").value : holders[0][1];
       const r = noRole ? [] : [$("#inforole1").value, $("#inforole2").value].filter(Boolean);
