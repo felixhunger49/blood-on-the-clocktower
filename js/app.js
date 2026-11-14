@@ -485,6 +485,9 @@
     game.winner = null;
     game.ignoreEnd = null;
     game.evilSent = {};
+    game.phase = "night";
+    game.history = [{ n: 1, ph: "night", t: `🎬 Spiel beginnt – ${EDITIONS[game.edition].name}, ${playerSeats().length} Spieler` }];
+    game.statsId = null;
   }
 
   function evilInfoFor(seat) {
@@ -545,6 +548,7 @@
     view.innerHTML = stepper + body;
     $$(".step").forEach(b => b.addEventListener("click", () => goStep(b.dataset.step)));
     bindSL();
+    if (typeof applyPhase === "function") applyPhase();
   }
 
   function goStep(step) {
@@ -589,6 +593,7 @@
         <div class="row end"><button class="btn primary" id="next1">Weiter: Rollen wählen →</button></div>
       </section>
       ${onlineHostPanel()}
+      ${statsHtml()}
       <section class="panel muted">
         <div class="row wrap">
           <button class="btn danger" id="reset">🗑️ Komplett neues Spiel</button>
@@ -802,6 +807,8 @@
         <div class="daycount">🌙 Nacht ${game.nightNo} <span>·</span> ☀️ ${game.nightNo > 1 ? `Tag ${game.nightNo - 1} vorbei` : "noch kein Tag"}</div>
         <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${needed}</b> Stimmen</p>
         ${timerBox()}
+        <label class="switch"><input type="checkbox" id="musictoggle" ${Mood.on ? "checked" : ""}>
+          <span><b>🎵 Stimmungsmusik</b> – leise Klänge für Nacht und Tag, nur auf diesem Handy.</span></label>
         <div class="chips viewtoggle">
           <button class="chip ${game.circle ? "" : "on"}" data-gview="list">☰ Liste</button>
           <button class="chip ${game.circle ? "on" : ""}" data-gview="circle">◯ Sitzkreis</button>
@@ -828,7 +835,8 @@
             ${s.show && game.online ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
-          <button class="btn primary" id="nextnight">☀️ Tag ${game.nightNo} vorbei → Nacht ${game.nightNo + 1} beginnen</button>
+          ${game.phase === "day" ? "" : `<button class="btn primary" id="daystart">☀️ Morgen – Tag ${game.nightNo} beginnt</button>`}
+          <button class="btn ${game.phase === "day" ? "primary" : ""}" id="nextnight">🌙 Tag ${game.nightNo} vorbei → Nacht ${game.nightNo + 1} beginnen</button>
           ${game.nightNo > 1 ? `<button class="btn sm" id="prevnight">↩︎ Zurück zu Nacht ${game.nightNo - 1}</button>` : ""}
         </div>
       </section>
@@ -860,6 +868,7 @@
     $("#minus") && $("#minus").addEventListener("click", () => setCount(game.count - 1));
     $("#plus") && $("#plus").addEventListener("click", () => setCount(game.count + 1));
     bindOnlineHost();
+    $("#statsreset") && $("#statsreset").addEventListener("click", () => { if (confirm("Statistik wirklich löschen?")) { store.del("botc.stats"); renderSL(); } });
     $$(".name").forEach(inp => inp.addEventListener("input", () => {
       game.names[+inp.dataset.i] = inp.value;
       save();
@@ -919,7 +928,7 @@
     $("#next3") && $("#next3").addEventListener("click", () => goStep("grim"));
 
     // Schritt 4
-    $$("[data-alive]").forEach(b => b.addEventListener("click", () => { const s = game.seats[+b.dataset.alive]; s.alive = !s.alive; if (s.alive) s.ghost = true; save(); renderSL(); }));
+    $$("[data-alive]").forEach(b => b.addEventListener("click", () => { const s = game.seats[+b.dataset.alive]; s.alive = !s.alive; if (s.alive) s.ghost = true; histDeath(s); save(); renderSL(); }));
     $$("[data-ghost]").forEach(b => b.addEventListener("click", () => { const s = game.seats[+b.dataset.ghost]; s.ghost = !s.ghost; save(); renderSL(); }));
     $$("[data-note]").forEach(inp => inp.addEventListener("input", () => { game.seats[+inp.dataset.note].note = inp.value; save(); }));
     $$("[data-info]").forEach(b => b.addEventListener("click", () => openModal(roleDetail(ROLE_BY_ID[b.dataset.info], true))));
@@ -963,6 +972,12 @@
       game.done[game.nightNo] = d.includes(id) ? d.filter(x => x !== id) : [...d, id];
       save(); renderSL();
     }));
+    $("#daystart") && $("#daystart").addEventListener("click", () => {
+      game.phase = "day";
+      hist(`☀️ Tag ${game.nightNo} beginnt`, "day");
+      save(); renderSL();
+      toast(`Tag ${game.nightNo} beginnt`);
+    });
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
       game.vote = null;
       game.asks = {};
@@ -970,6 +985,8 @@
       // Schutz- und Ziel-Marker gelten nur für eine Nacht
       game.seats.forEach(x => { x.marks = (x.marks || []).filter(m => !(markerByKey(m) || {}).n); });
       game.nightNo++;
+      game.phase = "night";
+      hist(`🌙 Nacht ${game.nightNo} beginnt`, "night");
       game.done[game.nightNo] = [];
       save(); renderSL();
       const nl = $(".nightlist");
@@ -982,17 +999,20 @@
     $$("[data-seatmodal]").forEach(b => b.addEventListener("click", () => seatModal(+b.dataset.seatmodal)));
     $$("[data-gview]").forEach(b => b.addEventListener("click", () => { game.circle = b.dataset.gview === "circle"; save(); renderSL(); }));
     bindTimer();
+    $("#musictoggle") && $("#musictoggle").addEventListener("change", e => { Mood.toggle(e.target.checked); });
     $$("[data-mad]").forEach(b => b.addEventListener("click", () => madnessDialog(+b.dataset.mad)));
     $$("[data-win]").forEach(b => b.addEventListener("click", () => {
       const team = b.dataset.win;
       const reason = b.dataset.reason || ($("#winreason") && $("#winreason").value.trim()) ||
         (team === "good" ? "Die guten Spieler haben das Dorf gerettet." : "Das Böse hat das Dorf übernommen.");
       game.winner = { team, reason };
+      hist(`🏆 ${team === "good" ? "Gut" : "Böse"} gewinnt – ${reason}`);
+      recordStats();
       save(); renderSL(); showEnd();
     }));
     $("#ignoreend") && $("#ignoreend").addEventListener("click", () => { game.ignoreEnd = aliveKey(); save(); renderSL(); });
     $("#showend") && $("#showend").addEventListener("click", showEnd);
-    $("#undoend") && $("#undoend").addEventListener("click", () => { game.winner = null; game.ignoreEnd = aliveKey(); save(); renderSL(); });
+    $("#undoend") && $("#undoend").addEventListener("click", () => { game.winner = null; game.ignoreEnd = aliveKey(); unrecordStats(); hist("↩︎ Spiel wird fortgesetzt"); save(); renderSL(); });
   }
 
   // =====================================================================
@@ -1107,6 +1127,7 @@
       // Tote, die abgestimmt haben, verbrauchen ihre Geisterstimme.
       v.hands.forEach(i => { const s = game.seats[i]; if (!s.alive) s.ghost = false; });
       day.noms.push({ by: v.by, on: v.on, count: v.hands.length, needed: votesNeeded(), hands: v.hands });
+      hist(`🗳️ ${game.seats[v.by].name} nominiert ${game.seats[v.on].name}: ${v.hands.length} Stimme(n)`, "day");
       game.vote = null;
       save(); renderSL();
     });
@@ -1126,12 +1147,14 @@
       if (!confirm(msg)) return;
       s.alive = false;
       day.exec = { seat: b.on, name: s.name };
+      hist(`⚔️ ${s.name} wurde hingerichtet (${role.ic} ${role.de})`, "day");
       save(); renderSL();
       if (s.role === "saint") toast("Der Heilige wurde hingerichtet – Böse gewinnt!");
       else toast(`${s.name} wurde hingerichtet (${role.de})`);
     });
     $("#noexec") && $("#noexec").addEventListener("click", () => {
       day.exec = "none";
+      hist("🕊️ Heute wurde niemand hingerichtet", "day");
       save(); renderSL();
       if (game.seats.some(s => s.role === "vortox" && s.alive)) toast("Achtung: Vortox im Spiel – ohne Hinrichtung gewinnt Böse!");
     });
@@ -1165,6 +1188,7 @@
       $("#showdone").addEventListener("click", () => { closeModal(); changeRole(i); });
     });
     $("#saverole").addEventListener("click", () => {
+      if (s.role !== $("#newrole").value) hist(`🔁 ${s.name}: ${roleName(s.role)} → ${roleName($("#newrole").value)}`);
       s.role = $("#newrole").value;
       s.align = $("#newalign").value || (s.trav ? "g" : undefined);
       game.ignoreEnd = null;
@@ -1270,7 +1294,7 @@
     }));
     root.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => {
       const a = b.dataset.m;
-      if (a === "alive") { s.alive = !s.alive; if (s.alive) s.ghost = true; again(); }
+      if (a === "alive") { s.alive = !s.alive; if (s.alive) s.ghost = true; histDeath(s); again(); }
       else if (a === "ghost") { s.ghost = !s.ghost; again(); }
       else if (a === "used") { s.used = !s.used; again(); }
       else if (a === "info") openModal(roleDetail(ROLE_BY_ID[s.role], true));
@@ -1394,6 +1418,131 @@
     $$("[data-pnote]").forEach(inp => inp.addEventListener("input", () => put("p:" + inp.dataset.pnote, inp.value)));
     $("#clearnotes").addEventListener("click", () => { if (confirm("Alle Notizen löschen?")) { store.del("botc.notes"); renderPlayer(); } });
   }
+
+  // =====================================================================
+  //  SPIELVERLAUF
+  // =====================================================================
+  function hist(text, ph) {
+    game.history = [...(game.history || []), { n: game.nightNo || 1, ph: ph || game.phase || "night", t: text, at: Date.now() }].slice(-200);
+  }
+  function histDeath(x) {
+    const r = ROLE_BY_ID[x.role];
+    hist(x.alive ? `✨ ${x.name} lebt wieder` : `💀 ${x.name} ist gestorben (${r.ic} ${r.de})`);
+  }
+  function historyHtml(h) {
+    if (!h || !h.length) return "";
+    const groups = [];
+    h.forEach(e => {
+      const key = `${e.n}-${e.ph}`;
+      let g = groups[groups.length - 1];
+      if (!g || g.key !== key) { g = { key, n: e.n, ph: e.ph, items: [] }; groups.push(g); }
+      g.items.push(e.t);
+    });
+    return `<details class="history" open><summary><h3>📜 Spielverlauf</h3></summary>
+      ${groups.map(g => `<div class="hgroup ${g.ph}"><div class="hhead">${g.ph === "day" ? `☀️ Tag ${g.n}` : `🌙 Nacht ${g.n}`}</div>
+        <ul>${g.items.map(t => `<li>${esc(t)}</li>`).join("")}</ul></div>`).join("")}
+    </details>`;
+  }
+
+  // =====================================================================
+  //  STATISTIK (auf dem Handy des Spielleiters)
+  // =====================================================================
+  function recordStats() {
+    if (game.statsId || !game.winner) return;
+    const id = Date.now();
+    const entry = { id, d: new Date().toISOString().slice(0, 10), ed: game.edition, w: game.winner.team,
+      ps: game.seats.map(x => ({ n: x.name, r: x.role, g: seatGood(x) })) };
+    store.set("botc.stats", [...(store.get("botc.stats", []) || []), entry].slice(-500));
+    game.statsId = id;
+  }
+  function unrecordStats() {
+    if (!game.statsId) return;
+    store.set("botc.stats", (store.get("botc.stats", []) || []).filter(e => e.id !== game.statsId));
+    game.statsId = null;
+  }
+  function statsHtml() {
+    const all = store.get("botc.stats", []) || [];
+    if (!all.length) return `<section class="panel muted"><h3>📊 Statistik</h3><p class="small">Noch keine beendeten Spiele. Nach jedem Spiel („Sieg verkünden“) wird hier mitgezählt.</p></section>`;
+    const good = all.filter(e => e.w === "good").length;
+    const pl = {};
+    all.forEach(e => e.ps.forEach(x => {
+      const k = x.n.trim();
+      const o = pl[k] = pl[k] || { n: k, games: 0, wins: 0, good: 0, roles: {} };
+      o.games++;
+      if (x.g === (e.w === "good")) o.wins++;
+      if (x.g) o.good++;
+      o.roles[x.r] = (o.roles[x.r] || 0) + 1;
+    }));
+    const rows = Object.values(pl).sort((a, b) => b.wins / b.games - a.wins / a.games || b.games - a.games);
+    const top = o => Object.entries(o.roles).sort((a, b) => b[1] - a[1])[0];
+    const pct = (a, b) => b ? Math.round(a / b * 100) + " %" : "–";
+    return `<section class="panel stats"><details><summary><h3>📊 Statistik (${all.length} Spiel${all.length === 1 ? "" : "e"})</h3></summary>
+      <div class="statbar"><span class="sg" style="flex:${good || 0.001}">😇 Gut ${good}</span><span class="se" style="flex:${all.length - good || 0.001}">😈 Böse ${all.length - good}</span></div>
+      <table class="stattable"><thead><tr><th>Spieler</th><th>Spiele</th><th>Siege</th><th>Quote</th><th>Böse</th><th>oft</th></tr></thead>
+      <tbody>${rows.map(o => { const t = top(o); return `<tr><td>${esc(o.n)}</td><td>${o.games}</td><td>${o.wins}</td><td>${pct(o.wins, o.games)}</td><td>${o.games - o.good}×</td><td title="${esc(roleName(t[0]))}">${ROLE_BY_ID[t[0]] ? ROLE_BY_ID[t[0]].ic : ""}</td></tr>`; }).join("")}</tbody></table>
+      <p class="small">Gespeichert nur auf diesem Handy. Gleiche Namen werden zusammengezählt.</p>
+      <div class="row end"><button class="btn sm danger" id="statsreset">Statistik löschen</button></div>
+    </details></section>`;
+  }
+
+  // =====================================================================
+  //  STIMMUNG: Tag/Nacht-Farben und leise Musik
+  // =====================================================================
+  // Phase für das Aussehen: Spielleiter nimmt sein Spiel, Spieler den Stand aus dem Online-Spiel
+  function currentPhase() {
+    if (game.seats.length && game.step === "grim") return game.phase || "night";
+    if (store.get("botc.online", null) && pubState && pubState.started) return pubState.phase || "night";
+    return "night";
+  }
+  function applyPhase() {
+    const ph = currentPhase();
+    if (document.body.dataset.phase !== ph) document.body.dataset.phase = ph;
+    Mood.setPhase(ph);
+  }
+
+  // Leise, selbst erzeugte Klänge (keine Audiodateien nötig)
+  const Mood = (() => {
+    let ctx = null, master = null, voices = [], phase = null;
+    const CHORDS = { night: [110, 164.81, 220, 261.63], day: [130.81, 196, 261.63, 329.63] };
+    const api = { on: false };
+    function start() {
+      try {
+        ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+        ctx.resume();
+        master = ctx.createGain(); master.gain.value = 0;
+        const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900;
+        master.connect(lp); lp.connect(ctx.destination);
+        master.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 3);
+        play(phase || currentPhase());
+      } catch (e) { api.on = false; }
+    }
+    function play(ph) {
+      if (!ctx || !master) return;
+      const now = ctx.currentTime;
+      voices.forEach(v => { v.g.gain.linearRampToValueAtTime(0, now + 4); v.o.stop(now + 4.2); v.l.stop(now + 4.2); });
+      voices = CHORDS[ph].map((f, k) => {
+        const o = ctx.createOscillator(), g = ctx.createGain(), l = ctx.createOscillator(), lg = ctx.createGain();
+        o.type = k % 2 ? "triangle" : "sine"; o.frequency.value = f; o.detune.value = (k - 1.5) * 4;
+        g.gain.value = 0; g.gain.linearRampToValueAtTime(0.25 / (k + 1), now + 5);
+        l.frequency.value = 0.05 + k * 0.03; lg.gain.value = 0.08 / (k + 1);
+        l.connect(lg); lg.connect(g.gain); o.connect(g); g.connect(master);
+        o.start(); l.start();
+        return { o, g, l };
+      });
+    }
+    function stop() {
+      if (!ctx || !master) return;
+      const now = ctx.currentTime;
+      master.gain.linearRampToValueAtTime(0, now + 1.5);
+      const vs = voices; voices = [];
+      setTimeout(() => vs.forEach(v => { try { v.o.stop(); v.l.stop(); } catch (e) { /* schon aus */ } }), 1700);
+      master = null;
+    }
+    api.toggle = on => { api.on = on; store.set("botc.music", on); on ? start() : stop(); };
+    api.setPhase = ph => { if (ph === phase) return; phase = ph; if (api.on && master) play(ph); };
+    return api;
+  })();
+  setInterval(applyPhase, 1000);
 
   // =====================================================================
   //  EIGENE ROLLENLISTE
@@ -1663,6 +1812,7 @@
     if (!r.skip && r.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [r.step]: r.role });
     const text = `🌙 ${x.name} (${roleName(r.step)}): ${r.skip ? "nichts" : describePick(r)}`;
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
+    hist(text, "night");
     if (!r.skip && r.step === "philosopher" && r.role && x.role === "philosopher") setPhilo(i, r.role);
     else { save(); refreshHostView(); }
     notice(text);
@@ -1983,6 +2133,7 @@
     const store_ = ({ i, r, t }) => {
       const s = game.seats[i];
       s.infos = [...(s.infos || []), { n: game.nightNo, r, t }].slice(-10);
+      hist(`📨 Info an ${s.name} (${roleName(stepId)}): ${[r.map(roleName).join(" / "), t].filter(Boolean).join(" – ")}`);
       const d = game.done[game.nightNo] || [];
       if (!d.includes(stepId)) game.done[game.nightNo] = [...d, stepId];
       save();
@@ -2023,7 +2174,10 @@
         <button class="btn" id="madshow">📱 Dem Spieler zeigen</button>
         <button class="btn primary" id="madsave">Speichern</button>
       </div>`);
-    const store_ = () => { s.madness = { role: $("#madrole").value, night: game.nightNo }; save(); };
+    const store_ = () => {
+      if (!s.madness || s.madness.role !== $("#madrole").value || s.madness.night !== game.nightNo) hist(`😵 ${s.name} muss ${roleName($("#madrole").value)} behaupten`);
+      s.madness = { role: $("#madrole").value, night: game.nightNo }; save();
+    };
     $("#madsave").addEventListener("click", () => { store_(); closeModal(); renderSL(); });
     $("#madclear") && $("#madclear").addEventListener("click", () => { delete s.madness; save(); closeModal(); renderSL(); });
     $("#madshow").addEventListener("click", () => {
@@ -2061,6 +2215,7 @@
       <h3>Auflösung</h3>
       <ul class="endlist">${list}</ul>
       ${game.bluffs.length ? `<p class="small">Bluffs des Dämons: ${game.bluffs.map(id => esc(roleName(id))).join(", ")}</p>` : ""}
+      ${historyHtml(game.history)}
       <div class="row wrap center">
         <button class="btn primary" id="again">🔄 Neue Runde, gleiche Spieler</button>
         <button class="btn" id="endclose">Zurück zum Grimoire</button>
@@ -2069,7 +2224,7 @@
     $("#again").addEventListener("click", () => {
       game.names = playerSeats().map(s => s.name);
       Object.assign(game, { selected: [], seats: [], bluffs: [], drunkShown: null, lunaticShown: null,
-        assignedKey: "", nightNo: 1, done: {}, days: {}, vote: null, winner: null, ignoreEnd: null, step: "roles" });
+        assignedKey: "", nightNo: 1, done: {}, days: {}, vote: null, winner: null, ignoreEnd: null, step: "roles", history: [], phase: "night", statsId: null });
       save(); closeModal(); renderSL();
     });
   }
@@ -2488,6 +2643,7 @@
     const w = game.winner;
     return {
       nightNo: game.nightNo || 1,
+      phase: game.phase || "night",
       fabled: game.fabled || [],
       timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0 } : null,
       started: game.seats.length > 0 && game.step !== "setup",
@@ -2495,7 +2651,8 @@
       winner: w ? {
         team: w.team, reason: w.reason, nights: game.nightNo,
         reveal: game.seats.map(s => ({ n: s.name, r: s.role, s: shownRole(s.role), good: seatGood(s), a: !!s.alive })),
-        bluffs: game.bluffs
+        bluffs: game.bluffs,
+        history: (game.history || []).slice(-120).map(h => ({ n: h.n, ph: h.ph, t: h.t }))
       } : null
     };
   }
@@ -2558,6 +2715,7 @@
     const i = game.seats.findIndex(s => s.pid === uid);
     const name = i >= 0 ? game.seats[i].name : (lobby[uid] && lobby[uid].name) || "?";
     const text = `${name} (${roleName(msg.role)}) wählt: ${roleName(msg.pick)}`;
+    hist("🧠 " + text);
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
     game.lastPicks = Object.assign(game.lastPicks || {}, { [msg.role]: msg.pick });
     if (i >= 0 && game.seats[i].role === "philosopher") setPhilo(i, msg.pick);
@@ -2758,6 +2916,7 @@
       <h3>Auflösung</h3>
       <ul class="endlist">${list}</ul>
       ${(w.bluffs || []).length ? `<p class="small">Bluffs des Dämons: ${w.bluffs.map(id => esc(roleName(id))).join(", ")}</p>` : ""}
+      ${historyHtml(w.history)}
       <div class="row center"><button class="btn primary" id="pubendclose">Schließen</button></div>`, "full");
     $("#pubendclose").addEventListener("click", () => { closeModal(); refreshPlayerView(true); });
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
@@ -2803,6 +2962,7 @@
   }
   window.addEventListener("hashchange", route);
   route();
+  setTimeout(applyPhase, 0);
   if (Net.configured()) {
     if (game.online) hostConnect();
     if (store.get("botc.online", null)) playerConnect();

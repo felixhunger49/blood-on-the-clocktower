@@ -494,3 +494,33 @@ img.logo { width: 30px; height: 30px; border-radius: 8px; box-shadow: 0 0 0 1px 
 .size-sm .token .tk-ic { font-size: 1rem; }
 .size-sm .token .tk-role { display: none; }
 .ns-bluff b { display: flex; align-items: center; gap: .4rem; }
+
+/* ===== Tag-Stimmung ===== */
+body { transition: background-color 1.2s; }
+body[data-phase="day"] {
+  --bg: #1b2232; --panel: #252f46; --panel2: #2e3a56; --line: #3d4b6b; --muted: #a9b5cc; --accent: #e8b44f;
+  background: radial-gradient(1100px 520px at 50% -160px, rgba(255, 179, 92, .38) 0%, rgba(120, 150, 210, .16) 45%, var(--bg) 75%) fixed, var(--bg);
+}
+body[data-phase="day"] .panel { background: linear-gradient(180deg, #2a3550, var(--panel)); }
+body[data-phase="day"] .topbar { background: rgba(27, 34, 50, .92); }
+body[data-phase="day"] .tabbar { background: rgba(27, 34, 50, .92); }
+body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .18); }
+/* ===== Spielverlauf ===== */
+.history summary { list-style: none; cursor: pointer; }
+.history summary::-webkit-details-marker { display: none; }
+.history summary h3 { display: inline; }
+.hgroup { border-left: 3px solid #6f5bb0; padding: .2rem 0 .2rem .7rem; margin: .5rem 0; }
+.hgroup.day { border-left-color: var(--accent); }
+.hhead { font-weight: 700; font-size: .9rem; color: var(--muted); }
+.hgroup ul { list-style: none; padding: 0; margin: .2rem 0; display: grid; gap: .15rem; font-size: .9rem; }
+/* ===== Statistik ===== */
+.stats summary { list-style: none; cursor: pointer; }
+.stats summary::-webkit-details-marker { display: none; }
+.stats summary h3 { display: inline; margin: 0; }
+.statbar { display: flex; border-radius: 999px; overflow: hidden; margin: .8rem 0; font-weight: 700; font-size: .85rem; }
+.statbar span { padding: .35rem .7rem; white-space: nowrap; }
+.statbar .sg { background: color-mix(in srgb, var(--good) 45%, transparent); }
+.statbar .se { background: color-mix(in srgb, var(--evil) 45%, transparent); text-align: right; }
+.stattable { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.stattable th, .stattable td { padding: .35rem .3rem; border-bottom: 1px solid var(--line); text-align: center; }
+.stattable td:first-child, .stattable th:first-child { text-align: left; }
