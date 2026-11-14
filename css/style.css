@@ -524,3 +524,20 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .stattable { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .stattable th, .stattable td { padding: .35rem .3rem; border-bottom: 1px solid var(--line); text-align: center; }
 .stattable td:first-child, .stattable th:first-child { text-align: left; }
+
+/* Notizen: Karten pro Mitspieler */
+.notecard { background: var(--panel2); border-radius: 12px; padding: .5rem .6rem; display: grid; gap: .35rem; border-left: 4px solid var(--line); }
+.notecard.tr-good { border-left-color: var(--good); }
+.notecard.tr-unsure { border-left-color: var(--warn); }
+.notecard.tr-evil { border-left-color: var(--evil); }
+.notecard.dead { opacity: .65; }
+.nc-top { display: flex; align-items: center; gap: .4rem; }
+.nc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trust { display: inline-flex; gap: .2rem; }
+.trustbtn { width: 2.1rem; height: 2.1rem; border-radius: 50%; border: 1px solid var(--line); background: transparent; font-size: 1.05rem; cursor: pointer; padding: 0; filter: grayscale(1); opacity: .55; }
+.trustbtn.on { filter: none; opacity: 1; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.trustbtn.del { filter: none; opacity: .7; font-size: .85rem; color: var(--muted); }
+.notecard select, .notecard input { width: 100%; padding: .35rem .5rem; font-size: .9rem; }
+.addname { display: flex; gap: .4rem; margin-top: .5rem; }
+.addname input { flex: 1; min-width: 0; }
+.notes summary .small { margin-left: .4rem; }
