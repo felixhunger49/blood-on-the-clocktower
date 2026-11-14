@@ -98,7 +98,16 @@
   const isGood = (role, align) => role.t === "traveller" ? align !== "e" : TEAMS[role.t].good;
   const teamClass = (role, align) => role.t === "traveller" ? (align === "e" ? "t-evil-trav" : "t-traveller") : "t-" + role.t;
   // Gehört eine Rolle zur Edition? Bei „Eigene Liste“ entscheidet die Rollenliste des Spielleiters.
-  const inEd = (r, ed, script) => ed === "custom" ? (script || game.script || []).includes(r.id) : r.ed === ed;
+  const scIds = sc => (sc || []).map(x => typeof x === "number" ? (ROLES[x] || {}).id : x).filter(Boolean);
+  const inEd = (r, ed, script) => ed === "custom" ? scIds(script || game.script).includes(r.id) : r.ed === ed;
+  // Rollenliste des aktuellen Spiels (Spielleiter: eigene Liste; Spieler: von der Karte oder aus dem Online-Spiel)
+  function gameScript() {
+    const mine = store.get("botc.myrole", null);
+    if (mine && mine.sc) return scIds(mine.sc);
+    if (typeof pubState !== "undefined" && pubState && pubState.script) return scIds(pubState.script);
+    if (game.edition === "custom" && (game.script || []).length && game.seats.length) return game.script.slice();
+    return null;
+  }
   const rolesOf = (ed, team) => ROLES.filter(r => inEd(r, ed) && r.t === team);
   const roleName = id => ROLE_BY_ID[id] ? ROLE_BY_ID[id].de : "?";
 
@@ -336,7 +345,7 @@
       ${notesHtml()}
       <section class="panel muted">
         <div class="row center wrap">
-          <a class="btn" href="#/rollen">📖 Alle Rollen ansehen</a>
+          <a class="btn" href="#/rollen" onclick="this.dataset.go=1">${mine.sc ? "📜 Rollen in eurem Spiel" : "📖 Alle Rollen ansehen"}</a>
           ${on ? `<button id="leaveroom" class="btn danger">Raum verlassen</button>` : `${Net.configured() ? `<button id="openjoin" class="btn">🌐 Online-Spiel beitreten</button>` : ""}<button id="forget" class="btn danger">Andere Rolle laden</button>`}
         </div>
       </section>`;
@@ -519,7 +528,7 @@
     const shown = shownRole(seat.role);
     const info = { r: shown, n: seat.name, s: i };
     if (seat.trav) info.a = seat.align;
-    if (game.edition === "custom" && PICKERS[shown]) info.sc = game.script;
+    if (game.edition === "custom" && (game.script || []).length) info.sc = game.script.map(id => ROLE_BY_ID[id].idx);
     const x = evilInfoFor(seat);
     if (x) info.x = x;
     if (seat.madness && seat.madness.night === game.nightNo && seat.alive) info.m = seat.madness.role;
@@ -1403,8 +1412,9 @@
   function claimPool() {
     const mine = store.get("botc.myrole", null);
     const role = mine && ROLE_BY_ID[mine.r];
-    const ed = mine && mine.sc ? "custom" : role && EDITIONS[role.ed] && !EDITIONS[role.ed].extra ? role.ed : null;
-    return ROLES.filter(r => !["fabled", "traveller"].includes(r.t) && (ed ? inEd(r, ed, mine.sc) : true));
+    const sc = gameScript();
+    const ed = sc ? "custom" : role && EDITIONS[role.ed] && !EDITIONS[role.ed].extra ? role.ed : null;
+    return ROLES.filter(r => !["fabled", "traveller"].includes(r.t) && (ed ? inEd(r, ed, sc) : true));
   }
 
   function notesHtml() {
@@ -2466,7 +2476,7 @@
   // =====================================================================
   //  ROLLEN-LEXIKON
   // =====================================================================
-  let lexFilter = { ed: "all", team: "all", q: "" };
+  let lexFilter = { ed: null, team: "all", q: "" };
 
   function roleDetail(r, forST) {
     return `<div class="lex-detail">
@@ -2484,11 +2494,14 @@
   }
 
   function renderLex() {
+    const sc = gameScript();
+    if (!lexFilter.ed || (lexFilter.ed === "game" && !sc)) lexFilter.ed = sc ? "game" : "all";
     view.innerHTML = `
       <section class="panel">
         <h2>Alle Rollen</h2>
         <input id="lexq" class="search" placeholder="🔍 Rolle suchen …" value="${esc(lexFilter.q)}">
         <div class="chips">
+          ${sc ? `<button class="chip ${lexFilter.ed === "game" ? "on" : ""}" data-led="game">📜 Euer Spiel</button>` : ""}
           <button class="chip ${lexFilter.ed === "all" ? "on" : ""}" data-led="all">Alle</button>
           ${Object.entries(EDITIONS).filter(([k]) => k !== "custom").map(([k, e]) => `<button class="chip ${lexFilter.ed === k ? "on" : ""}" data-led="${k}">${e.name}</button>`).join("")}
         </div>
@@ -2500,14 +2513,16 @@
       <div id="lexlist"></div>`;
     const draw = () => {
       const q = lexFilter.q.toLowerCase();
-      const list = ROLES.filter(r => (lexFilter.ed === "all" || r.ed === lexFilter.ed)
+      const list = ROLES.filter(r => (lexFilter.ed === "all" || (lexFilter.ed === "game" ? sc.includes(r.id) : r.ed === lexFilter.ed))
         && (lexFilter.team === "all" || r.t === lexFilter.team)
         && (!q || (r.de + " " + r.en + " " + r.a).toLowerCase().includes(q)));
       let html = "";
-      Object.keys(EDITIONS).filter(k => k !== "custom").forEach(ed => {
-        const part = list.filter(r => r.ed === ed);
+      const sections = lexFilter.ed === "game"
+        ? [["game", "📜 Rollen in eurem Spiel", `${list.length} Rollen`, list]]
+        : Object.keys(EDITIONS).filter(k => k !== "custom").map(ed => [ed, EDITIONS[ed].name, EDITIONS[ed].de, list.filter(r => r.ed === ed)]);
+      sections.forEach(([ed, title, sub, part]) => {
         if (!part.length) return;
-        html += `<section class="panel"><h2>${esc(EDITIONS[ed].name)} <span class="small">(${esc(EDITIONS[ed].de)})</span></h2>`;
+        html += `<section class="panel"><h2>${esc(title)} <span class="small">(${esc(sub)})</span></h2>`;
         Object.keys(TEAMS).forEach(team => {
           const tp = part.filter(r => r.t === team);
           if (!tp.length) return;
@@ -2719,6 +2734,7 @@
     return {
       nightNo: game.nightNo || 1,
       phase: game.phase || "night",
+      script: game.edition === "custom" && (game.script || []).length ? game.script.map(id => ROLE_BY_ID[id].idx) : null,
       fabled: game.fabled || [],
       timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0 } : null,
       started: game.seats.length > 0 && game.step !== "setup",
