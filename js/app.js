@@ -830,7 +830,7 @@
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${!s.inactive && nightOn() ? actionStatusHtml(s.id) : ""}
-            ${ROLE_BY_ID[s.id] && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
+            ${INFO_ROLES.includes(s.id) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"} <small>(hier)</small></button>` : ""}
             ${s.show && game.online ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
           </li>`).join("")}</ol>
@@ -1879,6 +1879,18 @@
   // =====================================================================
   //  ROLLEN-INFO ZEIGEN (Totengräber, Rabenhüter, Waschfrau …)
   // =====================================================================
+  // Rollen, die nachts eine Info vom Spielleiter bekommen (nur dort gibt es den Info-Knopf).
+  const INFO_ROLES = [
+    // Trouble Brewing
+    "washerwoman", "librarian", "investigator", "chef", "empath", "fortuneteller", "undertaker", "ravenkeeper",
+    // Bad Moon Rising
+    "grandmother", "chambermaid", "godfather",
+    // Sects & Violets
+    "clockmaker", "dreamer", "mathematician", "flowergirl", "towncrier", "oracle", "seamstress", "juggler", "sage",
+    // Experimentelle Rollen
+    "noble", "pixie", "highpriestess", "balloonist", "general", "villageidiot", "knight", "steward", "shugenja",
+    "choirboy", "king", "bountyhunter", "nightwatchman", "preacher"
+  ];
   // Nacht-Schritte, bei denen der Spielleiter eine oder mehrere Rollen zeigt.
   const SHOW_ROLE = ["undertaker", "ravenkeeper", "washerwoman", "librarian", "investigator", "grandmother",
     "dreamer", "king", "pixie", "godfather", "sage", "noble"];
