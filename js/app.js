@@ -603,7 +603,8 @@
         </div>
         <div class="row end"><button class="btn primary" id="next1">Weiter: Rollen wählen →</button></div>
       </section>
-      ${onlineHostPanel()}
+      ${game.test ? "" : onlineHostPanel()}
+      ${testPanel()}
       ${statsHtml()}
       <section class="panel muted">
         <div class="row wrap">
@@ -842,9 +843,9 @@
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${!s.inactive && nightOn() ? actionStatusHtml(s.id) : ""}
             ${tableOn() && INFO_ROLES.includes(s.id) && !s.inactive ? wakeStatusHtml(s.id) : ""}
-            ${INFO_ROLES.includes(s.id) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
+            ${INFO_ROLES.includes(s.id) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online || game.test ? " / senden" : ""}</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"} <small>(hier)</small></button>` : ""}
-            ${s.show && game.online ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
+            ${s.show && (game.online || game.test) ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
           ${game.phase === "day" ? "" : `<button class="btn primary" id="daystart">☀️ Morgen – Tag ${game.nightNo} beginnt</button>`}
@@ -880,6 +881,8 @@
     $("#minus") && $("#minus").addEventListener("click", () => setCount(game.count - 1));
     $("#plus") && $("#plus").addEventListener("click", () => setCount(game.count + 1));
     bindOnlineHost();
+    $("#teststart") && $("#teststart").addEventListener("click", startTest);
+    $("#teststop") && $("#teststop").addEventListener("click", () => { if (confirm("Testrunde beenden? Das Spiel wird zurückgesetzt.")) { game = newGame(); save(); renderSL(); } });
     $("#statsreset") && $("#statsreset").addEventListener("click", () => { if (confirm("Statistik wirklich löschen?")) { store.del("botc.stats"); renderSL(); } });
     $$(".name").forEach(inp => inp.addEventListener("input", () => {
       game.names[+inp.dataset.i] = inp.value;
@@ -951,7 +954,7 @@
       game.evilSent = Object.assign({}, game.evilSent, { [key]: true });
       // Empfänger: Schergen (ohne Marionette) bzw. Dämon und Wahnsinniger
       const rc = playerSeats().filter(x => key === "minion" ? (ROLE_BY_ID[x.role].t === "minion" && x.role !== "marionette") : (ROLE_BY_ID[x.role].t === "demon" || x.role === "lunatic"));
-      const off = rc.filter(x => !(x.pid && lobby[x.pid]));
+      const off = rc.filter(x => !reachable(x));
       const d = game.done[game.nightNo] || [];
       if (!d.includes(which)) game.done[game.nightNo] = [...d, which];
       save(); renderSL();
@@ -1274,6 +1277,7 @@
       <label class="field">Notiz ${helpBtn("s:note")}: <input id="m-note" value="${esc(s.note || "")}" placeholder="z. B. Meister des Butlers"></label>
       <div class="row wrap">
         <button class="btn" data-m="info">ℹ️ Rolle</button>
+        ${isBot(s) ? `<button class="btn" data-m="phone">🤖 Handy ansehen</button>` : ""}
         <button class="btn" data-m="change">🔁 Rolle ändern</button>
         ${cer ? `<span class="hint-pair"><button class="btn" data-m="mad">😵 Wahnsinn</button>${helpBtn("s:mad")}</span>` : ""}
         ${ONCE_PER_GAME.includes(s.role) && s.role !== "philosopher" ? `<span class="hint-pair"><button class="btn ${s.used ? "used" : ""}" data-m="used">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>${helpBtn("s:used")}</span>` : ""}
@@ -1307,6 +1311,7 @@
       else if (a === "ghost") { s.ghost = !s.ghost; again(); }
       else if (a === "used") { s.used = !s.used; again(); }
       else if (a === "info") openModal(roleDetail(ROLE_BY_ID[s.role], true));
+      else if (a === "phone") showBotPhone(i);
       else if (a === "change") changeRole(i);
       else if (a === "mad") madnessDialog(i);
       else { closeModal(); renderSL(); }
@@ -1620,6 +1625,39 @@
   setInterval(applyPhase, 1000);
 
   // =====================================================================
+  //  TESTRUNDE MIT BOTS
+  // =====================================================================
+  const BOT_NAMES = ["Anna", "Ben", "Clara", "David", "Eva", "Finn", "Greta", "Hugo", "Ida", "Jonas", "Klara", "Leo", "Mia", "Noah", "Olga"];
+  function testPanel() {
+    if (game.online) return "";
+    if (game.test) return `<section class="panel testpanel"><h2>🤖 Testrunde läuft</h2>
+      <p class="small">Die Plätze sind mit Bots besetzt. Sie wählen nachts selbst, „sehen“ ihre Infos und antworten wie echte Handys. Tippe im Grimoire einen Spieler an → <b>🤖 Handy ansehen</b>, um zu sehen, was er auf seinem Handy hätte. Abstimmungen trägst du wie gewohnt ein.</p>
+      <button class="btn danger" id="teststop">Testrunde beenden</button></section>`;
+    return `<section class="panel muted testpanel"><h3>🤖 Testrunde zum Üben</h3>
+      <p class="small">Du bist der Spielleiter, alle anderen Plätze sind Bots. So kannst du ein ganzes Spiel mit Nachtaktionen, „Wie am Tisch“, Infos und Abstimmungen ausprobieren – ganz ohne Mitspieler und ohne Internet.</p>
+      <button class="btn" id="teststart">🤖 Testrunde mit ${game.count} Bots starten</button></section>`;
+  }
+  function startTest() {
+    const n = game.count;
+    game.test = true;
+    game.names = BOT_NAMES.slice(0, n).map(x => "🤖 " + x);
+    game.pids = game.names.map((_, i) => "bot-" + i);
+    game.nightActions = true;
+    game.selected = [];
+    save(); goStep("roles");
+    toast(`${n} Bots sitzen am Tisch – wähle die Rollen`);
+  }
+  // Was der Bot auf seinem Handy sehen würde
+  function showBotPhone(i) {
+    const s = game.seats[i];
+    const info = seatInfo(s, i);
+    openModal(`<p class="small center">🤖 So sieht das Handy von ${esc(s.name)} aus</p>
+      <div class="botphone">${cardHtml(info)}</div>
+      <div class="row center"><button class="btn primary" id="botclose">Zurück</button></div>`, "full");
+    $("#botclose").addEventListener("click", () => { closeModal(); seatModal(i); });
+  }
+
+  // =====================================================================
   //  EIGENE ROLLENLISTE
   // =====================================================================
   function scriptCounts(list) {
@@ -1748,12 +1786,15 @@
     harlot: { n: 1, text: "Wähle einen Spieler, den du besuchst." },
     bonecollector: { n: 1, dead: true, onlyDead: true, optional: true, text: "Willst du einem Toten seine Fähigkeit zurückgeben? (einmal pro Spiel)" }
   };
-  const nightOn = () => !!(game.online && game.nightActions);
+  const nightOn = () => !!((game.online || game.test) && game.nightActions);
+  // Kann dieser Platz Aufgaben am Handy bekommen? (verbundenes Handy oder Test-Bot)
+  const isBot = x => !!(x && x.pid && String(x.pid).startsWith("bot-"));
+  const reachable = x => !!(x && x.pid && (isBot(x) || lobby[x.pid]));
   // Als welche Rolle handelt dieser Spieler? (Säufer/Marionette glauben an ihre Rolle, Philosoph an die gewählte)
   const actingRole = x => x.role === "philosopher" && x.gained ? x.gained : shownRole(x.role);
 
   function nightActionsBar(steps) {
-    if (!game.online) return "";
+    if (!game.online && !game.test) return "";
     if (!game.nightActions) return `<div class="box nabar"><label class="switch"><input type="checkbox" id="natoggle">
       <span><b>📲 Nachtaktionen am Handy</b> – Spieler wählen ihre Ziele auf dem eigenen Handy, statt zu zeigen.</span></label></div>`;
     const seq = game.seq && game.seq.night === game.nightNo ? game.seq : null;
@@ -1796,13 +1837,13 @@
   }
 
   // „Wie am Tisch“ läuft in dieser Nacht
-  const tableOn = () => !!(game.online && game.nightActions && game.tableNight && game.tableNight === game.nightNo);
+  const tableOn = () => !!((game.online || game.test) && game.nightActions && game.tableNight && game.tableNight === game.nightNo);
 
   function wakeStatusHtml(stepId) {
     const rows = stepHolders(stepId).filter(([x]) => x.alive || ACTS_WHEN_DEAD.includes(stepId));
     return rows.length ? `<div class="actstat">${rows.map(([x, i]) => {
       const w = (game.wakes || {})[i];
-      const st = !(x.pid && lobby[x.pid]) ? `<span class="small">nicht online – bitte wie gewohnt wecken</span>`
+      const st = !reachable(x) ? `<span class="small">nicht online – bitte wie gewohnt wecken</span>`
         : !w || w.night !== game.nightNo ? `<span class="small">schläft</span>`
         : w.done ? `<span class="okmsg">✅ hat die Info gesehen</span>` : `<span class="wait">👁️ ist wach …</span>`;
       return `<div class="actrow"><b>${esc(x.name)}:</b> ${st}</div>`;
@@ -1838,7 +1879,7 @@
     return `<div class="actstat">${rows.map(([x, i]) => {
       const a = (game.asks || {})[i];
       const r = lastAct(i, stepId);
-      const online = x.pid && lobby[x.pid];
+      const online = reachable(x);
       const pending = a && a.night === game.nightNo && !a.done && a.step === stepId;
       let st;
       if (pending) st = `<span class="wait">⏳ wartet …</span>`;
@@ -1855,6 +1896,28 @@
     const x = game.seats[i];
     game.asks = game.asks || {};
     game.asks[i] = { id: `${game.nightNo}-${i}-${randInt(1e6)}`, night: game.nightNo, step: sleep ? null : (step || actingRole(x)), sleep: !!sleep, round: round || null };
+    if (isBot(x)) botAnswer(i, game.asks[i].id);
+  }
+
+  // Ein Test-Bot „überlegt“ kurz und wählt dann zufällig, aber regelgerecht.
+  function botAnswer(i, id) {
+    setTimeout(() => {
+      const a = (game.asks || {})[i];
+      if (!a || a.id !== id || a.done) return;
+      const x = game.seats[i];
+      const msg = { type: "action", id };
+      if (!a.sleep) {
+        const def = ACTIONS[a.step] || { n: 1 };
+        const cands = game.seats.map((y, k) => k).filter(k => (def.self || k !== i) && (def.onlyDead ? !game.seats[k].alive : (game.seats[k].alive || def.dead)));
+        const n = def.n ? Math.max(def.min !== undefined ? def.min : 1, Math.min(def.n, cands.length)) : 0;
+        msg.picks = shuffle(cands).slice(0, n);
+        if (def.role) {
+          const pool = ROLES.filter(r => inEd(r, game.edition) && !["traveller", "fabled"].includes(r.t) && (def.role === "all" || r.t === "townsfolk" || r.t === "outsider"));
+          msg.role = (pool[randInt(pool.length)] || {}).id || null;
+        }
+      }
+      onPlayerMessage(x.pid, msg);
+    }, 900 + randInt(1600));
   }
 
   // Wer handelt in diesem Schritt? (online, lebt – oder tot, wenn der Tod die Aktion auslöst)
@@ -1881,7 +1944,7 @@
     seq.pos = pos; seq.step = step; seq.round = (seq.round || 0) + 1; seq.count = (seq.count || 0) + 1;
     game.asks = {};
     game.seats.forEach((x, i) => {
-      if (!x.pid || !lobby[x.pid]) return;
+      if (!reachable(x)) return;
       if (actors.includes(i)) askSeat(i, false, step, seq.round);
       else if (x.alive) askSeat(i, true, null, seq.round);
     });
@@ -1895,7 +1958,7 @@
       const first = game.nightNo === 1, key = first ? "n1" : "n";
       let n = 0;
       game.seats.forEach((x, i) => {
-        if (!x.alive || !x.pid || !lobby[x.pid]) return;
+        if (!x.alive || !reachable(x)) return;
         const r = actingRole(x), role = ROLE_BY_ID[r];
         const acts = ACTIONS[r] && role && role[key] && !ACTS_WHEN_DEAD.includes(r) && !(ONCE_PER_GAME.includes(r) && x.used) && !(r === "philosopher" && x.gained);
         askSeat(i, !acts);
@@ -2275,7 +2338,7 @@
       <label class="field">Zusatz (optional): <input id="infotext" placeholder="${pickCfg.ph}"></label>
       <div class="row wrap end">
         <button class="btn" id="infoshow">📱 Zeigen</button>
-        ${game.online ? `<button class="btn primary" id="infosend">${tableOn() ? "👁️ Wecken &amp; zeigen" : "🌐 Aufs Handy senden"}</button>` : ""}
+        ${game.online || game.test ? `<button class="btn primary" id="infosend">${tableOn() ? "👁️ Wecken &amp; zeigen" : "🌐 Aufs Handy senden"}</button>` : ""}
       </div>`);
     const showPicked = () => {
       $$("[data-ip]").forEach(x => x.classList.toggle("on", picked.includes(+x.dataset.ip)));
@@ -2343,6 +2406,8 @@
       }
       store_(c);
       closeModal(); renderSL();
+      const wk = (game.wakes || {})[c.i];
+      if (tableOn() && wk && isBot(game.seats[c.i])) setTimeout(() => { if (!wk.done) { wk.done = true; save(); refreshHostView(); } }, 1500 + randInt(1500));
       toast(game.seats[c.i].pid ? (tableOn() ? `${game.seats[c.i].name} wird geweckt` : `An ${game.seats[c.i].name} gesendet`) : `${game.seats[c.i].name} ist nicht online – bitte zeigen`);
     });
   }
@@ -2819,6 +2884,7 @@
 
   // Lobby-Änderungen anzeigen, ohne dem Spielleiter beim Tippen dazwischenzufunken.
   function refreshHostView() {
+    if (game.test && !game.online) { const tab = (location.hash.match(/^#\/(\w+)/) || [])[1]; if (tab === "sl" && modal.classList.contains("hidden") && game.step === "grim") { const a = document.activeElement; if (!(a && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName))) renderSL(); } return; }
     const tab = (location.hash.match(/^#\/(\w+)/) || [])[1];
     if (tab !== "sl" || !modal.classList.contains("hidden")) return;
     const a = document.activeElement;
@@ -2906,6 +2972,7 @@
   }
 
   function onPlayerMessage(uid, msg) {
+    if (!game.online && !game.test) return;
     if (msg.type === "action") return onPlayerAction(uid, msg);
     if (msg.type !== "pick" || !ROLE_BY_ID[msg.pick]) return;
     const i = game.seats.findIndex(s => s.pid === uid);

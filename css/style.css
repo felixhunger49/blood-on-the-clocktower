@@ -548,3 +548,6 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .sleepshow .cover-icon { font-size: 4rem; animation: breathe 4s ease-in-out infinite; }
 @keyframes breathe { 0%, 100% { transform: scale(1); opacity: .7; } 50% { transform: scale(1.08); opacity: 1; } }
 .wakeshow .ns-text { font-size: 2.2rem; color: var(--accent); }
+
+.testpanel { border-color: var(--accent); }
+.botphone { border: 3px solid var(--line); border-radius: 26px; padding: .6rem; background: var(--bg); }
