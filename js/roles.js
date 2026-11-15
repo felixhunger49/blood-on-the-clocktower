@@ -850,7 +850,7 @@ const ROLE_MARKERS = {
   investigator: [{ k: "inv_ok", i: "🔎", l: "Ermittler: richtig", d: "Dieser Spieler hat die Schergen-Rolle, die du dem Ermittler gezeigt hast." }, { k: "inv_no", i: "🔎✖", l: "Ermittler: falsch", d: "Der zweite gezeigte Spieler (hat die Rolle nicht)." }],
   butler: [{ k: "master", i: "🎩", l: "Meister", d: "Der Butler darf morgen nur abstimmen, wenn dieser Spieler auch abstimmt." }],
   undertaker: [{ k: "executed", i: "⚰️", l: "Hingerichtet", d: "Wurde heute hingerichtet – seine Rolle zeigst du heute Nacht dem Totengräber.", n: true }],
-  scarletwoman: [{ k: "isdemon", i: "👑", l: "Ist jetzt der Dämon", d: "Die Scharlachrote Frau hat übernommen. Rolle zusätzlich mit 🔁 auf den Dämon ändern." }],
+  scarletwoman: [{ k: "isdemon", i: "👑", l: "Ist jetzt der Dämon", d: "Die Scharlachrote Frau hat übernommen. Die App setzt das automatisch, sobald der Dämon stirbt (bei 5+ Lebenden und wenn sie nicht vergiftet/betrunken ist)." }],
   grandmother: [{ k: "grandchild", i: "👶", l: "Enkelkind", d: "Tötet der Dämon diesen Spieler, stirbt auch die Großmutter." }],
   exorcist: [{ k: "chosen", i: "✝️", l: "Vom Exorzisten gewählt", d: "Darf nicht noch einmal direkt hintereinander gewählt werden. Ist es der Dämon, wacht er heute Nacht nicht auf.", n: true }],
   tealady: [{ k: "cantdie", i: "🫖", l: "Kann nicht sterben", d: "Beide lebenden Nachbarn der Teedame sind gut – dieser Spieler kann nicht sterben." }],

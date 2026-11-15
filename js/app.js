@@ -387,8 +387,6 @@
     const aliveDemons = demons.filter(s => s.alive || s.zfake);
     if (demons.length && !aliveDemons.length) {
       const warn = [];
-      if (ps.some(s => s.role === "scarletwoman" && s.alive) && alive.length + 1 >= 5)
-        warn.push("Die Scharlachrote Frau lebt – sie wird zum Dämon, wenn beim Tod des Dämons noch 5+ Spieler lebten. Dann ändere ihre Rolle (🔁) statt den Sieg zu verkünden.");
       if (ps.some(s => s.role === "mastermind" && s.alive))
         warn.push("Der Drahtzieher lebt – wurde der Dämon hingerichtet, wird noch ein Tag gespielt.");
       if (demons.some(s => s.role === "imp") && ps.some(s => s.alive && ROLE_BY_ID[s.role].t === "minion"))
@@ -540,7 +538,7 @@
   }
 
   function seatInfo(seat, i) {
-    const shown = shownRole(seat.role);
+    const shown = seat.swPending ? "scarletwoman" : shownRole(seat.role);
     const info = { r: shown, n: seat.name, s: i };
     if (seat.trav) info.a = seat.align;
     if (game.edition === "custom" && (game.script || []).length) info.sc = game.script.map(id => ROLE_BY_ID[id].idx);
@@ -556,7 +554,7 @@
   }
   function seatCode(seat, i) {
     const align = seat.trav ? (seat.align === "e" ? 2 : 1) : 0;
-    return makeCode(ROLE_BY_ID[shownRole(seat.role)].idx, align, i, seat.salt);
+    return makeCode(ROLE_BY_ID[seat.swPending ? "scarletwoman" : shownRole(seat.role)].idx, align, i, seat.salt);
   }
   const seatLink = (seat, i) => baseUrl() + "#k=" + encodeLink(seatInfo(seat, i));
 
@@ -791,7 +789,7 @@
       }
       const role = ROLE_BY_ID[id];
       if (!role || !role[key]) return;
-      const holders = ps.filter(s => s.role === id);
+      const holders = ps.filter(s => s.role === id || (id === "scarletwoman" && s.swPending));
       const drunks = ps.filter(s => (s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id);
       const philos = ps.filter(s => s.role === "philosopher" && s.gained === id);
       if (!holders.length && !drunks.length && !philos.length) return;
@@ -805,8 +803,10 @@
       const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => (s.role === "philosopher" && id !== "philosopher" ? s.gainedUsed : s.used) || !s.alive);
       // Der Jongleur erfährt sein Ergebnis nur in der Nacht nach dem ersten Tag.
       const over = id === "juggler" && game.nightNo > 2;
-      const inactive = allDead || allUsed || over || notTriggered;
+      const swIdle = id === "scarletwoman" && !holders.some(s => s.swPending);
+      const inactive = allDead || allUsed || over || notTriggered || swIdle;
       const why = allDead ? "Tot – keine Fähigkeit mehr, nicht wecken." : over ? "Nur in der zweiten Nacht – entfällt."
+        : swIdle ? "Der Dämon ist nicht gestorben (oder sie hat nicht übernommen) – nicht wecken."
         : notTriggered ? (["ravenkeeper", "sage"].includes(id) ? "Nur wenn er heute Nacht stirbt (z. B. durch den Dämon) – nicht wecken." : "Nur wenn er gerade gestorben ist – nicht wecken.")
         : "Fähigkeit schon benutzt – nicht mehr wecken.";
       steps.push({ id, name: `${role.ic} ${role.de}`, text: role[key], who, t: role.t, inactive, why, mark: allDead ? "💀" : "✔", once: ONCE_PER_GAME.includes(id) });
@@ -858,6 +858,7 @@
           <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
             <div class="ns-head">${s.inactive ? `<span class="dead-mark">${s.mark}</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${s.inactive ? s.why : esc(s.text)}</p>
+            ${s.id === "scarletwoman" && !s.inactive ? game.seats.map((x, i) => x.swPending ? `<button class="btn sm primary" data-swshow="${i}">👑 ${esc(x.name)} zeigen: Du bist ${esc(roleName(x.role))}${game.online || game.test ? " (aufs Handy)" : ""}</button>` : "").join("") : ""}
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${!s.inactive && nightOn() ? actionStatusHtml(s.id) : ""}
@@ -1007,6 +1008,15 @@
       save(); renderSL();
     }));
     $("#daystart") && $("#daystart").addEventListener("click", dawnDialog);
+    $$("[data-swshow]").forEach(b => b.addEventListener("click", () => {
+      const x = game.seats[+b.dataset.swshow];
+      x.swPending = false;
+      hist(`👑 ${x.name} hat erfahren: Du bist ${roleName(x.role)}`, "night");
+      const d = game.done[game.nightNo] || [];
+      if (!d.includes("scarletwoman")) game.done[game.nightNo] = [...d, "scarletwoman"];
+      save(); renderSL();
+      toast(game.online || game.test ? `${x.name} sieht jetzt ihre neue Rolle auf dem Handy` : `Zeig ${x.name} jetzt „Du bist“ + ${roleName(x.role)}`);
+    }));
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
       game.vote = null;
       game.asks = {};
@@ -1214,10 +1224,12 @@
       if (!confirm(msg)) return;
       day.exec = { seat: b.on, name: s.name };
       hist(`⚔️ ${s.name} wurde hingerichtet (${role.ic} ${role.de})`, "day");
+      swMsg = null;
       applyDeath(s, rule);
       if (game.seats[b.on].alive) day.exec.survived = true;
       save(); renderSL();
       if (s.role === "saint") toast("Der Heilige wurde hingerichtet – Böse gewinnt!");
+      else if (swMsg) toast(swMsg);
       else if (rule && !rule.dies) toast(`${s.name} wurde hingerichtet, stirbt aber nicht (${role.de})`);
       else toast(`${s.name} wurde hingerichtet (${role.de})`);
     });
@@ -1229,7 +1241,7 @@
       else { const mc = mayorWinCheck(); if (mc && !mc.ok) toast(mc.why); }
     });
     $("#undoexec") && $("#undoexec").addEventListener("click", () => {
-      if (day.exec && day.exec !== "none" && game.seats[day.exec.seat]) { const x = game.seats[day.exec.seat]; x.alive = true; x.zfake = false; }
+      if (day.exec && day.exec !== "none" && game.seats[day.exec.seat]) { const x = game.seats[day.exec.seat]; x.alive = true; x.zfake = false; swRevert(day.exec.seat); }
       day.exec = null;
       save(); renderSL();
     });
@@ -1377,7 +1389,7 @@
     }));
     root.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => {
       const a = b.dataset.m;
-      if (a === "alive") { s.alive = !s.alive; if (s.alive) s.ghost = true; histDeath(s); again(); }
+      if (a === "alive") { s.alive = !s.alive; if (s.alive) { s.ghost = true; s.zfake = false; } histDeath(s); if (s.alive) swRevert(i); else swCheck(s); again(); }
       else if (a === "ghost") { s.ghost = !s.ghost; again(); }
       else if (a === "used") { s.used = !s.used; again(); }
       else if (a === "info") openModal(roleDetail(ROLE_BY_ID[s.role], true));
@@ -1933,12 +1945,46 @@
     if (x.role === "zombuul" && !x.zfake) return { dies: true, zombuul: true, why: "🧟 Zombuul – erster Tod: gilt als tot, lebt aber heimlich weiter" };
     return null;
   }
+  // Scharlachrote Frau: Stirbt der Dämon bei 5+ Lebenden (vor dem Tod gezählt, ohne Reisende),
+  // wird sie der Dämon – aber nicht, wenn sie vergiftet oder betrunken ist.
+  let swMsg = null;
+  function swCheck(x) {
+    swMsg = null;
+    if (!x || x.alive || x.zfake || ROLE_BY_ID[x.role].t !== "demon") return;
+    const S = game.seats;
+    const sw = S.find(y => y.role === "scarletwoman" && y.alive);
+    if (!sw) return;
+    const before = S.filter(y => y.alive && !y.trav).length + (x.trav ? 0 : 1);
+    if (before < 5) { hist(`💋 Nur ${before} Spieler lebten – die Scharlachrote Frau übernimmt nicht`); return; }
+    if (impaired(sw)) {
+      hist(`💋 ${sw.name} (Scharlachrote Frau) ist vergiftet/betrunken – übernimmt nicht`);
+      toast(swMsg = `💋 ${sw.name} ist vergiftet/betrunken – sie wird NICHT zum Dämon`);
+      return;
+    }
+    sw.swFrom = { seat: S.indexOf(x) };
+    sw.role = x.role;
+    sw.swPending = true;
+    sw.marks = [...new Set([...(sw.marks || []), "isdemon"])];
+    hist(`👑 ${sw.name} (Scharlachrote Frau) ist jetzt der Dämon: ${roleName(x.role)}`);
+    toast(swMsg = `👑 ${sw.name} wird zum ${roleName(x.role)} – zeig es ihr heute Nacht`);
+  }
+  // Wird der Dämon wiederbelebt / Hinrichtung rückgängig: Übernahme zurücknehmen
+  function swRevert(i) {
+    game.seats.forEach(y => {
+      if (!y.swFrom || y.swFrom.seat !== i) return;
+      y.role = "scarletwoman"; y.swPending = false; delete y.swFrom;
+      y.marks = (y.marks || []).filter(m => m !== "isdemon");
+      hist(`↩︎ ${y.name} ist wieder die Scharlachrote Frau`);
+    });
+  }
+
   // Tod anwenden (inkl. Narr verbraucht / Zombuul scheintot)
   function applyDeath(x, rule) {
     if (rule && rule.fool) { x.used = true; hist(`🃏 ${x.name} (Narr) überlebt seinen ersten Tod`); return; }
     if (rule && rule.zombuul) { x.zfake = true; x.alive = false; histDeath(x); hist(`🧟 ${x.name} (Zombuul) wirkt tot, lebt aber weiter`); return; }
-    if (!x.alive && x.zfake) { x.zfake = false; hist(`🧟 ${x.name} (Zombuul) stirbt jetzt wirklich`); return; }
+    if (!x.alive && x.zfake) { x.zfake = false; hist(`🧟 ${x.name} (Zombuul) stirbt jetzt wirklich`); swCheck(x); return; }
     x.alive = false; histDeath(x);
+    swCheck(x);
   }
 
   function nightKills() {
@@ -1960,7 +2006,12 @@
       else if (!strong && x.role === "soldier" && !impaired(x)) { dies = false; why = "🛡️ Soldat – der Dämon kann ihn nicht töten"; }
       else if (!strong && m.includes("cantdie")) { dies = false; why = "🫖 Teedame – kann nicht sterben"; }
       else if (deathRule(x)) { const r = deathRule(x); dies = r.dies; why = r.why; }
-      else if (at.by === k) why = "Dämon hat sich selbst gewählt – Sternenwechsel: mach einen Schergen zum Dämon (🔁 Rolle ändern)";
+      else if (at.by === k) {
+        const sw = S.find(y => y.role === "scarletwoman" && y.alive && !impaired(y));
+        why = sw && S.filter(y => y.alive && !y.trav).length >= 5
+          ? `Dämon hat sich selbst gewählt – Sternenwechsel: ${sw.name} (Scharlachrote Frau) wird automatisch der neue Dämon`
+          : "Dämon hat sich selbst gewählt – Sternenwechsel: mach einen Schergen zum Dämon (🔁 Rolle ändern)";
+      }
       else if (x.role === "mayor" && !impaired(x)) why = "Bürgermeister: Du darfst den Tod auf einen anderen Spieler umlenken (dann hier abwählen und den anderen tot setzen)";
       out.push({ k, dies, why });
     });
@@ -1978,7 +2029,7 @@
     $("#dawnok").addEventListener("click", () => {
       $$("[data-kill]").forEach(c => {
         const x = game.seats[+c.dataset.kill], rule = deathRule(x);
-        if (rule && rule.fool) { if (!c.checked) applyDeath(x, rule); else { x.alive = false; histDeath(x); } return; }
+        if (rule && rule.fool) { if (!c.checked) applyDeath(x, rule); else { x.alive = false; histDeath(x); swCheck(x); } return; }
         if (c.checked && x.alive) applyDeath(x, rule && rule.zombuul ? rule : null);
       });
       closeModal(); startDay();
