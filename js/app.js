@@ -1098,10 +1098,11 @@
           const up = v.hands.includes(i);
           const bc = butlerCheck(i, v.hands);
           const isMaster = (s.marks || []).includes("master") && ps.some(y => y.role === "butler");
-          return `<button class="voter ${up ? "up" : ""} ${bc && bc.warn ? "warn" : ""}" data-hand="${i}" ${canVote ? "" : "disabled"}>
+          return `<button class="voter ${up ? "up" : ""} ${bc && bc.warn ? "warn" : ""} ${v.clock === i ? "clock" : ""}" data-hand="${i}" ${canVote ? "" : "disabled"}>
             <span>${up ? "✋" : "·"}</span><b>${esc(s.name)}</b>${s.alive ? "" : `<small>${s.ghost ? "👻 Geisterstimme" : "keine Stimme mehr"}</small>`}${bc ? `<small>${esc(bc.note)}</small>` : ""}${isMaster ? `<small>🎩 Meister des Butlers</small>` : ""}</button>`;
         }).join("")}</div>
         <div class="votecount ${count >= votesNeeded() ? "ok" : ""}">${count} Stimmen · nötig ${votesNeeded()}${b && !b.tie ? ` · auf dem Block mit ${b.count}` : ""}</div>
+        ${game.test && !v.botDone ? `<div class="row wrap"><button class="btn" id="botvote">🤖 Bots stimmen ab</button></div>` : ""}
         <div class="row wrap"><button class="btn primary" id="savevote">Abstimmung beenden</button><button class="btn" id="cancelvote">Abbrechen</button></div>
       </div>`;
     } else {
@@ -1112,6 +1113,8 @@
         <label>Wer wird nominiert?<select id="nomon">${opt(all, i => nominated.has(i) ? " (war schon nominiert)" : "")}</select></label>
         <button class="btn primary" id="startvote">🗳️ Abstimmung starten</button>
       </div>
+      ${game.test ? `<div class="row wrap"><button class="btn" id="botnom">🤖 Ein Bot nominiert</button></div>
+        <p class="small">Ein zufälliger Bot nominiert jemanden und alle Bots stimmen ab – Böse halten zusammen, Gute raten. Du zählst wie am Tisch mit und entscheidest am Ende.</p>` : ""}
       <p class="small">Regeln: Jeder <b>lebende</b> Spieler darf einmal pro Tag nominieren, jeder Spieler einmal pro Tag nominiert werden. Tote nominieren nicht.</p>`;
     }
 
@@ -1160,9 +1163,12 @@
       game.vote.hands = h.includes(i) ? h.filter(x => x !== i) : [...h, i];
       save(); renderSL();
     }));
-    $("#cancelvote") && $("#cancelvote").addEventListener("click", () => { game.vote = null; save(); renderSL(); });
+    $("#cancelvote") && $("#cancelvote").addEventListener("click", () => { botVoteRun++; game.vote = null; save(); renderSL(); });
+    $("#botnom") && $("#botnom").addEventListener("click", botNominate);
+    $("#botvote") && $("#botvote").addEventListener("click", () => { $("#botvote").disabled = true; botVote(); });
     $("#savevote") && $("#savevote").addEventListener("click", () => {
       const v = game.vote;
+      botVoteRun++;
       const hands = validHands(v.hands);
       // Tote, die abgestimmt haben, verbrauchen ihre Geisterstimme.
       hands.forEach(i => { const s = game.seats[i]; if (!s.alive) s.ghost = false; });
@@ -1939,6 +1945,76 @@
     if (isBot(x)) botAnswer(i, game.asks[i].id);
   }
 
+  // Böse Bots kennen ihr Team: Schaden geht an Gute, Hilfe an Böse. Gute Bots wählen nicht sich selbst.
+  const EVIL_HELPS = ["devilsadvocate"];
+  function botTargets(i, step, all, n) {
+    const me = game.seats[i];
+    let pref = all;
+    if (!seatGood(me)) {
+      pref = EVIL_HELPS.includes(step) ? all.filter(k => !seatGood(game.seats[k])) : all.filter(k => seatGood(game.seats[k]));
+    } else if (!["butler"].includes(step)) {
+      pref = all.filter(k => k !== i);
+    }
+    const picked = shuffle(pref).slice(0, n);
+    if (picked.length < n) picked.push(...shuffle(all.filter(k => !picked.includes(k))).slice(0, n - picked.length));
+    return picked;
+  }
+
+  // ---------- Tag: Bots nominieren und stimmen ab ----------
+  let botVoteRun = 0;
+  function botNominate() {
+    const day = today(), S = game.seats;
+    const nominators = S.map((x, k) => k).filter(k => S[k].alive && isBot(S[k]) && !day.noms.some(n => n.by === k));
+    if (!nominators.length) { toast("Alle lebenden Bots haben heute schon nominiert"); return; }
+    const by = nominators[randInt(nominators.length)];
+    let cands = S.map((x, k) => k).filter(k => k !== by && S[k].alive && !S[k].trav && !day.noms.some(n => n.on === k));
+    if (!cands.length) { toast("Niemand mehr übrig, der nominiert werden kann"); return; }
+    // Böse nominieren Gute, Gute raten (sie wissen ja nichts Sicheres)
+    if (!seatGood(S[by])) { const good = cands.filter(k => seatGood(S[k])); if (good.length) cands = good; }
+    const on = cands[randInt(cands.length)];
+    game.vote = { by, on, hands: [] };
+    game.voteOpen = true;
+    save(); renderSL();
+    toast(`🤖 ${S[by].name} nominiert ${S[on].name}`);
+    setTimeout(botVote, 900);
+  }
+  // Entscheidung eines Bots: Böse schützen ihr Team, Gute sind unsicher
+  function botWantsVote(k, on) {
+    const S = game.seats, x = S[k];
+    if (k === on) return false;
+    const r = Math.random();
+    if (!seatGood(x)) return seatGood(S[on]) ? r < 0.85 : r < 0.1;
+    return x.alive ? r < 0.5 : r < 0.25;
+  }
+  function botVote() {
+    const v = game.vote;
+    if (!v) return;
+    const run = ++botVoteRun, S = game.seats;
+    const order = [];
+    for (let k = 1; k <= S.length; k++) order.push((v.on + k) % S.length);
+    const want = {};
+    order.forEach(k => { if (isBot(S[k]) && (S[k].alive || S[k].ghost)) want[k] = botWantsVote(k, v.on); });
+    // Der Butler hält sich an seine Regel
+    order.forEach(k => {
+      if (S[k].role !== "butler" || !want[k]) return;
+      const m = S[k].marks || [];
+      if (m.includes("poison") || m.includes("drunk")) return;
+      const master = S.findIndex(y => (y.marks || []).includes("master"));
+      if (master >= 0 && !(want[master] || v.hands.includes(master))) want[k] = false;
+    });
+    let step = 0;
+    const tick = () => {
+      if (run !== botVoteRun || game.vote !== v) return;
+      if (step >= order.length) { v.botDone = true; save(); renderSL(); return; }
+      const k = order[step++];
+      if (k in want) v.hands = want[k] ? [...new Set([...v.hands, k])] : v.hands.filter(x => x !== k);
+      v.clock = k;
+      save(); renderSL();
+      setTimeout(tick, k in want ? 350 : 120);
+    };
+    tick();
+  }
+
   // Ein Test-Bot „überlegt“ kurz und wählt dann zufällig, aber regelgerecht.
   function botAnswer(i, id) {
     setTimeout(() => {
@@ -1948,12 +2024,15 @@
       const msg = { type: "action", id };
       if (!a.sleep) {
         const def = ACTIONS[a.step] || { n: 1 };
-        const cands = game.seats.map((y, k) => k).filter(k => (def.self || k !== i) && (def.onlyDead ? !game.seats[k].alive : (game.seats[k].alive || def.dead)));
-        const n = def.n ? Math.max(def.min !== undefined ? def.min : 1, Math.min(def.n, cands.length)) : 0;
-        msg.picks = shuffle(cands).slice(0, n);
+        const all = game.seats.map((y, k) => k).filter(k => (def.self || k !== i) && (def.onlyDead ? !game.seats[k].alive : (game.seats[k].alive || def.dead)));
+        const n = def.n ? Math.max(def.min !== undefined ? def.min : 1, Math.min(def.n, all.length)) : 0;
+        msg.picks = botTargets(i, a.step, all, n);
         if (def.role) {
           const pool = ROLES.filter(r => inEd(r, game.edition) && !["traveller", "fabled"].includes(r.t) && (def.role === "all" || r.t === "townsfolk" || r.t === "outsider"));
           msg.role = (pool[randInt(pool.length)] || {}).id || null;
+          // Böse treffen mit Rollen-Wahlen lieber gute Rollen, die wirklich im Spiel sind
+          const goodInPlay = game.seats.filter(y => y.alive && seatGood(y)).map(y => y.role);
+          if (!seatGood(game.seats[i]) && a.step === "ojo" && goodInPlay.length) msg.role = goodInPlay[randInt(goodInPlay.length)];
         }
       }
       onPlayerMessage(x.pid, msg);
