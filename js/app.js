@@ -384,15 +384,13 @@
     if (!ps.length) return null;
     const alive = ps.filter(s => s.alive);
     const demons = ps.filter(s => ROLE_BY_ID[s.role].t === "demon");
-    const aliveDemons = demons.filter(s => s.alive);
+    const aliveDemons = demons.filter(s => s.alive || s.zfake);
     if (demons.length && !aliveDemons.length) {
       const warn = [];
       if (ps.some(s => s.role === "scarletwoman" && s.alive) && alive.length + 1 >= 5)
         warn.push("Die Scharlachrote Frau lebt – sie wird zum Dämon, wenn beim Tod des Dämons noch 5+ Spieler lebten. Dann ändere ihre Rolle (🔁) statt den Sieg zu verkünden.");
       if (ps.some(s => s.role === "mastermind" && s.alive))
         warn.push("Der Drahtzieher lebt – wurde der Dämon hingerichtet, wird noch ein Tag gespielt.");
-      if (demons.some(s => s.role === "zombuul"))
-        warn.push("Der Zombuul überlebt seinen ersten Tod (er wirkt nur tot).");
       if (demons.some(s => s.role === "imp") && ps.some(s => s.alive && ROLE_BY_ID[s.role].t === "minion"))
         warn.push("Hat sich der Imp selbst getötet, wird ein Scherge zum Imp – dann dessen Rolle ändern (🔁).");
       return { winner: "good", reason: "Der Dämon ist tot.", warn };
@@ -758,6 +756,7 @@
           <b>${esc(s.name)}</b>
           ${roleChip(s.role, s.trav || s.align ? (seatGood(s) ? " · gut" : " · böse") : "")}
           ${shown !== s.role ? `<span class="small">(glaubt: ${esc(roleName(shown))})</span>` : ""}
+          ${s.zfake ? `<span class="small">🧟 scheintot – lebt heimlich weiter</span>` : ""}
           ${marksHtml(s)}
         </div>
         <div class="g-ctl">
@@ -802,7 +801,7 @@
       // Tote Spieler haben keine Fähigkeit mehr – außer Rollen, die gerade durch ihren Tod ausgelöst werden.
       const all = [...holders, ...drunks, ...philos];
       const notTriggered = ACTS_WHEN_DEAD.includes(id) && !all.some(s => deathTriggered(s, id));
-      const allDead = !ACTS_WHEN_DEAD.includes(id) && all.every(s => !s.alive);
+      const allDead = !ACTS_WHEN_DEAD.includes(id) && all.every(s => !s.alive && !s.zfake);
       const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => (s.role === "philosopher" && id !== "philosopher" ? s.gainedUsed : s.used) || !s.alive);
       // Der Jongleur erfährt sein Ergebnis nur in der Nacht nach dem ersten Tag.
       const over = id === "juggler" && game.nightNo > 2;
@@ -1208,14 +1207,18 @@
       const role = ROLE_BY_ID[s.role];
       let msg = `${s.name} hinrichten?`;
       if (s.role === "saint") msg += "\n\n⚠️ Das ist der HEILIGE – wird er hingerichtet, gewinnt Böse!";
-      if (["fool", "pacifist", "tealady", "devilsadvocate", "sailor", "zombuul"].some(id => game.seats.some(x => x.role === id)))
-        msg += "\n\nHinweis: Eine Rolle im Spiel kann die Hinrichtung verhindern (z. B. Narr, Pazifist, Teedame, Advocatus Diaboli, Seemann). Prüfe das, bevor du bestätigst.";
+      const rule = s.alive ? deathRule(s) : null;
+      if (rule) msg += `\n\n${rule.why}.`;
+      else if (["pacifist", "tealady", "devilsadvocate"].some(id => game.seats.some(x => x.role === id)) || (s.marks || []).includes("survives"))
+        msg += "\n\nHinweis: Eine Rolle im Spiel kann die Hinrichtung verhindern (z. B. Pazifist, Teedame, Advocatus Diaboli). Prüfe das, bevor du bestätigst.";
       if (!confirm(msg)) return;
-      s.alive = false;
       day.exec = { seat: b.on, name: s.name };
       hist(`⚔️ ${s.name} wurde hingerichtet (${role.ic} ${role.de})`, "day");
+      applyDeath(s, rule);
+      if (game.seats[b.on].alive) day.exec.survived = true;
       save(); renderSL();
       if (s.role === "saint") toast("Der Heilige wurde hingerichtet – Böse gewinnt!");
+      else if (rule && !rule.dies) toast(`${s.name} wurde hingerichtet, stirbt aber nicht (${role.de})`);
       else toast(`${s.name} wurde hingerichtet (${role.de})`);
     });
     $("#noexec") && $("#noexec").addEventListener("click", () => {
@@ -1226,7 +1229,7 @@
       else { const mc = mayorWinCheck(); if (mc && !mc.ok) toast(mc.why); }
     });
     $("#undoexec") && $("#undoexec").addEventListener("click", () => {
-      if (day.exec && day.exec !== "none" && game.seats[day.exec.seat]) game.seats[day.exec.seat].alive = true;
+      if (day.exec && day.exec !== "none" && game.seats[day.exec.seat]) { const x = game.seats[day.exec.seat]; x.alive = true; x.zfake = false; }
       day.exec = null;
       save(); renderSL();
     });
@@ -1299,7 +1302,7 @@
         <span class="tk-name">${esc(String(s.name).replace(/^🤖\s*/, ""))}</span>
         <span class="tk-ic">${r.ic}</span>
         <span class="tk-role">${esc(r.de)}</span>
-        <span class="tk-marks">${s.alive ? "" : s.ghost ? "💀👻" : "💀"}${(s.marks || []).map(m => (markerByKey(m) || {}).i || "").join("")}${s.madness && s.madness.night === game.nightNo ? "😵" : ""}${s.used ? "✔" : ""}</span>
+        <span class="tk-marks">${s.zfake ? "🧟" : ""}${s.alive ? "" : s.ghost ? "💀👻" : "💀"}${(s.marks || []).map(m => (markerByKey(m) || {}).i || "").join("")}${s.madness && s.madness.night === game.nightNo ? "😵" : ""}${s.used ? "✔" : ""}</span>
       </button>`;
     }).join("");
     const alive = ps.filter(s => s.alive && !s.trav).length;
@@ -1921,6 +1924,23 @@
   // ---------- Morgen: Wer stirbt durch den Dämon? ----------
   const KILL_STEPS = ["imp", "fanggu", "vigormortis", "nodashii", "vortox", "zombuul", "shabaloth", "po", "assassin", "godfather", "lleech"];
   const impaired = x => { const m = x.marks || []; return m.includes("poison") || m.includes("drunk") || x.role === "drunk"; };
+  // Rollen, die ihren eigenen Tod verhindern oder vortäuschen (für Nacht UND Hinrichtung).
+  // Gibt null zurück, wenn nichts Besonderes passiert.
+  function deathRule(x) {
+    if (impaired(x)) return null;
+    if (x.role === "sailor") return { dies: false, why: "⚓ Seemann – kann nicht sterben, solange er nüchtern ist" };
+    if (x.role === "fool" && !x.used) return { dies: false, fool: true, why: "🃏 Narr – sein erster Tod wird verhindert (Fähigkeit danach verbraucht)" };
+    if (x.role === "zombuul" && !x.zfake) return { dies: true, zombuul: true, why: "🧟 Zombuul – erster Tod: gilt als tot, lebt aber heimlich weiter" };
+    return null;
+  }
+  // Tod anwenden (inkl. Narr verbraucht / Zombuul scheintot)
+  function applyDeath(x, rule) {
+    if (rule && rule.fool) { x.used = true; hist(`🃏 ${x.name} (Narr) überlebt seinen ersten Tod`); return; }
+    if (rule && rule.zombuul) { x.zfake = true; x.alive = false; histDeath(x); hist(`🧟 ${x.name} (Zombuul) wirkt tot, lebt aber weiter`); return; }
+    if (!x.alive && x.zfake) { x.zfake = false; hist(`🧟 ${x.name} (Zombuul) stirbt jetzt wirklich`); return; }
+    x.alive = false; histDeath(x);
+  }
+
   function nightKills() {
     const S = game.seats, n = game.nightNo;
     const attacks = new Map(); // Ziel -> Angreifer
@@ -1931,7 +1951,7 @@
     attacks.forEach((at, k) => {
       const x = S[k];
       if (!x || !x.alive) return;
-      const attacker = at.by !== null ? S[at.by] : S.find(y => y.alive && ROLE_BY_ID[y.role].t === "demon");
+      const attacker = at.by !== null ? S[at.by] : S.find(y => (y.alive || y.zfake) && ROLE_BY_ID[y.role].t === "demon");
       const m = x.marks || [];
       const strong = at.step === "assassin";
       let dies = true, why = `angegriffen${at.step ? ` (${roleName(at.step)})` : ""}`;
@@ -1939,6 +1959,7 @@
       else if (!strong && m.includes("protect")) { dies = false; why = "🛡️ geschützt – überlebt"; }
       else if (!strong && x.role === "soldier" && !impaired(x)) { dies = false; why = "🛡️ Soldat – der Dämon kann ihn nicht töten"; }
       else if (!strong && m.includes("cantdie")) { dies = false; why = "🫖 Teedame – kann nicht sterben"; }
+      else if (deathRule(x)) { const r = deathRule(x); dies = r.dies; why = r.why; }
       else if (at.by === k) why = "Dämon hat sich selbst gewählt – Sternenwechsel: mach einen Schergen zum Dämon (🔁 Rolle ändern)";
       else if (x.role === "mayor" && !impaired(x)) why = "Bürgermeister: Du darfst den Tod auf einen anderen Spieler umlenken (dann hier abwählen und den anderen tot setzen)";
       out.push({ k, dies, why });
@@ -1955,7 +1976,11 @@
       <div class="row end"><button class="btn" id="dawnback">Zurück</button><button class="btn primary" id="dawnok">☀️ Morgen verkünden</button></div>`);
     $("#dawnback").addEventListener("click", closeModal);
     $("#dawnok").addEventListener("click", () => {
-      $$("[data-kill]").forEach(c => { const x = game.seats[+c.dataset.kill]; if (c.checked && x.alive) { x.alive = false; histDeath(x); } });
+      $$("[data-kill]").forEach(c => {
+        const x = game.seats[+c.dataset.kill], rule = deathRule(x);
+        if (rule && rule.fool) { if (!c.checked) applyDeath(x, rule); else { x.alive = false; histDeath(x); } return; }
+        if (c.checked && x.alive) applyDeath(x, rule && rule.zombuul ? rule : null);
+      });
       closeModal(); startDay();
     });
   }
@@ -1983,7 +2008,7 @@
 
   function actionStatusHtml(stepId) {
     if (!ACTIONS[stepId]) return "";
-    const rows = game.seats.map((x, i) => [x, i]).filter(([x]) => actingRole(x) === stepId && (ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive));
+    const rows = game.seats.map((x, i) => [x, i]).filter(([x]) => actingRole(x) === stepId && (ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive || x.zfake));
     if (!rows.length) return "";
     return `<div class="actstat">${rows.map(([x, i]) => {
       const a = (game.asks || {})[i];
@@ -2111,7 +2136,7 @@
       if (actingRole(x) !== stepId || !x.pid) return false;
       if (ONCE_PER_GAME.includes(stepId) && x.used) return false;
       if (stepId === "philosopher" && x.gained) return false;
-      return ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive;
+      return ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive || x.zfake;
     });
   }
 
