@@ -2472,6 +2472,53 @@
     }
   }
 
+  // Spion und Einsiedler dürfen falsch „registrieren“ – solange sie gesund sind.
+  const ALIGN_STEPS = ["empath", "chef", "oracle", "shugenja", "villageidiot", "seamstress", "noble", "steward", "bountyhunter", "grandmother", "clockmaker"];
+  const ROLE_STEPS = ["ravenkeeper", "undertaker", "dreamer"];
+  function misregHints(stepId, me, picks) {
+    const S = game.seats;
+    let rel;
+    if (stepId === "empath") rel = aliveNeighbours(me);
+    else if (stepId === "oracle") rel = S.map((x, k) => k).filter(k => !S[k].alive);
+    else if (["fortuneteller", "villageidiot", "seamstress", "dreamer", "ravenkeeper"].includes(stepId)) rel = picks || [];
+    else if (stepId === "undertaker") { const d = (game.days || {})[game.nightNo - 1]; rel = d && d.exec && d.exec !== "none" ? [d.exec.seat] : []; }
+    else if ([...ALIGN_STEPS, "washerwoman", "librarian", "investigator"].includes(stepId)) rel = S.map((x, k) => k).filter(k => k !== me);
+    else return [];
+    const out = [];
+    rel.forEach(k => {
+      const x = S[k];
+      if (!x || !["spy", "recluse"].includes(x.role)) return;
+      const nm = x.name;
+      if (impaired(x)) {
+        out.push(x.role === "spy" ? `🕵️ ${nm} ist Spion, aber vergiftet/betrunken – zählt sicher als böser Scherge.` : `🏚️ ${nm} ist Einsiedler, aber vergiftet/betrunken – zählt sicher als guter Außenseiter.`);
+        return;
+      }
+      let what = null;
+      if (x.role === "spy") {
+        if (stepId === "washerwoman") what = "als Dorfbewohner zeigen";
+        else if (stepId === "librarian") what = "als Außenseiter zeigen";
+        else if (ROLE_STEPS.includes(stepId)) what = "eine gute Rolle zeigen";
+        else if (ALIGN_STEPS.includes(stepId) || ["seamstress", "villageidiot"].includes(stepId)) what = "als gut zählen";
+        if (stepId === "empath" && what) {
+          const c = aliveNeighbours(me).filter(j => isEvil(S[j])).length;
+          what += ` (dann: ${c - 1})`;
+        }
+        if (what) out.push(`🕵️ ${nm} ist der Spion – du darfst ihn ${what}.`);
+      } else {
+        if (stepId === "investigator") what = "als Scherge zeigen";
+        else if (stepId === "fortuneteller") what = "als Dämon gelten lassen (dann: Ja)";
+        else if (ROLE_STEPS.includes(stepId)) what = "eine böse Rolle zeigen";
+        else if (ALIGN_STEPS.includes(stepId) || ["seamstress", "villageidiot"].includes(stepId)) what = "als böse zählen";
+        if (stepId === "empath" && what) {
+          const c = aliveNeighbours(me).filter(j => isEvil(S[j])).length;
+          what += ` (dann: ${c + 1})`;
+        }
+        if (what) out.push(`🏚️ ${nm} ist der Einsiedler – du darfst ihn ${what}.`);
+      }
+    });
+    return out;
+  }
+
   // Wer wacht bei diesem Nacht-Schritt auf? (inkl. Säufer, Marionette, Philosoph)
   const stepHolders = id => game.seats.map((s, i) => [s, i]).filter(([s]) =>
     s.role === id || ((s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id) || (s.role === "philosopher" && s.gained === id));
@@ -2534,7 +2581,8 @@
       if (sg.r && $("#inforole1")) { $("#inforole1").value = sg.r[0] || ""; $("#inforole2").value = sg.r[1] || ""; }
       if (sg.t !== undefined) $("#infotext").value = sg.t;
       const warn = drunkWarning(recipient());
-      box.innerHTML = `💡 <b>Vorschlag (wahre Info):</b> ${esc(sg.text)}${warn ? `<br><span class="warnmsg">⚠️ ${esc(warn)}</span>` : ""}`;
+      const mis = misregHints(stepId, recipient(), fromPicks ? picked.slice() : (sg.p || null));
+      box.innerHTML = `💡 <b>Vorschlag (wahre Info):</b> ${esc(sg.text)}${warn ? `<br><span class="warnmsg">⚠️ ${esc(warn)}</span>` : ""}${mis.map(t => `<br><span class="mismsg">${esc(t)}</span>`).join("")}`;
       box.classList.remove("hidden");
     };
     $$("[data-ip]").forEach(b => b.addEventListener("click", () => {
