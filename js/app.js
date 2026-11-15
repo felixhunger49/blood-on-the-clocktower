@@ -801,12 +801,15 @@
         ...philos.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Philosoph)")].join(", ");
       // Tote Spieler haben keine Fähigkeit mehr – außer Rollen, die gerade durch ihren Tod ausgelöst werden.
       const all = [...holders, ...drunks, ...philos];
+      const notTriggered = ACTS_WHEN_DEAD.includes(id) && !all.some(s => deathTriggered(s, id));
       const allDead = !ACTS_WHEN_DEAD.includes(id) && all.every(s => !s.alive);
       const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => (s.role === "philosopher" && id !== "philosopher" ? s.gainedUsed : s.used) || !s.alive);
       // Der Jongleur erfährt sein Ergebnis nur in der Nacht nach dem ersten Tag.
       const over = id === "juggler" && game.nightNo > 2;
-      const inactive = allDead || allUsed || over;
-      const why = allDead ? "Tot – keine Fähigkeit mehr, nicht wecken." : over ? "Nur in der zweiten Nacht – entfällt." : "Fähigkeit schon benutzt – nicht mehr wecken.";
+      const inactive = allDead || allUsed || over || notTriggered;
+      const why = allDead ? "Tot – keine Fähigkeit mehr, nicht wecken." : over ? "Nur in der zweiten Nacht – entfällt."
+        : notTriggered ? (["ravenkeeper", "sage"].includes(id) ? "Nur wenn er heute Nacht stirbt (z. B. durch den Dämon) – nicht wecken." : "Nur wenn er gerade gestorben ist – nicht wecken.")
+        : "Fähigkeit schon benutzt – nicht mehr wecken.";
       steps.push({ id, name: `${role.ic} ${role.de}`, text: role[key], who, t: role.t, inactive, why, mark: allDead ? "💀" : "✔", once: ONCE_PER_GAME.includes(id) });
     });
     const done = game.done[game.nightNo] || [];
@@ -1904,7 +1907,7 @@
   const tableOn = () => !!((game.online || game.test) && game.nightActions && game.tableNight && game.tableNight === game.nightNo);
 
   function wakeStatusHtml(stepId) {
-    const rows = stepHolders(stepId).filter(([x]) => x.alive || ACTS_WHEN_DEAD.includes(stepId));
+    const rows = stepHolders(stepId).filter(([x]) => ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive);
     return rows.length ? `<div class="actstat">${rows.map(([x, i]) => {
       const w = (game.wakes || {})[i];
       const st = !reachable(x) ? `<span class="small">nicht online – bitte wie gewohnt wecken</span>`
@@ -1980,7 +1983,7 @@
 
   function actionStatusHtml(stepId) {
     if (!ACTIONS[stepId]) return "";
-    const rows = game.seats.map((x, i) => [x, i]).filter(([x]) => actingRole(x) === stepId && (x.alive || ACTS_WHEN_DEAD.includes(stepId)));
+    const rows = game.seats.map((x, i) => [x, i]).filter(([x]) => actingRole(x) === stepId && (ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive));
     if (!rows.length) return "";
     return `<div class="actstat">${rows.map(([x, i]) => {
       const a = (game.asks || {})[i];
@@ -2108,8 +2111,8 @@
       if (actingRole(x) !== stepId || !x.pid) return false;
       if (ONCE_PER_GAME.includes(stepId) && x.used) return false;
       if (stepId === "philosopher" && x.gained) return false;
-      return ACTS_WHEN_DEAD.includes(stepId) ? true : x.alive;
-    }).filter(i => ACTS_WHEN_DEAD.includes(stepId) ? !game.seats[i].alive : true);
+      return ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive;
+    });
   }
 
   // Schritt für Schritt: nächsten Schritt mit Aktion suchen und alle Handys wecken
@@ -2721,6 +2724,17 @@
 
   // Rollen, deren Nacht-Schritt gerade durch den Tod ausgelöst wird.
   const ACTS_WHEN_DEAD = ["ravenkeeper", "sage", "moonchild", "sweetheart", "barber"];
+  // Wird die Fähigkeit durch den Tod gerade ausgelöst? Rabenhüter/Weiser: nur bei Tod in DIESER Nacht.
+  // Mondkind/Liebling/Barbier: auch, wenn er heute tagsüber gestorben ist (z. B. hingerichtet).
+  function deathTriggered(x, id) {
+    const i = game.seats.indexOf(x), n = game.nightNo;
+    if (pendingDeaths().includes(i)) return true;
+    if (x.alive) return false;
+    const h = game.history || [];
+    const tonight = h.some(e => e.n === n && e.ph === "night" && e.dead === x.name);
+    const today = h.some(e => e.n === n - 1 && e.ph === "day" && e.dead === x.name);
+    return tonight || (!["ravenkeeper", "sage"].includes(id) && today);
+  }
   // Fähigkeiten, die nur einmal pro Spiel wirken.
   const ONCE_PER_GAME = ["courtier", "professor", "seamstress", "philosopher", "assassin", "bonecollector",
     "slayer", "artist", "virgin", "fool", "judge", "huntsman", "nightwatchman", "golem"];
