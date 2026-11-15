@@ -1047,7 +1047,9 @@
     return tie ? { tie: true, count: best.count } : best;
   }
 
-  // Butler-Regel: Stimme zählt nur, wenn der Meister auch die Hand hebt (außer betrunken/vergiftet)
+  // Butler-Regel: darf nur stimmen, wenn der Meister auch die Hand hebt (außer betrunken/vergiftet).
+  // Der Butler achtet selbst darauf. Verstößt er, zählt die Stimme trotzdem – sonst würden
+  // alle am Tisch merken, wer der Butler ist. Der Spielleiter sieht nur einen Hinweis.
   function butlerCheck(i, hands) {
     const s = game.seats[i];
     if (!s || s.role !== "butler") return null;
@@ -1058,7 +1060,7 @@
     const mname = game.seats[master].name;
     if (!hands.includes(i)) return { ok: true, note: `Butler – darf nur stimmen, wenn ${mname} stimmt` };
     if (hands.includes(master)) return { ok: true, note: `Butler – ✅ Meister ${mname} stimmt mit` };
-    return { ok: false, warn: true, note: `⚠️ Meister ${mname} stimmt nicht mit – Stimme zählt nicht` };
+    return { ok: true, warn: true, note: `⚠️ Meister ${mname} stimmt nicht mit – zählt trotzdem (unauffällig), Butler später leise erinnern` };
   }
   const validHands = hands => hands.filter(i => { const c = butlerCheck(i, hands); return !c || c.ok; });
 
@@ -1154,7 +1156,6 @@
     $("#savevote") && $("#savevote").addEventListener("click", () => {
       const v = game.vote;
       const hands = validHands(v.hands);
-      if (hands.length < v.hands.length && !confirm("Die Stimme des Butlers zählt nicht, weil sein Meister nicht mitstimmt. Abstimmung so beenden?")) return;
       // Tote, die abgestimmt haben, verbrauchen ihre Geisterstimme.
       hands.forEach(i => { const s = game.seats[i]; if (!s.alive) s.ghost = false; });
       day.noms.push({ by: v.by, on: v.on, count: hands.length, needed: votesNeeded(), hands });
