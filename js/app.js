@@ -1106,6 +1106,20 @@
     return tie ? { tie: true, count: best.count } : best;
   }
 
+  // Hexe: Nominiert der verfluchte Spieler, stirbt er sofort (Hexe lebt, ist gesund, und es leben mehr als 3).
+  // Die Nominierung selbst bleibt gültig, es wird trotzdem abgestimmt.
+  function witchCurse(by) {
+    const x = game.seats[by];
+    if (!x || !x.alive || !(x.marks || []).includes("cursed")) return null;
+    const witch = game.seats.find(y => y.role === "witch" && y.alive);
+    if (!witch) return null;
+    if (impaired(witch)) { hist(`🧹 ${x.name} war verflucht, aber die Hexe ist vergiftet/betrunken – nichts passiert`, "day"); return `🧹 Fluch wirkt nicht – die Hexe ist vergiftet/betrunken`; }
+    if (game.seats.filter(y => y.alive && !y.trav).length <= 3) return null;
+    hist(`🧹 ${x.name} war verflucht und hat nominiert – stirbt sofort`, "day");
+    applyDeath(x, deathRule(x));
+    return x.alive ? `🧹 ${x.name} war verflucht, überlebt aber (${roleName(x.role)})` : `🧹 ${x.name} war verflucht und stirbt sofort! Die Abstimmung läuft trotzdem.`;
+  }
+
   // Butler-Regel: darf nur stimmen, wenn der Meister auch die Hand hebt (außer betrunken/vergiftet).
   // Der Butler achtet selbst darauf. Verstößt er, zählt die Stimme trotzdem – sonst würden
   // alle am Tisch merken, wer der Butler ist. Der Spielleiter sieht nur einen Hinweis.
@@ -1208,7 +1222,9 @@
       if (day.noms.some(n => n.on === on)) warn.push(`${game.seats[on].name} war heute schon nominiert.`);
       if (warn.length && !confirm(warn.join("\n") + "\n\nTrotzdem abstimmen?")) return;
       game.vote = { by, on, hands: [] };
+      const cursed = witchCurse(by);
       save(); renderSL();
+      if (cursed) toast(cursed);
     });
     $$("[data-hand]").forEach(btn => btn.addEventListener("click", () => {
       const i = +btn.dataset.hand, h = game.vote.hands;
@@ -2136,8 +2152,9 @@
     const on = cands[randInt(cands.length)];
     game.vote = { by, on, hands: [] };
     game.voteOpen = true;
+    const cursed = witchCurse(by);
     save(); renderSL();
-    toast(`🤖 ${S[by].name} nominiert ${S[on].name}`);
+    toast(cursed || `🤖 ${S[by].name} nominiert ${S[on].name}`);
     setTimeout(botVote, 900);
   }
   // Entscheidung eines Bots: Böse schützen ihr Team, Gute sind unsicher
