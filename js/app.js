@@ -2331,14 +2331,22 @@
   const isDemonFor = x => ROLE_BY_ID[x.role].t === "demon" || (x.marks || []).includes("herring");
   const rnd = arr => arr.length ? arr[randInt(arr.length)] : null;
 
-  // Lebende Nachbarn (übersprungen werden Tote), im Kreis
+  // Wer stirbt heute Nacht durch den Dämon (Zielscheibe, nicht geschützt)? Der Dämon handelt
+  // vor den Info-Rollen – für deren Infos ist dieser Spieler also schon tot.
+  function pendingDeaths() {
+    if (game.phase === "day" || game.nightNo < 2) return [];
+    return nightKills().filter(x => x.dies).map(x => x.k);
+  }
+  const aliveNow = j => game.seats[j].alive && !pendingDeaths().includes(j);
+
+  // Lebende Nachbarn (übersprungen werden Tote und heute Nacht Getötete), im Kreis
   function aliveNeighbours(i) {
     const n = game.seats.length, out = [];
     for (const dir of [-1, 1]) {
       for (let k = 1; k < n; k++) {
         const j = (i + dir * k + n * n) % n;
         if (j === i) break;
-        if (game.seats[j].alive) { out.push(j); break; }
+        if (aliveNow(j)) { out.push(j); break; }
       }
     }
     return [...new Set(out)];
@@ -2385,7 +2393,7 @@
         return { t: String(c), text: `${c} – Nachbarn: ${nb.map(name).join(", ")}` };
       }
       case "oracle": {
-        const c = S.filter(x => !x.alive && isEvil(x)).length;
+        const c = S.filter((x, j) => !aliveNow(j) && isEvil(x)).length;
         return { t: String(c), text: `${c} tote(r) böse(r) Spieler` };
       }
       case "clockmaker": {
@@ -2582,6 +2590,8 @@
       if (sg.t !== undefined) $("#infotext").value = sg.t;
       const warn = drunkWarning(recipient());
       const mis = misregHints(stepId, recipient(), fromPicks ? picked.slice() : (sg.p || null));
+      const pend = ["empath", "oracle"].includes(stepId) ? pendingDeaths() : [];
+      if (pend.length) mis.unshift(`🎯 ${pend.map(k => game.seats[k].name).join(", ")} stirbt heute Nacht durch den Dämon – zählt hier schon als tot.`);
       box.innerHTML = `💡 <b>Vorschlag (wahre Info):</b> ${esc(sg.text)}${warn ? `<br><span class="warnmsg">⚠️ ${esc(warn)}</span>` : ""}${mis.map(t => `<br><span class="mismsg">${esc(t)}</span>`).join("")}`;
       box.classList.remove("hidden");
     };
