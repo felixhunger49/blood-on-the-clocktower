@@ -573,6 +573,22 @@
     $$(".step").forEach(b => b.addEventListener("click", () => goStep(b.dataset.step)));
     bindSL();
     if (typeof applyPhase === "function") applyPhase();
+    endPopup();
+  }
+
+  // Spielende sofort als Fenster melden (das Banner oben sieht man beim Scrollen leicht nicht)
+  function endPopup() {
+    if (game.step !== "grim" || game.winner || !modal.classList.contains("hidden")) return;
+    const end = detectEnd(), key = aliveKey();
+    if (!end || game.ignoreEnd === key || game.endPopped === key) return;
+    game.endPopped = key; save();
+    openModal(`<div class="center"><div style="font-size:3rem">${end.winner === "good" ? "😇" : "😈"}</div>
+      <h2>🏁 ${end.winner === "good" ? "Gut gewinnt!" : "Böse gewinnt!"}</h2>
+      <p>${esc(end.reason)}</p>
+      ${end.warn.map(w => `<p class="warnmsg">⚠️ ${esc(w)}</p>`).join("")}
+      <div class="row center wrap"><button class="btn primary" id="popwin">🏆 Sieg verkünden</button><button class="btn" id="popgo">Spiel geht weiter</button></div></div>`);
+    $("#popwin").addEventListener("click", () => { closeModal(); const b = $(".endbanner [data-win]"); if (b) b.click(); });
+    $("#popgo").addEventListener("click", () => { closeModal(); const b = $("#ignoreend"); if (b) b.click(); });
   }
 
   function goStep(step) {
@@ -1018,6 +1034,9 @@
       toast(game.online || game.test ? `${x.name} sieht jetzt ihre neue Rolle auf dem Handy` : `Zeig ${x.name} jetzt „Du bist“ + ${roleName(x.role)}`);
     }));
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
+      const end = !game.winner && detectEnd();
+      if (end && game.ignoreEnd !== aliveKey() && !confirm(`Das Spiel ist eigentlich vorbei: ${end.winner === "good" ? "Gut" : "Böse"} gewinnt.\n${end.reason}\n\nTrotzdem weiterspielen?`)) return;
+      if (end) game.ignoreEnd = aliveKey();
       game.vote = null;
       game.asks = {};
       game.seq = null;
