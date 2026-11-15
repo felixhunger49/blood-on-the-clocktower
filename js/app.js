@@ -2282,9 +2282,38 @@
     const text = `🌙 ${x.name} (${roleName(r.step)}): ${r.skip ? "nichts" : describePick(r)}`;
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
     hist(text, "night");
+    if (!r.skip && r.role && r.picks.length && ["cerenovus", "pithag"].includes(r.step)) applyRolePick(x, r);
     if (!r.skip && r.step === "philosopher" && r.role && x.role === "philosopher") setPhilo(i, r.role);
     else { save(); refreshHostView(); }
     notice(text);
+  }
+
+  // Cerenovus (Wahnsinn) und Grubenhexe (Rollenwechsel) direkt übernehmen – nicht, wenn sie vergiftet/betrunken sind.
+  function applyRolePick(x, r) {
+    const t = game.seats[r.picks[0]];
+    if (!t) return;
+    if (impaired(x)) {
+      hist(`⚠️ ${x.name} (${roleName(r.step)}) ist vergiftet/betrunken – die Wahl hat keine Wirkung`, "night");
+      toast(`${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung (du kannst trotzdem so tun als ob)`);
+      return;
+    }
+    if (r.step === "cerenovus") {
+      t.madness = { role: r.role, night: game.nightNo };
+      hist(`😵 ${t.name} muss morgen ${roleName(r.role)} behaupten`, "night");
+      toast(`😵 ${t.name}: Wahnsinn „${roleName(r.role)}“ gesetzt${reachable(t) ? " – steht auf dem Handy" : " – zeig es ihm (😵-Knopf)"}`);
+    } else if (r.step === "pithag") {
+      if (game.seats.some(y => y.role === r.role)) {
+        hist(`🧙 ${roleName(r.role)} ist schon im Spiel – die Grubenhexe bewirkt nichts`, "night");
+        toast(`${roleName(r.role)} ist schon im Spiel – nichts passiert`);
+        return;
+      }
+      hist(`🧙 ${t.name}: ${roleName(t.role)} → ${roleName(r.role)} (Grubenhexe)`, "night");
+      t.role = r.role;
+      delete t.align;
+      game.ignoreEnd = null;
+      toast(ROLE_BY_ID[r.role].t === "demon" ? `🧙 ${t.name} ist jetzt ${roleName(r.role)} – neuer Dämon: du darfst heute Nacht beliebig viele sterben lassen`
+        : `🧙 ${t.name} ist jetzt ${roleName(r.role)}${reachable(t) ? " – sieht es auf dem Handy" : " – zeig es ihm (🔁)"}`);
+    }
   }
 
   // ---------- Spieler-Seite ----------
