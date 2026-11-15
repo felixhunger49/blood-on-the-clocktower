@@ -2755,7 +2755,7 @@
       const mis = misregHints(stepId, recipient(), fromPicks ? picked.slice() : (sg.p || null));
       const pend = ["empath", "oracle"].includes(stepId) ? pendingDeaths() : [];
       if (pend.length) mis.unshift(`🎯 ${pend.map(k => game.seats[k].name).join(", ")} stirbt heute Nacht durch den Dämon – zählt hier schon als tot.`);
-      box.innerHTML = `💡 <b>Vorschlag (wahre Info):</b> ${esc(sg.text)}${warn ? `<br><span class="warnmsg">⚠️ ${esc(warn)}</span>` : ""}${mis.map(t => `<br><span class="mismsg">${esc(t)}</span>`).join("")}`;
+      box.innerHTML = `💡 <b>Vorschlag (wahre Info)</b> <span class="small">· nur für dich, wird nicht gesendet</span><br> ${esc(sg.text)}${warn ? `<br><span class="warnmsg">⚠️ ${esc(warn)}</span>` : ""}${mis.map(t => `<br><span class="mismsg">${esc(t)}</span>`).join("")}`;
       box.classList.remove("hidden");
     };
     $$("[data-ip]").forEach(b => b.addEventListener("click", () => {
