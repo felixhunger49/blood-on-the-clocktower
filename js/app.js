@@ -1949,7 +1949,7 @@
     const kills = nightKills();
     if (!kills.length) return startDay();
     openModal(`<h2>☀️ Wer stirbt heute Nacht?</h2>
-      <p class="small">Vorschlag nach den Regeln – du kannst alles ändern.</p>
+      <p class="small">So sieht es nach den Regeln aus. Ändere den Haken nur, wenn die App etwas nicht weiß: ein fehlender Marker (z. B. Mönch-Schutz vergessen), eine Rolle wie Narr oder Seemann, die den Tod verhindert, oder wenn du beim Bürgermeister den Tod umlenkst.</p>
       <div class="dawnlist">${kills.map(x => `<label class="switch"><input type="checkbox" data-kill="${x.k}" ${x.dies ? "checked" : ""}>
         <span><b>${esc(game.seats[x.k].name)}</b> <span class="small">(${esc(roleName(game.seats[x.k].role))})</span><br><span class="small">${esc(x.why)}</span></span></label>`).join("")}</div>
       <div class="row end"><button class="btn" id="dawnback">Zurück</button><button class="btn primary" id="dawnok">☀️ Morgen verkünden</button></div>`);
