@@ -1887,7 +1887,7 @@
       <b>Wie am Tisch:</b> alle Handys schlafen ein, du weckst jeden Spieler einzeln mit 👁️ und zeigst ihm seine Info groß auf seinem Handy.</p>`;
     }
     if (tableOn()) {
-      const ps = game.seats.filter(x => x.pid && lobby[x.pid]);
+      const ps = game.seats.filter(x => reachable(x));
       body = `<div class="seqbox">
         <p><b>🪑 Wie am Tisch</b> · 😴 ${ps.length} Handy(s) schlafen</p>
         <p class="small">Geh die Liste von oben nach unten durch: <b>👁️ Wecken</b> bei Rollen mit Aktion, <b>👁️ Wecken &amp; zeigen</b> bei Rollen mit Info. Der Spieler sieht nur seine eigene Aufgabe und schläft danach wieder ein.</p>
