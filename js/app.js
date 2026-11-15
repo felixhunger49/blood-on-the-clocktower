@@ -354,7 +354,7 @@
     $("#cover").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") show(); });
     bindPicker(mine);
     bindNotes();
-    if (mine.q && modal.classList.contains("hidden")) showNightPrompt(mine);
+    if (modal.classList.contains("hidden")) nightOverlay();
     $("#hide").addEventListener("click", () => { $("#card").classList.add("hidden"); $("#cover").classList.remove("hidden"); window.scrollTo(0, 0); });
     $("#forget") && $("#forget").addEventListener("click", () => {
       if (confirm("Deine gespeicherte Rolle wirklich entfernen?")) { store.del("botc.myrole"); renderPlayer(); }
@@ -535,6 +535,8 @@
     if ((seat.infos || []).length) info.i = seat.infos.slice(-10);
     const ask = (game.asks || {})[i];
     if (nightOn() && ask && ask.night === game.nightNo && !ask.done) info.q = { id: ask.id, step: ask.step, sleep: !!ask.sleep };
+    const wk = (game.wakes || {})[i];
+    if (tableOn() && wk && wk.night === game.nightNo && !wk.done) info.wk = { id: wk.id, step: wk.step, r: wk.r, t: wk.t };
     return info;
   }
   function seatCode(seat, i) {
@@ -839,6 +841,7 @@
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${!s.inactive && nightOn() ? actionStatusHtml(s.id) : ""}
+            ${tableOn() && INFO_ROLES.includes(s.id) && !s.inactive ? wakeStatusHtml(s.id) : ""}
             ${INFO_ROLES.includes(s.id) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online ? " / senden" : ""}</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"} <small>(hier)</small></button>` : ""}
             ${s.show && game.online ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
@@ -981,16 +984,13 @@
       game.done[game.nightNo] = d.includes(id) ? d.filter(x => x !== id) : [...d, id];
       save(); renderSL();
     }));
-    $("#daystart") && $("#daystart").addEventListener("click", () => {
-      game.phase = "day";
-      hist(`☀️ Tag ${game.nightNo} beginnt`, "day");
-      save(); renderSL();
-      toast(`Tag ${game.nightNo} beginnt`);
-    });
+    $("#daystart") && $("#daystart").addEventListener("click", startDay);
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
       game.vote = null;
       game.asks = {};
       game.seq = null;
+      game.tableNight = null;
+      game.wakes = {};
       // Schutz- und Ziel-Marker gelten nur für eine Nacht
       game.seats.forEach(x => { x.marks = (x.marks || []).filter(m => !(markerByKey(m) || {}).n); });
       game.nightNo++;
@@ -1501,6 +1501,8 @@
   function histDeath(x) {
     const r = ROLE_BY_ID[x.role];
     hist(x.alive ? `✨ ${x.name} lebt wieder` : `💀 ${x.name} ist gestorben (${r.ic} ${r.de})`);
+    const last = game.history[game.history.length - 1];
+    if (last) last[x.alive ? "alive" : "dead"] = x.name;
   }
   function historyHtml(h) {
     if (!h || !h.length) return "";
@@ -1772,15 +1774,58 @@
       <div class="row wrap">
         <button class="btn primary" id="naall">🌙 Alle auf einmal</button>
         <button class="btn" id="naseq">🪜 Schritt für Schritt</button>
+        <button class="btn" id="natable">🪑 Wie am Tisch</button>
         ${asks.length && !seq ? `<span class="small">${real.filter(a => a.done).length} von ${real.length} Aktionen beantwortet</span>` : ""}
       </div>
       <p class="small"><b>Alle auf einmal:</b> schnell – alle wählen gleichzeitig, du wertest danach in der Reihenfolge der Liste aus.<br>
-      <b>Schritt für Schritt:</b> regelgenau – bei jedem Schritt der Nachtreihenfolge sind alle Handys dran; nur wer wirklich dran ist, bekommt die echte Aufgabe.</p>`;
+      <b>Schritt für Schritt:</b> regelgenau – bei jedem Schritt der Nachtreihenfolge sind alle Handys dran; nur wer wirklich dran ist, bekommt die echte Aufgabe.<br>
+      <b>Wie am Tisch:</b> alle Handys schlafen ein, du weckst jeden Spieler einzeln mit 👁️ und zeigst ihm seine Info groß auf seinem Handy.</p>`;
+    }
+    if (tableOn()) {
+      const ps = game.seats.filter(x => x.pid && lobby[x.pid]);
+      body = `<div class="seqbox">
+        <p><b>🪑 Wie am Tisch</b> · 😴 ${ps.length} Handy(s) schlafen</p>
+        <p class="small">Geh die Liste von oben nach unten durch: <b>👁️ Wecken</b> bei Rollen mit Aktion, <b>👁️ Wecken &amp; zeigen</b> bei Rollen mit Info. Der Spieler sieht nur seine eigene Aufgabe und schläft danach wieder ein.</p>
+        <div class="row wrap"><button class="btn primary" id="tabledawn">☀️ Morgen verkünden</button><button class="btn" id="tablestop">⏹ Abbrechen</button></div>
+      </div>`;
     }
     return `<div class="box nabar">
       <label class="switch"><input type="checkbox" id="natoggle" checked><span><b>📲 Nachtaktionen am Handy</b> sind an. Spieler ohne Aufgabe bekommen eine Schein-Auswahl, damit niemand auffällt.</span></label>
       ${body}
     </div>`;
+  }
+
+  // „Wie am Tisch“ läuft in dieser Nacht
+  const tableOn = () => !!(game.online && game.nightActions && game.tableNight && game.tableNight === game.nightNo);
+
+  function wakeStatusHtml(stepId) {
+    const rows = stepHolders(stepId).filter(([x]) => x.alive || ACTS_WHEN_DEAD.includes(stepId));
+    return rows.length ? `<div class="actstat">${rows.map(([x, i]) => {
+      const w = (game.wakes || {})[i];
+      const st = !(x.pid && lobby[x.pid]) ? `<span class="small">nicht online – bitte wie gewohnt wecken</span>`
+        : !w || w.night !== game.nightNo ? `<span class="small">schläft</span>`
+        : w.done ? `<span class="okmsg">✅ hat die Info gesehen</span>` : `<span class="wait">👁️ ist wach …</span>`;
+      return `<div class="actrow"><b>${esc(x.name)}:</b> ${st}</div>`;
+    }).join("")}</div>` : "";
+  }
+
+  // Morgen: Nacht beenden, Tag beginnen, Tote der Nacht verkünden
+  function startDay() {
+    const n = game.nightNo;
+    const dead = [], back = [];
+    (game.history || []).filter(h => h.n === n && h.ph === "night").forEach(h => {
+      if (h.dead && !dead.includes(h.dead)) dead.push(h.dead);
+      if (h.alive) { const k = dead.indexOf(h.alive); if (k >= 0) dead.splice(k, 1); }
+    });
+    const died = dead.filter(name => game.seats.some(x => x.name === name && !x.alive));
+    game.phase = "day";
+    game.tableNight = null;
+    game.asks = {};
+    game.wakes = {};
+    game.dawn = { n, died };
+    hist(`☀️ Tag ${n} beginnt – ${died.length ? "gestorben: " + died.join(", ") : "niemand ist gestorben"}`, "day");
+    save(); renderSL();
+    toast(died.length ? `Morgen: ${died.join(", ")} ist gestorben` : "Morgen: Niemand ist gestorben");
   }
 
   // Letztes Ergebnis eines Spielers für einen Schritt in dieser Nacht
@@ -1799,7 +1844,7 @@
       if (pending) st = `<span class="wait">⏳ wartet …</span>`;
       else if (r) st = `<span class="okmsg">✅ ${r.skip ? "nichts gewählt" : esc(describePick(r))}</span>${online && !game.seq ? ` <button class="btn sm" data-ask="${i}">neu fragen</button>` : ""}`;
       else if (!online) st = `<span class="small">nicht online – bitte wie gewohnt wecken</span>`;
-      else st = game.seq && game.seq.night === game.nightNo && !game.seq.done ? `<span class="small">kommt in der Reihenfolge dran</span>` : `<button class="btn sm" data-ask="${i}">📲 Aufs Handy schicken</button>`;
+      else st = game.seq && game.seq.night === game.nightNo && !game.seq.done ? `<span class="small">kommt in der Reihenfolge dran</span>` : `<button class="btn sm ${tableOn() ? "primary" : ""}" data-ask="${i}">${tableOn() ? "👁️ Wecken" : "📲 Aufs Handy schicken"}</button>`;
       return `<div class="actrow"><b>${esc(x.name)}:</b> ${st}</div>`;
     }).join("")}</div>`;
   }
@@ -1866,11 +1911,22 @@
       seqAdvance();
     });
     $("#seqstop") && $("#seqstop").addEventListener("click", () => { game.seq = null; game.asks = {}; save(); renderSL(); });
+    $("#natable") && $("#natable").addEventListener("click", () => {
+      game.seq = null; game.asks = {}; game.wakes = {};
+      game.tableNight = game.nightNo; game.phase = "night";
+      hist("😴 Alle schlafen ein (Wie am Tisch)", "night");
+      save(); renderSL();
+      toast("Alle Handys schlafen jetzt");
+    });
+    $("#tablestop") && $("#tablestop").addEventListener("click", () => { game.tableNight = null; game.asks = {}; game.wakes = {}; save(); renderSL(); });
+    $("#tabledawn") && $("#tabledawn").addEventListener("click", startDay);
     $$("[data-ask]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); askSeat(+b.dataset.ask, false); save(); renderSL(); }));
   }
 
   function onPlayerAction(uid, msg) {
     const i = game.seats.findIndex(x => x.pid === uid);
+    const w = (game.wakes || {})[i];
+    if (w && w.id === msg.id) { w.done = true; save(); refreshHostView(); return; }
     const a = (game.asks || {})[i];
     if (i < 0 || !a || a.id !== msg.id) return;
     a.done = true;
@@ -1895,6 +1951,48 @@
   // Schein-Aufgabe für alle, die gerade nicht dran sind – sieht genauso aus wie eine echte.
   const FAKE_ACTION = { n: 1, self: true, text: "Du hast gerade nichts zu tun. Tippe trotzdem einen beliebigen Spieler an und bestätige – damit niemand merkt, wer wirklich wach ist." };
 
+  // Nacht-Bildschirme im Online-Spiel: Aufgabe > Geweckt > Schlafen
+  function nightOverlay() {
+    if (!store.get("botc.online", null)) return;
+    const mine = store.get("botc.myrole", null);
+    const answered = store.get("botc.answered", []) || [];
+    if (mine && mine.q && !answered.includes(mine.q.id)) { if (!$(".nightact")) showNightPrompt(mine); return; }
+    if (mine && mine.wk && !answered.includes(mine.wk.id)) {
+      const open = $(".wakeshow");
+      if (!open || open.dataset.id !== mine.wk.id) showWake(mine);
+      return;
+    }
+    if ($(".nightact") || $(".wakeshow")) return;
+    if (pubState && pubState.sleep) { if (!$(".sleepshow")) showSleep(); }
+    else if ($(".sleepshow")) { closeModal(); refreshPlayerView(true); }
+  }
+
+  function showSleep() {
+    openModal(`<div class="nightshow sleepshow"><div class="cover-icon">😴</div><h2>Nacht</h2>
+      <p class="ns-hint">Augen zu. Lass das Handy liegen – es vibriert, wenn du geweckt wirst.</p></div>`, "full night sleep");
+  }
+
+  function showWake(mine) {
+    const wk = mine.wk;
+    const role = ROLE_BY_ID[wk.step];
+    openModal(`<div class="nightshow wakeshow" data-id="${esc(wk.id)}">
+        <p class="ns-label">👁️ Du bist wach</p>
+        <h2>${role ? role.ic + " " + esc(role.de) : ""}</h2>
+        ${(wk.r || []).map(id => { const r = ROLE_BY_ID[id]; return r ? `<div class="ns-bluff t-${r.t}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></div>` : ""; }).join("")}
+        ${wk.t ? `<p class="ns-text">${esc(wk.t)}</p>` : ""}
+        <p class="ns-hint">Merk dir die Info – sie steht auch auf deiner Rollenkarte.</p>
+        <div class="row center"><button class="btn big" id="wkdone">😴 Augen wieder zu</button></div>
+      </div>`, "full night sleep");
+    if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
+    $("#wkdone").addEventListener("click", () => {
+      const ans = store.get("botc.answered", []) || [];
+      store.set("botc.answered", [...ans, wk.id].slice(-50));
+      sendToHost({ type: "action", id: wk.id, ack: true });
+      closeModal();
+      nightOverlay();
+    });
+  }
+
   function showNightPrompt(mine) {
     const q = mine.q;
     if (!q || (store.get("botc.answered", []) || []).includes(q.id)) return;
@@ -1904,6 +2002,7 @@
       store.set("botc.answered", [...ans, q.id].slice(-50));
       sendToHost(Object.assign({ type: "action", id: q.id }, payload)).then(ok => {
         if (!$(".nightact")) return; // schon die nächste Aufgabe offen
+        if (pubState && pubState.sleep && ok) { closeModal(); nightOverlay(); return; }
         $("#modal-content").innerHTML = `<div class="nightshow nightsent"><div class="cover-icon">${ok ? "🌙" : "⚠️"}</div>
           <h2>${ok ? "Augen zu" : "Nicht gesendet"}</h2><p class="ns-hint">${ok ? "Deine Wahl ist angekommen. Lass das Handy liegen – es vibriert, wenn du wieder etwas tun sollst." : "Keine Verbindung – zeig dem Spielleiter deine Wahl."}</p>
           <div class="row center"><button class="btn big" id="ndone">OK</button></div></div>`;
@@ -2176,7 +2275,7 @@
       <label class="field">Zusatz (optional): <input id="infotext" placeholder="${pickCfg.ph}"></label>
       <div class="row wrap end">
         <button class="btn" id="infoshow">📱 Zeigen</button>
-        ${game.online ? `<button class="btn primary" id="infosend">🌐 Aufs Handy senden</button>` : ""}
+        ${game.online ? `<button class="btn primary" id="infosend">${tableOn() ? "👁️ Wecken &amp; zeigen" : "🌐 Aufs Handy senden"}</button>` : ""}
       </div>`);
     const showPicked = () => {
       $$("[data-ip]").forEach(x => x.classList.toggle("on", picked.includes(+x.dataset.ip)));
@@ -2238,9 +2337,13 @@
     $("#infosend") && $("#infosend").addEventListener("click", () => {
       const c = collect();
       if (!c.r.length && !c.t) { toast("Bitte eine Rolle oder einen Zusatz angeben."); return; }
+      if (tableOn()) {
+        game.wakes = game.wakes || {};
+        game.wakes[c.i] = { id: `w${game.nightNo}-${c.i}-${randInt(1e6)}`, night: game.nightNo, step: stepId, r: c.r, t: c.t };
+      }
       store_(c);
       closeModal(); renderSL();
-      toast(game.seats[c.i].pid ? `An ${game.seats[c.i].name} gesendet` : `${game.seats[c.i].name} ist nicht online – bitte zeigen`);
+      toast(game.seats[c.i].pid ? (tableOn() ? `${game.seats[c.i].name} wird geweckt` : `An ${game.seats[c.i].name} gesendet`) : `${game.seats[c.i].name} ist nicht online – bitte zeigen`);
     });
   }
 
@@ -2734,6 +2837,8 @@
     return {
       nightNo: game.nightNo || 1,
       phase: game.phase || "night",
+      sleep: tableOn(),
+      dawn: game.dawn || null,
       script: game.edition === "custom" && (game.script || []).length ? game.script.map(id => ROLE_BY_ID[id].idx) : null,
       fabled: game.fabled || [],
       timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0 } : null,
@@ -2915,15 +3020,14 @@
       info.online = on.code;
       if (old && old.r === info.r && old.pick) info.pick = old.pick;
       store.set("botc.myrole", info);
-      if (info.q && !(store.get("botc.answered", []) || []).includes(info.q.id)) {
-        store.set("botc.myrole", info);
-        if (modal.classList.contains("hidden") || $(".nightsent") || !$(".nightact, .nightshow")) showNightPrompt(info);
-      }
+      if ((info.q || info.wk) && $(".nightsent")) closeModal();
+      if ($(".sleepshow") && (info.q || info.wk)) closeModal();
+      nightOverlay();
       const newInfo = JSON.stringify((old && old.i) || []) !== JSON.stringify(info.i || []) && (info.i || []).length > ((old && old.i) || []).length;
       const changed = !old || newInfo || old.r !== info.r || old.a !== info.a || old.m !== info.m || JSON.stringify(old.x) !== JSON.stringify(info.x);
       if (changed) {
         if (info.x && JSON.stringify((old && old.x) || null) !== JSON.stringify(info.x) && old) notice("🤫 Geheime Info deines Teams – schau auf deine Rollenkarte.");
-        else if (newInfo && old) notice("🌙 Neue Info vom Spielleiter – schau auf deine Rollenkarte.");
+        else if (newInfo && old && !info.wk) notice("🌙 Neue Info vom Spielleiter – schau auf deine Rollenkarte.");
         else if (info.m && (!old || old.m !== info.m)) notice("😵 Du bist verrückt! Schau auf deine Rollenkarte, welche Rolle du am Tag behaupten musst.");
         else if (old && old.online && old.r !== info.r) notice("Der Spielleiter hat deine Rolle geändert – schau sie dir an.");
         refreshPlayerView(true);
@@ -2940,6 +3044,14 @@
         const tmp = document.createElement("div"); tmp.innerHTML = notesHtml(); $(".notes").replaceWith(tmp.firstElementChild); bindNotes();
       }
       if (v && v.winner && !(before && before.winner)) showPublicEnd(v);
+      else {
+        nightOverlay();
+        if (v && v.dawn && before && (!before.dawn || before.dawn.n !== v.dawn.n)) {
+          if ($(".sleepshow")) closeModal();
+          const died = v.dawn.died || []; // Firebase speichert leere Listen nicht
+          notice(`☀️ Morgen! ${died.length ? "Gestorben: " + died.join(", ") : "Niemand ist in der Nacht gestorben."}`);
+        }
+      }
     }));
   }
 
