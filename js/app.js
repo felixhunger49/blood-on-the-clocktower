@@ -1171,6 +1171,7 @@
 
     const noms = day.noms.map((n, k) => `<li class="${b && !b.tie && b === n ? "onblock" : ""}">
         <span>${esc(ps[n.by] ? ps[n.by].name : "?")} → <b>${esc(ps[n.on] ? ps[n.on].name : "?")}</b></span>
+        ${(n.hands || []).length ? `<small class="nomhands">✋ ${n.hands.map(h => esc(ps[h] ? ps[h].name : "?")).join(", ")}</small>` : ""}
         <span class="nomcount">${n.count} / ${n.needed}${b && !b.tie && b === n ? " · auf dem Block" : ""}</span>
         ${day.exec ? "" : `<button class="btn sm" data-delnom="${k}" title="Nominierung löschen">✕</button>`}</li>`).join("");
 
@@ -2614,6 +2615,24 @@
         if (dead < alive) return { text: "Noch nicht: Die Toten sind weniger als die Lebenden – keine Info." };
         const k = rnd(S.map((x, j) => j).filter(j => S[j].alive && j !== me));
         return k === null ? null : { r: [S[k].role], text: `Lebende Rolle: ${roleName(S[k].role)} (${name(k)})` };
+      }
+      case "towncrier": {
+        const day = (game.days || {})[game.nightNo - 1];
+        if (!day || !day.noms.length) return { t: "Nein", text: "Nein – heute wurden (laut Abstimmungs-Helfer) keine Nominierungen eingetragen." };
+        const mins = day.noms.filter(n => S[n.by] && ROLE_BY_ID[S[n.by].role].t === "minion");
+        const list = day.noms.map(n => `${name(n.by)} → ${S[n.on] ? name(n.on) : "?"}`).join(", ");
+        return mins.length
+          ? { t: "Ja", text: `Ja – Scherge ${[...new Set(mins.map(n => `${name(n.by)} (${roleName(S[n.by].role)})`))].join(", ")} hat nominiert. Alle Nominierungen: ${list}` }
+          : { t: "Nein", text: `Nein – kein Scherge hat nominiert. Nominierungen: ${list}` };
+      }
+      case "flowergirl": {
+        const day = (game.days || {})[game.nightNo - 1];
+        if (!day || !day.noms.length) return { t: "Nein", text: "Nein – heute gab es (laut Abstimmungs-Helfer) keine Abstimmung." };
+        const demons = S.map((x, k) => k).filter(k => ROLE_BY_ID[S[k].role].t === "demon");
+        const votes = day.noms.filter(n => (n.hands || []).some(h => demons.includes(h)));
+        return votes.length
+          ? { t: "Ja", text: `Ja – ${demons.filter(d => votes.some(n => n.hands.includes(d))).map(name).join(", ")} (Dämon) hat abgestimmt bei: ${votes.map(n => `${name(n.by)} → ${S[n.on] ? name(n.on) : "?"}`).join(", ")}` }
+          : { t: "Nein", text: `Nein – der Dämon hat bei keiner der ${day.noms.length} Abstimmung(en) die Hand gehoben.` };
       }
       case "undertaker": {
         const day = (game.days || {})[game.nightNo - 1];
