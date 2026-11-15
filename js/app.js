@@ -816,16 +816,19 @@
       const all = [...holders, ...drunks, ...philos];
       const notTriggered = ACTS_WHEN_DEAD.includes(id) && !all.some(s => deathTriggered(s, id));
       const allDead = !ACTS_WHEN_DEAD.includes(id) && all.every(s => !s.alive && !s.zfake);
+      const allKilled = !allDead && !ACTS_WHEN_DEAD.includes(id) && all.every(s => (!s.alive && !s.zfake) || killedBefore(s, id));
       const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => (s.role === "philosopher" && id !== "philosopher" ? s.gainedUsed : s.used) || !s.alive);
       // Der Jongleur erfährt sein Ergebnis nur in der Nacht nach dem ersten Tag.
       const over = id === "juggler" && game.nightNo > 2;
       const swIdle = id === "scarletwoman" && !holders.some(s => s.swPending);
-      const inactive = allDead || allUsed || over || notTriggered || swIdle;
-      const why = allDead ? "Tot – keine Fähigkeit mehr, nicht wecken." : over ? "Nur in der zweiten Nacht – entfällt."
+      const inactive = allDead || allKilled || allUsed || over || notTriggered || swIdle;
+      const why = allDead ? "Tot – keine Fähigkeit mehr, nicht wecken."
+        : allKilled ? "🎯 Wurde heute Nacht schon vom Dämon getötet (der Dämon ist vorher dran) – nicht mehr wecken, keine Info."
+        : over ? "Nur in der zweiten Nacht – entfällt."
         : swIdle ? "Der Dämon ist nicht gestorben (oder sie hat nicht übernommen) – nicht wecken."
         : notTriggered ? (["ravenkeeper", "sage"].includes(id) ? "Nur wenn er heute Nacht stirbt (z. B. durch den Dämon) – nicht wecken." : "Nur wenn er gerade gestorben ist – nicht wecken.")
         : "Fähigkeit schon benutzt – nicht mehr wecken.";
-      steps.push({ id, name: `${role.ic} ${role.de}`, text: role[key], who, t: role.t, inactive, why, mark: allDead ? "💀" : "✔", once: ONCE_PER_GAME.includes(id) });
+      steps.push({ id, name: `${role.ic} ${role.de}`, text: role[key], who, t: role.t, inactive, why, mark: allDead || allKilled ? "💀" : "✔", once: ONCE_PER_GAME.includes(id) });
     });
     const done = game.done[game.nightNo] || [];
     let banner = "";
@@ -1941,7 +1944,7 @@
   const tableOn = () => !!((game.online || game.test) && game.nightActions && game.tableNight && game.tableNight === game.nightNo);
 
   function wakeStatusHtml(stepId) {
-    const rows = stepHolders(stepId).filter(([x]) => ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive);
+    const rows = stepHolders(stepId).filter(([x]) => ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive && !killedBefore(x, stepId));
     return rows.length ? `<div class="actstat">${rows.map(([x, i]) => {
       const w = (game.wakes || {})[i];
       const st = !reachable(x) ? `<span class="small">nicht online – bitte wie gewohnt wecken</span>`
@@ -2032,7 +2035,7 @@
           : "Dämon hat sich selbst gewählt – Sternenwechsel: mach einen Schergen zum Dämon (🔁 Rolle ändern)";
       }
       else if (x.role === "mayor" && !impaired(x)) why = "Bürgermeister: Du darfst den Tod auf einen anderen Spieler umlenken (dann hier abwählen und den anderen tot setzen)";
-      out.push({ k, dies, why });
+      out.push({ k, dies, why, step: at.step || (attacker ? attacker.role : null) });
     });
     return out;
   }
@@ -2078,7 +2081,7 @@
 
   function actionStatusHtml(stepId) {
     if (!ACTIONS[stepId]) return "";
-    const rows = game.seats.map((x, i) => [x, i]).filter(([x]) => actingRole(x) === stepId && (ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive || x.zfake));
+    const rows = game.seats.map((x, i) => [x, i]).filter(([x]) => actingRole(x) === stepId && (ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : (x.alive || x.zfake) && !killedBefore(x, stepId)));
     if (!rows.length) return "";
     return `<div class="actstat">${rows.map(([x, i]) => {
       const a = (game.asks || {})[i];
@@ -2206,7 +2209,7 @@
       if (actingRole(x) !== stepId || !x.pid) return false;
       if (ONCE_PER_GAME.includes(stepId) && x.used) return false;
       if (stepId === "philosopher" && x.gained) return false;
-      return ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : x.alive || x.zfake;
+      return ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : (x.alive || x.zfake) && !killedBefore(x, stepId);
     });
   }
 
@@ -2465,6 +2468,14 @@
     return nightKills().filter(x => x.dies).map(x => x.k);
   }
   const aliveNow = j => game.seats[j].alive && !pendingDeaths().includes(j);
+  function killedBefore(x, id) {
+    if (game.phase === "day" || game.nightNo < 2 || ACTS_WHEN_DEAD.includes(id)) return false;
+    const i = game.seats.indexOf(x);
+    const k = nightKills().find(e => e.k === i && e.dies);
+    if (!k || !k.step) return false;
+    const a = NIGHT_OTHER.indexOf(k.step), b = NIGHT_OTHER.indexOf(id);
+    return a >= 0 && b >= 0 && a < b;
+  }
 
   // Lebende Nachbarn (übersprungen werden Tote und heute Nacht Getötete), im Kreis
   function aliveNeighbours(i) {
