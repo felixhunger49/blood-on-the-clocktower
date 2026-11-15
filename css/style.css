@@ -551,3 +551,19 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 
 .testpanel { border-color: var(--accent); }
 .botphone { border: 3px solid var(--line); border-radius: 26px; padding: .6rem; background: var(--bg); }
+
+/* Sitzkreis: Plättchen wachsen mit dem Kreis, unabhängig von der Systemschrift */
+.circle { container-type: inline-size; margin: 1.2rem auto; }
+.circle .token { width: calc(var(--d) * 1%); height: auto; aspect-ratio: 1; padding: .55em 0 .1em; gap: 0; overflow: visible;
+  font-size: calc(var(--d) * .17cqw); }
+.circle .token .tk-ic { font-size: 1.75em; line-height: 1.05; }
+.circle .token .tk-name { font-size: 1em; line-height: 1.15; max-width: 88%; }
+.circle .token .tk-role { font-size: .8em; line-height: 1.15; max-width: 84%; }
+.circle .token .tk-no { position: absolute; top: -.7em; left: 50%; transform: translateX(-50%); font-size: .72em; line-height: 1.35;
+  padding: 0 .4em; border-radius: 1em; background: var(--panel2); border: 1px solid var(--c); color: var(--muted); }
+.circle .token .tk-marks { position: absolute; bottom: -.6em; left: 50%; transform: translateX(-50%); white-space: nowrap;
+  font-size: .95em; padding: .05em .25em; border-radius: 1em; background: var(--bg); border: 1px solid var(--line); }
+.circle .token .tk-marks:empty { display: none; }
+.circle.size-sm .token .tk-no { display: none; }
+.circle.size-md .token .tk-role { display: block; }
+.circle-mid { max-width: 52%; }

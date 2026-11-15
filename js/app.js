@@ -1232,21 +1232,23 @@
   function circleHtml() {
     const ps = game.seats;
     const n = ps.length;
-    const size = n <= 8 ? "lg" : n <= 12 ? "md" : "sm";
+    const size = n <= 8 ? "lg" : n <= 15 ? "md" : "sm";
+    // Plättchen so groß wie der Platz zwischen zwei Nachbarn erlaubt (in % der Kreisbreite)
+    const d = Math.min(25, 0.92 * 2 * 41 * Math.sin(Math.PI / n)).toFixed(1);
     const tokens = ps.map((s, i) => {
       const a = (i / n) * 2 * Math.PI;
-      const x = 50 + 40 * Math.sin(a), y = 50 - 40 * Math.cos(a);
+      const x = 50 + 41 * Math.sin(a), y = 50 - 41 * Math.cos(a);
       const r = ROLE_BY_ID[s.role];
       return `<button class="token t-${r.t} ${s.alive ? "" : "dead"}" style="left:${x}%;top:${y}%" data-seatmodal="${i}">
         <span class="tk-no">${i + 1}</span>
-        <span class="tk-name">${esc(s.name)}</span>
+        <span class="tk-name">${esc(String(s.name).replace(/^🤖\s*/, ""))}</span>
         <span class="tk-ic">${r.ic}</span>
         <span class="tk-role">${esc(r.de)}</span>
         <span class="tk-marks">${s.alive ? "" : s.ghost ? "💀👻" : "💀"}${(s.marks || []).map(m => (markerByKey(m) || {}).i || "").join("")}${s.madness && s.madness.night === game.nightNo ? "😵" : ""}${s.used ? "✔" : ""}</span>
       </button>`;
     }).join("");
     const alive = ps.filter(s => s.alive && !s.trav).length;
-    return `<div class="circle size-${size}">
+    return `<div class="circle size-${size}" style="--d:${d}">
       <div class="circle-mid"><b>🌙 Nacht ${game.nightNo}</b><span>${alive} leben</span><span>${votesNeeded()} Stimmen nötig</span><small>Spieler antippen</small></div>
       ${tokens}
     </div>`;
