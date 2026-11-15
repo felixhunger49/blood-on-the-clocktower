@@ -817,7 +817,7 @@
       const notTriggered = ACTS_WHEN_DEAD.includes(id) && !all.some(s => deathTriggered(s, id));
       const allDead = !ACTS_WHEN_DEAD.includes(id) && all.every(s => !s.alive && !s.zfake);
       const allKilled = !allDead && !ACTS_WHEN_DEAD.includes(id) && all.every(s => (!s.alive && !s.zfake) || killedBefore(s, id));
-      const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => (s.role === "philosopher" && id !== "philosopher" ? s.gainedUsed : s.used) || !s.alive);
+      const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => ((s.role === "philosopher" && id !== "philosopher" ? s.gainedUsed : s.used) && s.usedNight !== game.nightNo) || !s.alive);
       // Der Jongleur erfährt sein Ergebnis nur in der Nacht nach dem ersten Tag.
       const over = id === "juggler" && game.nightNo > 2;
       const swIdle = id === "scarletwoman" && !holders.some(s => s.swPending);
@@ -1413,7 +1413,7 @@
       const a = b.dataset.m;
       if (a === "alive") { s.alive = !s.alive; if (s.alive) { s.ghost = true; s.zfake = false; } histDeath(s); if (s.alive) swRevert(i); else swCheck(s); again(); }
       else if (a === "ghost") { s.ghost = !s.ghost; again(); }
-      else if (a === "used") { s.used = !s.used; again(); }
+      else if (a === "used") { s.used = !s.used; delete s.usedNight; again(); }
       else if (a === "info") openModal(roleDetail(ROLE_BY_ID[s.role], true));
       else if (a === "phone") showBotPhone(i);
       else if (a === "change") changeRole(i);
@@ -2183,7 +2183,8 @@
       if (!a || a.id !== id || a.done) return;
       const x = game.seats[i];
       const msg = { type: "action", id };
-      if (!a.sleep) {
+      if (!a.sleep && (ACTIONS[a.step] || {}).optional && Math.random() < 0.5) msg.skip = true;
+      else if (!a.sleep) {
         const def = ACTIONS[a.step] || { n: 1 };
         const all = game.seats.map((y, k) => k).filter(k => (def.self || k !== i) && (def.onlyDead ? !game.seats[k].alive : (game.seats[k].alive || def.dead)));
         const n = def.n ? Math.max(def.min !== undefined ? def.min : 1, Math.min(def.n, all.length)) : 0;
@@ -2282,6 +2283,11 @@
     // Marker automatisch setzen
     if (!r.skip && def.mark) r.picks.forEach(k => { const t = game.seats[k]; t.marks = [...new Set([...(t.marks || []), def.mark])]; if (def.keep) t.keep = [...new Set([...(t.keep || []), def.mark])]; });
     if (!r.skip && r.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [r.step]: r.role });
+    // Einmal-Fähigkeit benutzt -> ab der nächsten Nacht grau
+    if (!r.skip && ONCE_PER_GAME.includes(r.step) && r.step !== "philosopher" && (r.picks.length || r.role)) {
+      if (x.role === "philosopher" && x.gained === r.step) x.gainedUsed = true; else x.used = true;
+      x.usedNight = game.nightNo;
+    }
     const text = `🌙 ${x.name} (${roleName(r.step)}): ${r.skip ? "nichts" : describePick(r)}`;
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
     hist(text, "night");
