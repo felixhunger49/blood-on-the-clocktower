@@ -567,3 +567,5 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .circle.size-sm .token .tk-no { display: none; }
 .circle.size-md .token .tk-role { display: block; }
 .circle-mid { max-width: 52%; }
+.voter.warn { border-color: var(--evil); }
+.voter.warn small { color: var(--evil); font-weight: 600; }

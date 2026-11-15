@@ -1047,6 +1047,21 @@
     return tie ? { tie: true, count: best.count } : best;
   }
 
+  // Butler-Regel: Stimme zählt nur, wenn der Meister auch die Hand hebt (außer betrunken/vergiftet)
+  function butlerCheck(i, hands) {
+    const s = game.seats[i];
+    if (!s || s.role !== "butler") return null;
+    const m = s.marks || [];
+    if (m.includes("poison") || m.includes("drunk")) return { ok: true, note: "Butler – betrunken/vergiftet: darf frei stimmen" };
+    const master = game.seats.findIndex(y => (y.marks || []).includes("master"));
+    if (master < 0) return { ok: true, warn: !!hands.includes(i), note: "Butler – kein Meister markiert (Marker 🎩 setzen)" };
+    const mname = game.seats[master].name;
+    if (!hands.includes(i)) return { ok: true, note: `Butler – darf nur stimmen, wenn ${mname} stimmt` };
+    if (hands.includes(master)) return { ok: true, note: `Butler – ✅ Meister ${mname} stimmt mit` };
+    return { ok: false, warn: true, note: `⚠️ Meister ${mname} stimmt nicht mit – Stimme zählt nicht` };
+  }
+  const validHands = hands => hands.filter(i => { const c = butlerCheck(i, hands); return !c || c.ok; });
+
   function dayPanel() {
     const day = today();
     const ps = game.seats;
@@ -1063,7 +1078,7 @@
       // Laufende Abstimmung: im Uhrzeigersinn ab dem Platz nach dem Nominierten.
       const order = [];
       for (let k = 1; k <= ps.length; k++) order.push((v.on + k) % ps.length);
-      const count = order.filter(i => v.hands.includes(i)).length;
+      const count = validHands(order.filter(i => v.hands.includes(i))).length;
       body += `<div class="vote">
         <p><b>${esc(ps[v.by].name)}</b> nominiert <b>${esc(ps[v.on].name)}</b></p>
         <p class="small">Gehe im Uhrzeigersinn herum und tippe alle an, die die Hand heben. Tote haben nur ihre eine Geisterstimme.</p>
@@ -1071,8 +1086,10 @@
           const s = ps[i];
           const canVote = s.alive || s.ghost;
           const up = v.hands.includes(i);
-          return `<button class="voter ${up ? "up" : ""}" data-hand="${i}" ${canVote ? "" : "disabled"}>
-            <span>${up ? "✋" : "·"}</span><b>${esc(s.name)}</b>${s.alive ? "" : `<small>${s.ghost ? "👻 Geisterstimme" : "keine Stimme mehr"}</small>`}${s.role === "butler" ? `<small>Butler – nur wenn sein Meister stimmt</small>` : ""}</button>`;
+          const bc = butlerCheck(i, v.hands);
+          const isMaster = (s.marks || []).includes("master") && ps.some(y => y.role === "butler");
+          return `<button class="voter ${up ? "up" : ""} ${bc && bc.warn ? "warn" : ""}" data-hand="${i}" ${canVote ? "" : "disabled"}>
+            <span>${up ? "✋" : "·"}</span><b>${esc(s.name)}</b>${s.alive ? "" : `<small>${s.ghost ? "👻 Geisterstimme" : "keine Stimme mehr"}</small>`}${bc ? `<small>${esc(bc.note)}</small>` : ""}${isMaster ? `<small>🎩 Meister des Butlers</small>` : ""}</button>`;
         }).join("")}</div>
         <div class="votecount ${count >= votesNeeded() ? "ok" : ""}">${count} Stimmen · nötig ${votesNeeded()}${b && !b.tie ? ` · auf dem Block mit ${b.count}` : ""}</div>
         <div class="row wrap"><button class="btn primary" id="savevote">Abstimmung beenden</button><button class="btn" id="cancelvote">Abbrechen</button></div>
@@ -1136,10 +1153,12 @@
     $("#cancelvote") && $("#cancelvote").addEventListener("click", () => { game.vote = null; save(); renderSL(); });
     $("#savevote") && $("#savevote").addEventListener("click", () => {
       const v = game.vote;
+      const hands = validHands(v.hands);
+      if (hands.length < v.hands.length && !confirm("Die Stimme des Butlers zählt nicht, weil sein Meister nicht mitstimmt. Abstimmung so beenden?")) return;
       // Tote, die abgestimmt haben, verbrauchen ihre Geisterstimme.
-      v.hands.forEach(i => { const s = game.seats[i]; if (!s.alive) s.ghost = false; });
-      day.noms.push({ by: v.by, on: v.on, count: v.hands.length, needed: votesNeeded(), hands: v.hands });
-      hist(`🗳️ ${game.seats[v.by].name} nominiert ${game.seats[v.on].name}: ${v.hands.length} Stimme(n)`, "day");
+      hands.forEach(i => { const s = game.seats[i]; if (!s.alive) s.ghost = false; });
+      day.noms.push({ by: v.by, on: v.on, count: hands.length, needed: votesNeeded(), hands });
+      hist(`🗳️ ${game.seats[v.by].name} nominiert ${game.seats[v.on].name}: ${hands.length} Stimme(n)`, "day");
       game.vote = null;
       save(); renderSL();
     });
