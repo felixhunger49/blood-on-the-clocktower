@@ -382,6 +382,7 @@
   function detectEnd() {
     const ps = playerSeats();
     if (!ps.length) return null;
+    if (game.klutzLoss) return { winner: "evil", reason: `Der Tollpatsch ${game.klutzLoss.by} hat ${game.klutzLoss.pick} gewählt – einen bösen Spieler.`, warn: [] };
     const alive = ps.filter(s => s.alive);
     const demons = ps.filter(s => ROLE_BY_ID[s.role].t === "demon");
     const aliveDemons = demons.filter(s => s.alive || s.zfake);
@@ -504,7 +505,7 @@
     game.nightNo = 1;
     game.days = {};
     game.vote = null;
-    game.winner = null;
+    game.winner = null; game.klutzLoss = null; game.klutzPending = null;
     game.ignoreEnd = null;
     game.evilSent = {};
     game.phase = "night";
@@ -573,7 +574,7 @@
     $$(".step").forEach(b => b.addEventListener("click", () => goStep(b.dataset.step)));
     bindSL();
     if (typeof applyPhase === "function") applyPhase();
-    endPopup();
+    if (game.step !== "grim" || !klutzPopup()) endPopup();
   }
 
   // Spielende sofort als Fenster melden (das Banner oben sieht man beim Scrollen leicht nicht)
@@ -1986,9 +1987,53 @@
   }
   // Scharlachrote Frau: Stirbt der Dämon bei 5+ Lebenden (vor dem Tod gezählt, ohne Reisende),
   // wird sie der Dämon – aber nicht, wenn sie vergiftet oder betrunken ist.
+  // Tollpatsch: Stirbt er (und ist gesund), muss er öffentlich einen lebenden Spieler wählen.
+  function klutzCheck(x) {
+    if (!x || x.alive || x.zfake || x.role !== "klutz") return;
+    game.klutzPending = game.seats.indexOf(x);
+    game.klutzWeak = impaired(x);
+  }
+  function klutzPopup() {
+    const i = game.klutzPending;
+    if (i === undefined || i === null || !modal.classList.contains("hidden")) return false;
+    const x = game.seats[i];
+    if (!x || x.alive) { game.klutzPending = null; return false; }
+    const alive = game.seats.map((y, k) => k).filter(k => game.seats[k].alive);
+    if (!alive.length) { game.klutzPending = null; return false; }
+    const botPick = isBot(x) ? alive[randInt(alive.length)] : null;
+    openModal(`<h2>🍌 ${esc(x.name)} ist der Tollpatsch</h2>
+      <p>Er ist gestorben und muss jetzt <b>öffentlich</b> einen lebenden Spieler wählen. Ist der Gewählte böse, verliert Gut sofort.</p>
+      ${game.klutzWeak ? `<p class="warnmsg">⚠️ Nur für dich: Er ist vergiftet/betrunken – lass ihn trotzdem wählen, aber egal wen er wählt, es passiert nichts.</p>` : ""}
+      ${botPick !== null ? `<p class="okmsg">🤖 ${esc(x.name)} wählt: <b>${esc(game.seats[botPick].name)}</b></p>` : `<p class="small">Tippe an, wen er wählt:</p>`}
+      <div class="infopick">${alive.map(k => `<button class="btn pickbtn sm ${k === botPick ? "primary" : ""}" data-klutz="${k}">${esc(game.seats[k].name)}</button>`).join("")}</div>
+      <div id="klutzres"></div>`);
+    const choose = k => {
+      const t = game.seats[k], evil = !seatGood(t) && !game.klutzWeak;
+      const healthy = !impaired(t);
+      const hint = t.role === "spy" && healthy ? "🕵️ Spion (gesund): du darfst ihn als gut werten."
+        : t.role === "recluse" && healthy ? "🏚️ Einsiedler (gesund): du darfst ihn als böse werten." : "";
+      $("#klutzres").innerHTML = `<div class="box">${esc(t.name)} ist <b>${seatGood(t) ? "gut" : "böse"}</b> (${esc(roleName(t.role))}).${game.klutzWeak ? " Wegen Gift/Trunkenheit ohne Wirkung." : ""}
+        ${hint ? `<br><span class="mismsg">${esc(hint)}</span>` : ""}
+        <div class="row wrap"><button class="btn ${evil ? "primary" : ""}" id="klutzevil">😈 Zählt als böse – Gut verliert</button>
+        <button class="btn ${evil ? "" : "primary"}" id="klutzgood">😇 Zählt als gut – weiter</button></div></div>`;
+      const done = lose => {
+        game.klutzPending = null;
+        hist(`🍌 ${x.name} (Tollpatsch) wählt ${t.name} – ${lose ? "böse, Gut verliert" : game.klutzWeak ? "ohne Wirkung (vergiftet/betrunken)" : "gut, das Spiel geht weiter"}`);
+        if (lose) { game.klutzLoss = { by: x.name, pick: t.name }; game.ignoreEnd = null; game.endPopped = null; }
+        save(); closeModal(); renderSL();
+      };
+      $("#klutzevil").addEventListener("click", () => done(true));
+      $("#klutzgood").addEventListener("click", () => done(false));
+    };
+    $$("[data-klutz]").forEach(b => b.addEventListener("click", () => choose(+b.dataset.klutz)));
+    if (botPick !== null) choose(botPick);
+    return true;
+  }
+
   let swMsg = null;
   function swCheck(x) {
     swMsg = null;
+    klutzCheck(x);
     if (!x || x.alive || x.zfake || ROLE_BY_ID[x.role].t !== "demon") return;
     const S = game.seats;
     const sw = S.find(y => y.role === "scarletwoman" && y.alive);
