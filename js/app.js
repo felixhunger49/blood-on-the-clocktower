@@ -987,7 +987,7 @@
       game.done[game.nightNo] = d.includes(id) ? d.filter(x => x !== id) : [...d, id];
       save(); renderSL();
     }));
-    $("#daystart") && $("#daystart").addEventListener("click", startDay);
+    $("#daystart") && $("#daystart").addEventListener("click", dawnDialog);
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
       game.vote = null;
       game.asks = {};
@@ -1897,6 +1897,48 @@
   }
 
   // Morgen: Nacht beenden, Tag beginnen, Tote der Nacht verkünden
+  // ---------- Morgen: Wer stirbt durch den Dämon? ----------
+  const KILL_STEPS = ["imp", "fanggu", "vigormortis", "nodashii", "vortox", "zombuul", "shabaloth", "po", "assassin", "godfather", "lleech"];
+  const impaired = x => { const m = x.marks || []; return m.includes("poison") || m.includes("drunk") || x.role === "drunk"; };
+  function nightKills() {
+    const S = game.seats, n = game.nightNo;
+    const attacks = new Map(); // Ziel -> Angreifer
+    (game.acts || []).filter(a => a.night === n && !a.skip && KILL_STEPS.includes(a.step) && !(a.step === "lleech" && n === 1))
+      .forEach(a => (a.picks || []).forEach(k => { if (!attacks.has(k)) attacks.set(k, { step: a.step, by: a.i }); }));
+    S.forEach((x, k) => { if ((x.marks || []).includes("target") && !attacks.has(k)) attacks.set(k, { step: null, by: null }); });
+    const out = [];
+    attacks.forEach((at, k) => {
+      const x = S[k];
+      if (!x || !x.alive) return;
+      const attacker = at.by !== null ? S[at.by] : S.find(y => y.alive && ROLE_BY_ID[y.role].t === "demon");
+      const m = x.marks || [];
+      const strong = at.step === "assassin";
+      let dies = true, why = `angegriffen${at.step ? ` (${roleName(at.step)})` : ""}`;
+      if (attacker && impaired(attacker)) { dies = false; why = `${attacker.name} ist vergiftet/betrunken – der Angriff wirkt nicht`; }
+      else if (!strong && m.includes("protect")) { dies = false; why = "🛡️ geschützt – überlebt"; }
+      else if (!strong && x.role === "soldier" && !impaired(x)) { dies = false; why = "🛡️ Soldat – der Dämon kann ihn nicht töten"; }
+      else if (!strong && m.includes("cantdie")) { dies = false; why = "🫖 Teedame – kann nicht sterben"; }
+      else if (at.by === k) why = "Dämon hat sich selbst gewählt – Sternenwechsel: mach einen Schergen zum Dämon (🔁 Rolle ändern)";
+      else if (x.role === "mayor" && !impaired(x)) why = "Bürgermeister: Du darfst den Tod auf einen anderen Spieler umlenken (dann hier abwählen und den anderen tot setzen)";
+      out.push({ k, dies, why });
+    });
+    return out;
+  }
+  function dawnDialog() {
+    const kills = nightKills();
+    if (!kills.length) return startDay();
+    openModal(`<h2>☀️ Wer stirbt heute Nacht?</h2>
+      <p class="small">Vorschlag nach den Regeln – du kannst alles ändern.</p>
+      <div class="dawnlist">${kills.map(x => `<label class="switch"><input type="checkbox" data-kill="${x.k}" ${x.dies ? "checked" : ""}>
+        <span><b>${esc(game.seats[x.k].name)}</b> <span class="small">(${esc(roleName(game.seats[x.k].role))})</span><br><span class="small">${esc(x.why)}</span></span></label>`).join("")}</div>
+      <div class="row end"><button class="btn" id="dawnback">Zurück</button><button class="btn primary" id="dawnok">☀️ Morgen verkünden</button></div>`);
+    $("#dawnback").addEventListener("click", closeModal);
+    $("#dawnok").addEventListener("click", () => {
+      $$("[data-kill]").forEach(c => { const x = game.seats[+c.dataset.kill]; if (c.checked && x.alive) { x.alive = false; histDeath(x); } });
+      closeModal(); startDay();
+    });
+  }
+
   function startDay() {
     const n = game.nightNo;
     const dead = [], back = [];
@@ -2101,7 +2143,7 @@
       toast("Alle Handys schlafen jetzt");
     });
     $("#tablestop") && $("#tablestop").addEventListener("click", () => { game.tableNight = null; game.asks = {}; game.wakes = {}; save(); renderSL(); });
-    $("#tabledawn") && $("#tabledawn").addEventListener("click", startDay);
+    $("#tabledawn") && $("#tabledawn").addEventListener("click", dawnDialog);
     $$("[data-ask]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); askSeat(+b.dataset.ask, false); save(); renderSL(); }));
   }
 
