@@ -569,3 +569,5 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .circle-mid { max-width: 52%; }
 .voter.warn { border-color: var(--accent); }
 .voter.warn small { color: var(--accent); font-weight: 600; }
+.chip.pin { padding: .3rem .45rem; opacity: .55; }
+.chip.pin.on { opacity: 1; }

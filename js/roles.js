@@ -829,10 +829,11 @@ ROLES.forEach(x => { x.ic = ROLE_ICONS[x.id] || "❔"; });
 const ROLE_BY_ID = Object.fromEntries(ROLES.map((r, i) => [r.id, Object.assign(r, { idx: i })]));
 
 // Marker (Erinnerungs-Plättchen) im Grimoire.
-// k = Schlüssel, i = Symbol, l = Name, d = Erklärung für den Spielleiter, n = verschwindet in der nächsten Nacht
+// k = Schlüssel, i = Symbol, l = Name, d = Erklärung für den Spielleiter, n = verschwindet in der nächsten Nacht,
+// t = verschwindet in der nächsten Nacht, außer es ist mit 📌 festgeheftet (seat.keep)
 const GENERIC_MARKERS = [
-  { k: "poison", i: "🧪", l: "Vergiftet", d: "Die Fähigkeit dieses Spielers wirkt nicht, und er kann falsche Infos bekommen – ohne es zu wissen. Meist vom Giftmischer (gilt diese Nacht und den nächsten Tag)." },
-  { k: "drunk", i: "🍺", l: "Betrunken", d: "Wie vergiftet: Fähigkeit wirkt nicht, Infos dürfen falsch sein. Kommt z. B. von Seemann, Wirt, Höfling, Minnesänger, Schläger oder Liebling." },
+  { k: "poison", i: "🧪", l: "Vergiftet", d: "Die Fähigkeit dieses Spielers wirkt nicht, und er kann falsche Infos bekommen – ohne es zu wissen. Meist vom Giftmischer (gilt diese Nacht und den nächsten Tag). Verschwindet automatisch in der nächsten Nacht – außer du heftest es mit 📌 fest (z. B. Witwe, Höfling).", t: true },
+  { k: "drunk", i: "🍺", l: "Betrunken", d: "Wie vergiftet: Fähigkeit wirkt nicht, Infos dürfen falsch sein. Kommt z. B. von Seemann, Wirt, Höfling, Minnesänger, Schläger oder Liebling. Verschwindet automatisch in der nächsten Nacht – außer du heftest es mit 📌 fest (z. B. Höfling: 3 Tage, Liebling: dauerhaft).", t: true },
   { k: "protect", i: "🛡️", l: "Geschützt", d: "Kann heute Nacht nicht durch den Dämon sterben (z. B. Mönch, Wirt). Verschwindet automatisch in der nächsten Nacht.", n: true },
   { k: "herring", i: "🐟", l: "Ablenker", d: "Ein guter Spieler, den der Wahrsager trotzdem als Dämon sieht („Red Herring“). Vor Spielbeginn festlegen." },
   { k: "target", i: "🎯", l: "Ziel", d: "Für Angriffe oder Wahlen heute Nacht, damit du nichts vergisst. Verschwindet automatisch in der nächsten Nacht.", n: true },

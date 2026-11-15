@@ -994,11 +994,19 @@
       game.seq = null;
       game.tableNight = null;
       game.wakes = {};
-      // Schutz- und Ziel-Marker gelten nur für eine Nacht
-      game.seats.forEach(x => { x.marks = (x.marks || []).filter(m => !(markerByKey(m) || {}).n); });
+      // Schutz-/Ziel-Marker gelten nur eine Nacht; Gift & Betrunken bis zur nächsten Nacht (außer 📌)
+      const healed = [];
+      game.seats.forEach(x => {
+        const keep = x.keep || [];
+        const before = x.marks || [];
+        x.marks = before.filter(m => { const d = markerByKey(m) || {}; return !d.n && !(d.t && !keep.includes(m)); });
+        if (before.some(m => ["poison", "drunk"].includes(m) && !x.marks.includes(m))) healed.push(x.name);
+        x.keep = keep.filter(m => x.marks.includes(m));
+      });
       game.nightNo++;
       game.phase = "night";
       hist(`🌙 Nacht ${game.nightNo} beginnt`, "night");
+      if (healed.length) hist(`💧 Gift/Trunkenheit vorbei: ${healed.join(", ")}`, "night");
       game.done[game.nightNo] = [];
       save(); renderSL();
       const nl = $(".nightlist");
@@ -1276,7 +1284,10 @@
 
   // Alles zu einem Spieler in einem Fenster (aus Kreis oder Liste)
   const helpBtn = key => `<button class="helpbtn" data-help="${key}" aria-label="Erklärung">ⓘ</button>`;
-  const markerChip = (s, m) => `<span class="mkchip"><button class="chip ${(s.marks || []).includes(m.k) ? "on" : ""}" data-mk="${m.k}">${m.i} ${esc(m.l)}${m.n ? " 🌙" : ""}</button>${helpBtn(m.k)}</span>`;
+  const markerChip = (s, m) => {
+    const on = (s.marks || []).includes(m.k), kept = (s.keep || []).includes(m.k);
+    return `<span class="mkchip"><button class="chip ${on ? "on" : ""}" data-mk="${m.k}">${m.i} ${esc(m.l)}${m.n || (m.t && !kept) ? " 🌙" : ""}</button>${m.t && on ? `<button class="chip pin ${kept ? "on" : ""}" data-keep="${m.k}" title="${kept ? "bleibt dauerhaft" : "verschwindet nächste Nacht – antippen zum Festheften"}">📌</button>` : ""}${helpBtn(m.k)}</span>`;
+  };
 
   function seatModal(i) {
     const s = game.seats[i];
@@ -1311,6 +1322,13 @@
     root.querySelectorAll("[data-mk]").forEach(b => b.addEventListener("click", () => {
       const k = b.dataset.mk, m = s.marks || [];
       s.marks = m.includes(k) ? m.filter(x => x !== k) : [...m, k];
+      if (!s.marks.includes(k)) s.keep = (s.keep || []).filter(x => x !== k);
+      again();
+    }));
+    root.querySelectorAll("[data-keep]").forEach(b => b.addEventListener("click", () => {
+      const k = b.dataset.keep, kp = s.keep || [];
+      s.keep = kp.includes(k) ? kp.filter(x => x !== k) : [...kp, k];
+      toast(s.keep.includes(k) ? "📌 Bleibt dauerhaft, bis du es entfernst" : "🌙 Verschwindet in der nächsten Nacht");
       again();
     }));
     root.querySelector("#m-note").addEventListener("input", e => { s.note = e.target.value; save(); });
@@ -1801,7 +1819,7 @@
     alhadikhia: { n: 3, min: 0, self: true, text: "Wähle bis zu drei Spieler." },
     harpy: { n: 2, self: true, text: "Wähle zwei Spieler (der erste muss den zweiten beschuldigen)." },
     fearmonger: { n: 1, mark: "fear", text: "Wähle einen Spieler, den du fürchten lässt." },
-    widow: { n: 1, self: true, mark: "poison", text: "Wähle einen Spieler, den du vergiftest." },
+    widow: { n: 1, self: true, mark: "poison", keep: true, text: "Wähle einen Spieler, den du vergiftest." },
     ogre: { n: 1, mark: "friend", text: "Wähle einen Spieler, dessen Gesinnung du übernimmst." },
     bureaucrat: { n: 1, text: "Wähle einen Spieler: Seine Stimme zählt morgen dreifach." },
     thief: { n: 1, text: "Wähle einen Spieler: Seine Stimme zählt morgen negativ." },
@@ -2022,7 +2040,7 @@
     const x = game.seats[i];
     const def = ACTIONS[r.step] || {};
     // Marker automatisch setzen
-    if (!r.skip && def.mark) r.picks.forEach(k => { const t = game.seats[k]; t.marks = [...new Set([...(t.marks || []), def.mark])]; });
+    if (!r.skip && def.mark) r.picks.forEach(k => { const t = game.seats[k]; t.marks = [...new Set([...(t.marks || []), def.mark])]; if (def.keep) t.keep = [...new Set([...(t.keep || []), def.mark])]; });
     if (!r.skip && r.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [r.step]: r.role });
     const text = `🌙 ${x.name} (${roleName(r.step)}): ${r.skip ? "nichts" : describePick(r)}`;
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
