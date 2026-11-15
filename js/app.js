@@ -399,7 +399,24 @@
     }
     if (aliveDemons.length && alive.length <= 2)
       return { winner: "evil", reason: "Nur noch 2 Spieler leben – der Dämon hat überlebt.", warn: [] };
+    // Bürgermeister: 3 Lebende und heute keine Hinrichtung -> Gut gewinnt (nur wenn er gesund ist)
+    const d = (game.days || {})[game.nightNo];
+    const mayor = mayorWinCheck();
+    if (game.phase === "day" && d && d.exec === "none" && mayor && mayor.ok)
+      return { winner: "good", reason: "Nur noch 3 Spieler leben und es gab keine Hinrichtung – der Bürgermeister gewinnt für Gut.",
+        warn: ["Prüfe noch Sonderfälle: Vortox im Spiel? Dann hätte Böse gewonnen."] };
     return null;
+  }
+  // Ist ein Bürgermeister-Sieg gerade möglich? null = kein Thema
+  function mayorWinCheck() {
+    const alive = game.seats.filter(s => s.alive);
+    if (alive.length !== 3) return null;
+    const m = game.seats.find(s => s.role === "mayor");
+    if (!m) return null;
+    if (!m.alive) return { ok: false, why: "Der Bürgermeister ist tot – kein Bürgermeister-Sieg, das Spiel geht weiter." };
+    const mk = m.marks || [];
+    if (mk.includes("poison") || mk.includes("drunk")) return { ok: false, why: "Der Bürgermeister ist vergiftet/betrunken – keine Fähigkeit, das Spiel geht weiter." };
+    return { ok: true };
   }
   const aliveKey = () => game.seats.map(s => (s.alive ? 1 : 0) + s.role).join(",");
   function names() {
@@ -1203,6 +1220,7 @@
       hist("🕊️ Heute wurde niemand hingerichtet", "day");
       save(); renderSL();
       if (game.seats.some(s => s.role === "vortox" && s.alive)) toast("Achtung: Vortox im Spiel – ohne Hinrichtung gewinnt Böse!");
+      else { const mc = mayorWinCheck(); if (mc && !mc.ok) toast(mc.why); }
     });
     $("#undoexec") && $("#undoexec").addEventListener("click", () => {
       if (day.exec && day.exec !== "none" && game.seats[day.exec.seat]) game.seats[day.exec.seat].alive = true;
