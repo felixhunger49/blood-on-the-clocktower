@@ -112,6 +112,14 @@
   const roleName = id => ROLE_BY_ID[id] ? ROLE_BY_ID[id].de : "?";
 
   // ---------- Rollenkarte ----------
+  // Spion: Kopie des Grimoires, wie der Spielleiter es geschickt hat
+  function grimBox(g) {
+    return `<details class="box grimbox" open><summary><h4>📖 Das Grimoire (Nacht ${g.n})</h4></summary>
+      <ol class="grimlist">${g.s.map(([name, rid, alive, marks, extra]) => { const r = ROLE_BY_ID[rid] || {}; return `<li class="${alive ? "" : "dead"} t-${r.t || ""}-border">
+        <b>${esc(name)}</b> <span>${r.ic || ""} ${esc(r.de || "?")}${extra ? ` <small>(${esc(extra)})</small>` : ""}</span>${alive ? "" : " 💀"}${marks ? ` <span class="gl-marks">${esc(marks)}</span>` : ""}</li>`; }).join("")}</ol>
+      ${(g.b || []).length ? `<p class="small">Bluffs des Dämons: ${g.b.map(id => esc(roleName(id))).join(", ")}</p>` : ""}</details>`;
+  }
+
   function cardHtml(info) {
     const role = ROLE_BY_ID[info.r];
     const good = isGood(role, info.a);
@@ -128,6 +136,7 @@
       if (x.b && x.b.length) evil += `<p>Deine Bluffs (gute Rollen, die nicht im Spiel sind):</p><ul>${x.b.map(id => `<li><b>${esc(roleName(id))}</b> – ${esc(ROLE_BY_ID[id].a)}</li>`).join("")}</ul>`;
       evil += `</div>`;
     }
+    const grim = info.g ? grimBox(info.g) : "";
     return `
       <div class="rolecard ${teamClass(role, info.a)}">
         <div class="rc-head">
@@ -141,6 +150,7 @@
           <div class="box ability"><h4>Deine Fähigkeit</h4><p>${esc(role.a)}</p></div>
           <div class="box"><h4>So funktioniert's</h4><p>${esc(role.e)}</p></div>
           ${role.tip ? `<div class="box"><h4>💡 Tipp</h4><p>${esc(role.tip)}</p></div>` : ""}
+          ${grim}
           ${(info.i || []).length ? `<div class="box infos"><h4>🌙 Deine Infos vom Spielleiter</h4><ul>${info.i.map(x =>
             `<li><b>Nacht ${x.n}:</b> ${[(x.r || []).map(id => esc(roleName(id))).join(" / "), x.t ? esc(x.t) : ""].filter(Boolean).join(" – ")}</li>`).join("")}</ul></div>` : ""}
           ${info.m && ROLE_BY_ID[info.m] ? `<div class="box madness"><h4>😵 Wahnsinn</h4>
@@ -552,6 +562,7 @@
     if (x) info.x = x;
     if (seat.madness && seat.madness.night === game.nightNo && seat.alive) info.m = seat.madness.role;
     if ((seat.infos || []).length) info.i = seat.infos.slice(-10);
+    if (seat.grim && seat.role === "spy") info.g = seat.grim;
     const ask = (game.asks || {})[i];
     if (nightOn() && ask && ask.night === game.nightNo && !ask.done) info.q = { id: ask.id, step: ask.step, sleep: !!ask.sleep };
     const wk = (game.wakes || {})[i];
@@ -905,6 +916,7 @@
           <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
             <div class="ns-head">${s.inactive ? `<span class="dead-mark">${s.mark}</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${s.inactive ? s.why : esc(s.text)}</p>
+            ${s.id === "spy" && !s.inactive && (game.online || game.test) ? `<button class="btn sm primary" data-spygrim="1">📖 Grimoire aufs Handy${tableOn() ? " (wecken)" : ""}</button>` : ""}
             ${s.id === "scarletwoman" && !s.inactive ? game.seats.map((x, i) => x.swPending ? `<button class="btn sm primary" data-swshow="${i}">👑 ${esc(x.name)} zeigen: Du bist ${esc(roleName(x.role))}${game.online || game.test ? " (aufs Handy)" : ""}</button>` : "").join("") : ""}
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
@@ -1062,6 +1074,7 @@
       save(); renderSL();
     }));
     $("#daystart") && $("#daystart").addEventListener("click", dawnDialog);
+    $$("[data-spygrim]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); spyGrimDialog(); }));
     $$("[data-swshow]").forEach(b => b.addEventListener("click", () => {
       const x = game.seats[+b.dataset.swshow];
       x.swPending = false;
@@ -2564,6 +2577,7 @@
         <h2>${role ? role.ic + " " + esc(role.de) : ""}</h2>
         ${(wk.r || []).map(id => { const r = ROLE_BY_ID[id]; return r ? `<div class="ns-bluff t-${r.t}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></div>` : ""; }).join("")}
         ${wk.t ? `<p class="ns-text">${esc(wk.t)}</p>` : ""}
+        ${wk.step === "spy" && mine.g ? grimBox(mine.g) : ""}
         <p class="ns-hint">Merk dir die Info – sie steht auch auf deiner Rollenkarte.</p>
         <div class="row center"><button class="btn big" id="wkdone">😴 Augen wieder zu</button></div>
       </div>`, "full night sleep");
@@ -3015,6 +3029,45 @@
       if (tableOn() && wk && isBot(game.seats[c.i])) setTimeout(() => { if (!wk.done) { wk.done = true; save(); refreshHostView(); } }, 1500 + randInt(1500));
       toast(game.seats[c.i].pid ? (tableOn() ? `${game.seats[c.i].name} wird geweckt` : `An ${game.seats[c.i].name} gesendet`) : `${game.seats[c.i].name} ist nicht online – bitte zeigen`);
     });
+  }
+
+  // Spion: Grimoire als Kopie aufs Handy. Vergiftet/betrunken darf es falsch sein (zwei Rollen vertauscht).
+  function grimSnapshot(fake) {
+    const S = game.seats;
+    const rows = S.map(x => [x.name, x.role, x.alive || x.zfake ? 1 : 0,
+      (x.marks || []).map(m => (markerByKey(m) || {}).i || "").join(""),
+      x.role === "drunk" || x.role === "marionette" ? `glaubt: ${roleName(shownRole(x.role))}` : x.trav ? (x.align === "e" ? "Reisender, böse" : "Reisender, gut") : ""]);
+    if (fake) {
+      const idx = rows.map((r, k) => k).filter(k => !S[k].trav && S[k].role !== "spy");
+      const a = idx[randInt(idx.length)], c = shuffle(idx.filter(k => k !== a && ROLE_BY_ID[S[k].role].t !== ROLE_BY_ID[S[a].role].t))[0];
+      if (c !== undefined) { const t = rows[a][1]; rows[a][1] = rows[c][1]; rows[c][1] = t; }
+    }
+    return { n: game.nightNo, s: rows, b: game.bluffs || [] };
+  }
+  function spyGrimDialog() {
+    const holders = stepHolders("spy").filter(([x]) => x.alive);
+    if (!holders.length) return;
+    const [x, i] = holders[0];
+    const send = fake => {
+      x.grim = grimSnapshot(fake);
+      if (tableOn()) {
+        game.wakes = game.wakes || {};
+        game.wakes[i] = { id: `w${game.nightNo}-${i}-${randInt(1e6)}`, night: game.nightNo, step: "spy", r: [], t: "Das Grimoire:" };
+        const wk = game.wakes[i];
+        if (isBot(x)) setTimeout(() => { if (!wk.done) { wk.done = true; save(); refreshHostView(); } }, 2500 + randInt(2000));
+      }
+      const d = game.done[game.nightNo] || [];
+      if (!d.includes("spy")) game.done[game.nightNo] = [...d, "spy"];
+      hist(`📖 ${x.name} (Spion) sieht das Grimoire${fake ? " (verfälscht)" : ""}`, "night");
+      save(); closeModal(); renderSL();
+      toast(reachable(x) ? `📖 Grimoire an ${x.name} gesendet${tableOn() ? " – wird geweckt" : ""}` : `${x.name} ist nicht online – zeig ihm dein Grimoire`);
+    };
+    if (!impaired(x)) return send(false);
+    openModal(`<h2>📖 Grimoire für ${esc(x.name)}</h2>
+      <p class="warnmsg">⚠️ Der Spion ist vergiftet/betrunken – du darfst ihm ein falsches Grimoire zeigen.</p>
+      <div class="row wrap"><button class="btn" id="spyreal">Echtes Grimoire senden</button><button class="btn primary" id="spyfake">🔀 Verfälscht senden (2 Rollen vertauscht)</button></div>`);
+    $("#spyreal").addEventListener("click", () => send(false));
+    $("#spyfake").addEventListener("click", () => send(true));
   }
 
   // Cerenovus: Spieler muss morgen „verrückt“ danach sein, eine gute Rolle zu sein.
@@ -3707,10 +3760,11 @@
       if ($(".sleepshow") && (info.q || info.wk)) closeModal();
       nightOverlay();
       const newInfo = JSON.stringify((old && old.i) || []) !== JSON.stringify(info.i || []) && (info.i || []).length > ((old && old.i) || []).length;
-      const changed = !old || newInfo || old.r !== info.r || old.a !== info.a || old.m !== info.m || JSON.stringify(old.x) !== JSON.stringify(info.x);
+      const changed = !old || newInfo || old.r !== info.r || old.a !== info.a || old.m !== info.m || JSON.stringify(old.x) !== JSON.stringify(info.x) || JSON.stringify(old.g || null) !== JSON.stringify(info.g || null);
       if (changed) {
         if (info.x && JSON.stringify((old && old.x) || null) !== JSON.stringify(info.x) && old) notice("🤫 Geheime Info deines Teams – schau auf deine Rollenkarte.");
         else if (newInfo && old && !info.wk) notice("🌙 Neue Info vom Spielleiter – schau auf deine Rollenkarte.");
+        else if (info.g && old && !info.wk && JSON.stringify(old.g || null) !== JSON.stringify(info.g)) notice("📖 Das Grimoire ist da – schau auf deine Rollenkarte.");
         else if (info.m && (!old || old.m !== info.m)) notice("😵 Du bist verrückt! Schau auf deine Rollenkarte, welche Rolle du am Tag behaupten musst.");
         else if (old && old.online && old.r !== info.r) notice("Der Spielleiter hat deine Rolle geändert – schau sie dir an.");
         refreshPlayerView(true);

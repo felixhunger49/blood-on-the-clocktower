@@ -576,3 +576,10 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .mismsg { display: inline-block; margin-top: .3rem; color: var(--accent); }
 .nomhands { order: 9; display: block; width: 100%; color: var(--muted); font-size: .78rem; }
 .nomlist li { flex-wrap: wrap; }
+.grimbox summary { cursor: pointer; list-style: none; }
+.grimbox summary h4 { display: inline; }
+.grimlist { margin: .4rem 0 0; padding-left: 1.4rem; display: grid; gap: .25rem; text-align: left; }
+.grimlist li { font-size: .9rem; }
+.grimlist li.dead { opacity: .55; }
+.grimlist .gl-marks { font-size: .85rem; }
+.wakeshow .grimbox { max-height: 55vh; overflow: auto; }
