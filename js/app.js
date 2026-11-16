@@ -406,6 +406,9 @@
     }
     if (aliveDemons.length && alive.length <= 2)
       return { winner: "evil", reason: "Nur noch 2 Spieler leben – der Dämon hat überlebt.", warn: [] };
+    if (aliveDemons.length && alive.length && alive.every(s => !seatGood(s)))
+      return { winner: "evil", reason: "Es leben nur noch böse Spieler – Gut kann niemanden mehr nominieren und nicht mehr gewinnen.",
+        warn: ["Streng nach Regeln endet das Spiel erst, wenn nur noch 2 leben. Wollt ihr es ausspielen, tippe „Spiel geht weiter“."] };
     // Bürgermeister: 3 Lebende und heute keine Hinrichtung -> Gut gewinnt (nur wenn er gesund ist)
     const d = (game.days || {})[game.nightNo];
     const mayor = mayorWinCheck();
@@ -2261,10 +2264,28 @@
     });
     return out;
   }
+  // Hat der Dämon gerade einen Rabenhüter (oder Weisen) getötet? Dann sofort dessen Handy fragen.
+  function wakeDeathTriggered() {
+    if (!nightOn() || (game.seq && game.seq.night === game.nightNo && !game.seq.done)) return;
+    ["ravenkeeper", "sage"].forEach(id => {
+      stepHolders(id).forEach(([x, i]) => {
+        if (!deathTriggered(x, id) || lastAct(i, id)) return;
+        const a = (game.asks || {})[i];
+        if (a && a.night === game.nightNo && a.step === id && !a.done) return;
+        if (!ACTIONS[id] || !reachable(x)) { toast(`🪶 ${x.name} (${roleName(id)}) wurde getötet – jetzt wecken!`); return; }
+        askSeat(i, false, id);
+        toast(`🪶 ${x.name} (${roleName(id)}) wurde getötet – sein Handy fragt jetzt nach seiner Wahl`);
+      });
+    });
+    save(); refreshHostView();
+  }
+
   function dawnDialog() {
     const kills = nightKills();
     if (!kills.length) return startDay();
+    const missed = kills.filter(x => x.dies && game.seats[x.k].role === "ravenkeeper" && !lastAct(x.k, "ravenkeeper") && !((game.done[game.nightNo] || []).includes("ravenkeeper")));
     openModal(`<h2>☀️ Wer stirbt heute Nacht?</h2>
+      ${missed.map(x => `<p class="warnmsg">🪶 ${esc(game.seats[x.k].name)} ist der Rabenhüter und stirbt – er wurde noch nicht geweckt! Tippe „Zurück“ und wecke ihn zuerst (Schritt Rabenhüter).</p>`).join("")}
       <p class="small">So sieht es nach den Regeln aus. Ändere den Haken nur, wenn die App etwas nicht weiß: ein fehlender Marker (z. B. Mönch-Schutz vergessen), eine Rolle wie Narr oder Seemann, die den Tod verhindert, oder wenn du beim Bürgermeister den Tod umlenkst.</p>
       <div class="dawnlist">${kills.map(x => `<label class="switch"><input type="checkbox" data-kill="${x.k}" ${x.dies ? "checked" : ""}>
         <span><b>${esc(game.seats[x.k].name)}</b> <span class="small">(${esc(roleName(game.seats[x.k].role))})</span><br><span class="small">${esc(x.why)}</span></span></label>`).join("")}</div>
@@ -2515,6 +2536,7 @@
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
     hist(text, "night");
     if (!r.skip && r.role && r.picks.length && ["cerenovus", "pithag"].includes(r.step)) applyRolePick(x, r);
+    if (!r.skip && KILL_STEPS.includes(r.step)) setTimeout(wakeDeathTriggered, 50);
     if (!r.skip && r.step === "philosopher" && r.role && x.role === "philosopher") setPhilo(i, r.role);
     else { save(); refreshHostView(); }
     notice(text);
