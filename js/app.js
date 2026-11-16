@@ -120,7 +120,7 @@
     if (info.x) {
       const x = info.x;
       evil = `<div class="box evilinfo"><h4>🤫 Geheime Info deines Teams</h4>`;
-      if (x.d) evil += `<p>Dein Dämon ist: <b>${esc(x.d)}</b></p>`;
+      if (x.d) evil += `<p>${x.tr ? "Du bist ein böser Reisender. Der Dämon ist" : "Dein Dämon ist"}: <b>${esc(x.d)}</b></p>`;
       if (x.m && x.m.length) evil += `<p>${x.d ? "Weitere Schergen" : "Deine Schergen"}: <b>${x.m.map(esc).join(", ")}</b></p>`;
       if (x.m && !x.m.length && !x.d) evil += `<p>Du hast keine Schergen.</p>`;
       if (x.l) evil += `<p>Der Wahnsinnige (glaubt, Dämon zu sein): <b>${esc(x.l)}</b></p>`;
@@ -516,7 +516,12 @@
   function evilInfoFor(seat) {
     // Böse-Infos stehen auf der Karte, wenn der Schalter an ist oder der Spielleiter sie in der Nacht gesendet hat.
     const sent = game.evilSent || {};
-    if (seat.trav) return undefined;
+    // Böse Reisende erfahren, wer der Dämon ist (sofort beim Beitreten)
+    if (seat.trav) {
+      if (seat.align !== "e") return undefined;
+      const ds = playerSeats().filter(s => ROLE_BY_ID[s.role].t === "demon" && (s.alive || s.zfake));
+      return ds.length ? { d: ds.map(s => s.name).join(", "), tr: true } : undefined;
+    }
     const tt = ROLE_BY_ID[seat.role].t;
     const allowed = (game.evilInfo && playerSeats().length >= 7) || (tt === "minion" ? sent.minion : sent.demon);
     if (!allowed) return undefined;
@@ -1002,8 +1007,9 @@
       const name = $("#travname").value.trim() || (pid && lobby[pid] ? lobby[pid].name : "") || `Reisender ${game.seats.filter(s => s.trav).length + 1}`;
       game.seats.push({ name, pid, role: $("#travrole").value, align: $("#travalign").value, trav: true, alive: true, ghost: true, note: "", salt: randInt(32) });
       if (game.step === "grim") {
-        hist(`🧳 ${name} kommt als ${roleName($("#travrole").value)} dazu (${$("#travalign").value === "e" ? "böse" : "gut"})`);
-        toast(`🧳 ${name} ist jetzt ${roleName($("#travrole").value)}${pid ? " – sieht es auf dem Handy" : ""}`);
+        const evilT = $("#travalign").value === "e";
+        hist(`🧳 ${name} kommt als ${roleName($("#travrole").value)} dazu (${evilT ? "böse" : "gut"})`);
+        toast(`🧳 ${name} ist jetzt ${roleName($("#travrole").value)}${pid ? ` – sieht es auf dem Handy${evilT ? " (inkl. wer der Dämon ist)" : ""}` : evilT ? " – zeig ihm noch, wer der Dämon ist" : ""}`);
       }
       save(); renderSL();
     });
