@@ -711,6 +711,35 @@
     return `<span class="rchip t-${r.t}">${r.ic} ${esc(r.de)}${extra}</span>`;
   }
 
+  // Formular „Reisenden hinzufügen“ (in Schritt 3 und im Grimoire während des Spiels)
+  function travFormHtml() {
+    const travOpts = ROLES.filter(r => r.t === "traveller" && (game.edition !== "custom" || !(game.script || []).some(id => ROLE_BY_ID[id].t === "traveller") || game.script.includes(r.id)))
+      .filter(r => !game.seats.some(x => x.role === r.id))
+      .map(r => `<option value="${r.id}">${esc(r.de)} (${esc(EDITIONS[r.ed].name)})</option>`).join("");
+    const free = Object.entries(lobby).filter(([uid]) => !game.seats.some(x => x.pid === uid));
+    return `<div class="travform">
+      ${game.online ? `<select id="travpid"><option value="">– kein Online-Handy –</option>${free.map(([uid, p]) => `<option value="${uid}" ${free.length === 1 ? "selected" : ""}>🌐 ${esc(p.name)}</option>`).join("")}</select>` : ""}
+      <input id="travname" placeholder="Name${game.online ? " (leer = Name vom Handy)" : ""}">
+      <select id="travrole">${travOpts}</select>
+      <select id="travalign"><option value="g">Gut</option><option value="e">Böse</option></select>
+      <button class="btn" id="addtrav">+ Hinzufügen</button>
+    </div>`;
+  }
+  // Im laufenden Spiel: Reisender scannt den QR-Code des Raums, dann hier zuordnen
+  function travLatePanel() {
+    const free = game.online ? Object.entries(lobby).filter(([uid]) => !game.seats.some(x => x.pid === uid)) : [];
+    return `<section class="panel"><details class="travlate" ${free.length || game.travOpen ? "open" : ""}>
+      <summary><h2>🧳 Reisender kommt dazu</h2></summary>
+      ${game.online ? `<p class="small">1. Der Neue scannt diesen QR-Code (oder öffnet die App → „Meine Rolle“ → „Online-Spiel beitreten“ mit Code <b>${esc(game.online.code)}</b>).<br>
+        2. Sein Name erscheint unten im ersten Feld. Rolle und Gesinnung wählen → „+ Hinzufügen“. Er sieht seine Reisenden-Rolle sofort auf dem Handy.</p>
+        <div class="qr small-qr">${qrSvg(joinUrl(game.online.code))}</div>
+        ${free.length ? `<p class="okmsg">🌐 Neu im Raum: ${free.map(([, p]) => esc(p.name)).join(", ")}</p>` : `<p class="small">Noch niemand Neues im Raum …</p>`}`
+        : `<p class="small">Ohne Online-Spiel: Name, Rolle und Gesinnung eintragen und ihm danach seine Karte über „3 · Verteilen“ (QR/Link) geben.</p>`}
+      ${travFormHtml()}
+      <p class="small">Die Reisenden-Rolle ist öffentlich – sag sie laut an. Die Gesinnung bleibt geheim.</p>
+    </details></section>`;
+  }
+
   function slAssign() {
     const ps = game.seats;
     const allowEvil = playerSeats().length >= 7;
@@ -730,7 +759,6 @@
           ${s.trav ? `<button class="btn sm danger" data-deltrav="${i}">✕</button>` : ""}</div>
       </div>`;
     }).join("");
-    const travOpts = ROLES.filter(r => r.t === "traveller" && (game.edition !== "custom" || !(game.script || []).some(id => ROLE_BY_ID[id].t === "traveller") || game.script.includes(r.id))).map(r => `<option value="${r.id}">${esc(r.de)} (${esc(EDITIONS[r.ed].name)})</option>`).join("");
     return `
       <section class="panel">
         <h2>Rollen verteilen</h2>
@@ -750,13 +778,7 @@
       <section class="panel">
         <h3>Reisenden hinzufügen</h3>
         <p class="small">Reisende kommen später dazu oder gehen früher. Du legst fest, ob sie gut oder böse sind.</p>
-        <div class="travform">
-          <input id="travname" placeholder="Name">
-          <select id="travrole">${travOpts}</select>
-          <select id="travalign"><option value="g">Gut</option><option value="e">Böse</option></select>
-          ${game.online ? `<select id="travpid"><option value="">– kein Online-Spieler –</option>${Object.entries(lobby).filter(([uid]) => !game.seats.some(x => x.pid === uid)).map(([uid, p]) => `<option value="${uid}">🌐 ${esc(p.name)}</option>`).join("")}</select>` : ""}
-          <button class="btn" id="addtrav">+ Hinzufügen</button>
-        </div>
+        ${travFormHtml()}
       </section>
       <div class="row end"><button class="btn primary" id="next3">Weiter: Grimoire →</button></div>`;
   }
@@ -894,6 +916,7 @@
         </div>
       </section>
       ${dayPanel()}
+      ${travLatePanel()}
       <section class="panel">
         <h2>Spiel beenden</h2>
         <p class="small">Für Siege, die die App nicht selbst erkennt – z. B. Heiliger hingerichtet, Bürgermeister-Sieg, Vortox ohne Hinrichtung, Tollpatsch, Böser Zwilling.</p>
@@ -978,9 +1001,14 @@
       const pid = $("#travpid") ? $("#travpid").value || null : null;
       const name = $("#travname").value.trim() || (pid && lobby[pid] ? lobby[pid].name : "") || `Reisender ${game.seats.filter(s => s.trav).length + 1}`;
       game.seats.push({ name, pid, role: $("#travrole").value, align: $("#travalign").value, trav: true, alive: true, ghost: true, note: "", salt: randInt(32) });
+      if (game.step === "grim") {
+        hist(`🧳 ${name} kommt als ${roleName($("#travrole").value)} dazu (${$("#travalign").value === "e" ? "böse" : "gut"})`);
+        toast(`🧳 ${name} ist jetzt ${roleName($("#travrole").value)}${pid ? " – sieht es auf dem Handy" : ""}`);
+      }
       save(); renderSL();
     });
     $("#next3") && $("#next3").addEventListener("click", () => goStep("grim"));
+    $(".travlate") && $(".travlate").addEventListener("toggle", e => { game.travOpen = e.target.open; save(); });
 
     // Schritt 4
     $$("[data-alive]").forEach(b => b.addEventListener("click", () => { const s = game.seats[+b.dataset.alive]; s.alive = !s.alive; if (s.alive) s.ghost = true; histDeath(s); save(); renderSL(); }));
