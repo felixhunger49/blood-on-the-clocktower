@@ -917,6 +917,7 @@
             <div class="ns-head">${s.inactive ? `<span class="dead-mark">${s.mark}</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${s.inactive ? s.why : esc(s.text)}</p>
             ${s.id === "spy" && !s.inactive && (game.online || game.test) ? `<button class="btn sm primary" data-spygrim="1">📖 Grimoire aufs Handy${tableOn() ? " (wecken)" : ""}</button>` : ""}
+            ${s.id === "spy" && game.seats.some(x => x.grim) ? `<button class="btn sm" data-spyhide="1">🙈 Grimoire vom Handy entfernen</button>` : ""}
             ${s.id === "scarletwoman" && !s.inactive ? game.seats.map((x, i) => x.swPending ? `<button class="btn sm primary" data-swshow="${i}">👑 ${esc(x.name)} zeigen: Du bist ${esc(roleName(x.role))}${game.online || game.test ? " (aufs Handy)" : ""}</button>` : "").join("") : ""}
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
@@ -1075,6 +1076,7 @@
     }));
     $("#daystart") && $("#daystart").addEventListener("click", dawnDialog);
     $$("[data-spygrim]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); spyGrimDialog(); }));
+    $$("[data-spyhide]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); spyGrimHide(); }));
     $$("[data-swshow]").forEach(b => b.addEventListener("click", () => {
       const x = game.seats[+b.dataset.swshow];
       x.swPending = false;
@@ -1506,6 +1508,7 @@
       <div class="row wrap">
         <button class="btn" data-m="info">ℹ️ Rolle</button>
         ${isBot(s) ? `<button class="btn" data-m="phone">🤖 Handy ansehen</button>` : ""}
+        ${s.grim ? `<button class="btn" data-m="spyhide">🙈 Grimoire vom Handy entfernen</button>` : ""}
         <button class="btn" data-m="change">🔁 Rolle ändern</button>
         ${cer ? `<span class="hint-pair"><button class="btn" data-m="mad">😵 Wahnsinn</button>${helpBtn("s:mad")}</span>` : ""}
         ${ONCE_PER_GAME.includes(s.role) && s.role !== "philosopher" ? `<span class="hint-pair"><button class="btn ${s.used ? "used" : ""}" data-m="used">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>${helpBtn("s:used")}</span>` : ""}
@@ -1547,6 +1550,7 @@
       else if (a === "used") { s.used = !s.used; delete s.usedNight; again(); }
       else if (a === "info") openModal(roleDetail(ROLE_BY_ID[s.role], true));
       else if (a === "phone") showBotPhone(i);
+      else if (a === "spyhide") { closeModal(); spyGrimHide(); }
       else if (a === "change") changeRole(i);
       else if (a === "mad") madnessDialog(i);
       else { closeModal(); renderSL(); }
@@ -3043,6 +3047,11 @@
       if (c !== undefined) { const t = rows[a][1]; rows[a][1] = rows[c][1]; rows[c][1] = t; }
     }
     return { n: game.nightNo, s: rows, b: game.bluffs || [] };
+  }
+  function spyGrimHide() {
+    game.seats.forEach(x => { if (x.grim) { delete x.grim; hist(`🙈 Grimoire vom Handy von ${x.name} entfernt`, "night"); } });
+    save(); renderSL();
+    toast("🙈 Das Grimoire ist vom Handy des Spions verschwunden");
   }
   function spyGrimDialog() {
     const holders = stepHolders("spy").filter(([x]) => x.alive);
