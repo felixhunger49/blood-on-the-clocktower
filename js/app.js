@@ -1704,43 +1704,67 @@
 
   // Leise, selbst erzeugte Klänge (keine Audiodateien nötig)
   const Mood = (() => {
-    let ctx = null, master = null, voices = [], phase = null;
-    const CHORDS = { night: [110, 164.81, 220, 261.63], day: [130.81, 196, 261.63, 329.63] };
+    // Leiser Klangteppich: Nacht = dunkles Moll, Tag = helles Dur. Töne so hoch, dass auch Handy-Lautsprecher sie wiedergeben.
+    let ctx = null, master = null, voices = [], phase = null, bellTimer = null;
+    const CHORDS = { night: [220, 261.63, 329.63, 440], day: [261.63, 329.63, 392, 523.25] };
     const api = { on: false };
+    function ensureCtx() {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state !== "running") ctx.resume();
+    }
     function start() {
       try {
-        ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
-        ctx.resume();
-        master = ctx.createGain(); master.gain.value = 0;
-        const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900;
+        ensureCtx();
+        const now = ctx.currentTime;
+        master = ctx.createGain();
+        master.gain.setValueAtTime(0, now);
+        master.gain.linearRampToValueAtTime(0.32, now + 2.5);
+        const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2200;
         master.connect(lp); lp.connect(ctx.destination);
-        master.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 3);
-        play(phase || currentPhase());
-      } catch (e) { api.on = false; }
+        play(phase || currentPhase(), true);
+      } catch (e) { api.on = false; toast("Musik kann auf diesem Gerät nicht abgespielt werden"); }
     }
-    function play(ph) {
+    function bell(ph) {
       if (!ctx || !master) return;
       const now = ctx.currentTime;
-      voices.forEach(v => { v.g.gain.linearRampToValueAtTime(0, now + 4); v.o.stop(now + 4.2); v.l.stop(now + 4.2); });
+      (ph === "night" ? [880, 659.25] : [659.25, 987.77]).forEach((f, k) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sine"; o.frequency.value = f;
+        g.gain.setValueAtTime(0, now + k * 0.35);
+        g.gain.linearRampToValueAtTime(0.35, now + k * 0.35 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, now + k * 0.35 + 2.2);
+        o.connect(g); g.connect(master);
+        o.start(now + k * 0.35); o.stop(now + k * 0.35 + 2.3);
+      });
+    }
+    function play(ph, first) {
+      if (!ctx || !master) return;
+      const now = ctx.currentTime;
+      voices.forEach(v => { v.g.gain.cancelScheduledValues(now); v.g.gain.setValueAtTime(v.g.gain.value, now); v.g.gain.linearRampToValueAtTime(0, now + 3); v.o.stop(now + 3.2); v.l.stop(now + 3.2); });
       voices = CHORDS[ph].map((f, k) => {
         const o = ctx.createOscillator(), g = ctx.createGain(), l = ctx.createOscillator(), lg = ctx.createGain();
-        o.type = k % 2 ? "triangle" : "sine"; o.frequency.value = f; o.detune.value = (k - 1.5) * 4;
-        g.gain.value = 0; g.gain.linearRampToValueAtTime(0.25 / (k + 1), now + 5);
-        l.frequency.value = 0.05 + k * 0.03; lg.gain.value = 0.08 / (k + 1);
+        o.type = k % 2 ? "triangle" : "sine"; o.frequency.value = f; o.detune.value = (k - 1.5) * 5;
+        const vol = 0.22 / (1 + k * 0.5);
+        g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(vol, now + 4);
+        l.frequency.value = 0.07 + k * 0.04; lg.gain.value = vol * 0.4;
         l.connect(lg); lg.connect(g.gain); o.connect(g); g.connect(master);
-        o.start(); l.start();
+        o.start(now); l.start(now);
         return { o, g, l };
       });
+      if (!first) bell(ph);
     }
     function stop() {
       if (!ctx || !master) return;
-      const now = ctx.currentTime;
-      master.gain.linearRampToValueAtTime(0, now + 1.5);
+      const now = ctx.currentTime, m = master;
+      m.gain.cancelScheduledValues(now); m.gain.setValueAtTime(m.gain.value, now); m.gain.linearRampToValueAtTime(0, now + 1.2);
       const vs = voices; voices = [];
-      setTimeout(() => vs.forEach(v => { try { v.o.stop(); v.l.stop(); } catch (e) { /* schon aus */ } }), 1700);
+      setTimeout(() => { vs.forEach(v => { try { v.o.stop(); v.l.stop(); } catch (e) { /* schon aus */ } }); try { m.disconnect(); } catch (e) { /* egal */ } }, 1400);
       master = null;
     }
-    api.toggle = on => { api.on = on; store.set("botc.music", on); on ? start() : stop(); };
+    api.toggle = on => {
+      api.on = on; store.set("botc.music", on);
+      if (on) { start(); if (api.on) toast("🎵 Musik an – Handy-Lautstärke (Medien) aufdrehen, falls du nichts hörst"); } else stop();
+    };
     api.setPhase = ph => { if (ph === phase) return; phase = ph; if (api.on && master) play(ph); };
     return api;
   })();
