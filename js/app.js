@@ -505,7 +505,7 @@
     game.nightNo = 1;
     game.days = {};
     game.vote = null;
-    game.winner = null; game.klutzLoss = null; game.klutzPending = null;
+    game.winner = null; game.klutzLoss = null; game.klutzPending = null; game.exile = null;
     game.ignoreEnd = null;
     game.evilSent = {};
     game.phase = "night";
@@ -1042,6 +1042,7 @@
       if (end && game.ignoreEnd !== aliveKey() && !confirm(`Das Spiel ist eigentlich vorbei: ${end.winner === "good" ? "Gut" : "Böse"} gewinnt.\n${end.reason}\n\nTrotzdem weiterspielen?`)) return;
       if (end) game.ignoreEnd = aliveKey();
       game.vote = null;
+      game.exile = null;
       game.asks = {};
       game.seq = null;
       game.tableNight = null;
@@ -1138,6 +1139,69 @@
   }
   const validHands = hands => hands.filter(i => { const c = butlerCheck(i, hands); return !c || c.ok; });
 
+  // ---------- Reisende verbannen ----------
+  // Jeder (auch Tote, ohne ihre Geisterstimme zu verbrauchen) darf die Verbannung unterstützen.
+  // Keine Fähigkeit kann sie beeinflussen, sie ist keine Hinrichtung und zählt nicht als Nominierung.
+  function exileHtml(day) {
+    const ps = game.seats;
+    const travs = ps.map((x, i) => i).filter(i => ps[i].trav && ps[i].alive);
+    const done = (day.exiles || []).map(e => `<li>🧳 ${esc(e.name)}: ${e.count} / ${e.needed} – ${e.ok ? "<b>verbannt</b>" : "nicht verbannt"}</li>`).join("");
+    if (!travs.length && !done) return "";
+    const ex = game.exile;
+    let body;
+    if (ex) {
+      const count = ex.hands.length, needed = votesNeeded();
+      body = `<div class="vote">
+        <p>🧳 Verbannung von <b>${esc(ps[ex.on].name)}</b> (${esc(roleName(ps[ex.on].role))})</p>
+        <p class="small">Alle dürfen die Hand heben – auch Tote, ohne ihre Geisterstimme zu verbrauchen. Keine Fähigkeit wirkt darauf.</p>
+        <div class="votelist">${ps.map((x, i) => `<button class="voter ${ex.hands.includes(i) ? "up" : ""}" data-exhand="${i}">
+          <span>${ex.hands.includes(i) ? "✋" : "·"}</span><b>${esc(x.name)}</b>${x.alive ? "" : "<small>tot – darf trotzdem</small>"}</button>`).join("")}</div>
+        <div class="votecount ${count >= needed ? "ok" : ""}">${count} Unterstützer · nötig ${needed} (Hälfte der Lebenden)</div>
+        <div class="row wrap">
+          ${game.test ? `<button class="btn" id="botexile">🤖 Bots entscheiden</button>` : ""}
+          <button class="btn ${count >= needed ? "danger" : "primary"}" id="exiledo">${count >= needed ? `🧳 ${esc(ps[ex.on].name)} verbannen` : "Nicht verbannt – beenden"}</button>
+          <button class="btn" id="exilecancel">Abbrechen</button></div></div>`;
+    } else {
+      body = travs.length ? `<div class="nomform"><label>Reisenden verbannen?<select id="exileon">${travs.map(i => `<option value="${i}">${esc(ps[i].name)} (${esc(roleName(ps[i].role))})</option>`).join("")}</select></label>
+        <button class="btn" id="exilestart">🧳 Verbannung ausrufen</button></div>` : "";
+    }
+    return `<h3>🧳 Reisende</h3>
+      <p class="small">Reisende werden nicht hingerichtet, sondern verbannt. Jeder darf das ausrufen – beliebig oft am Tag. Die Verbannung ist keine Hinrichtung (der Tag kann trotzdem noch eine haben). Dass die Hälfte der Lebenden nötig ist, ist eine verbreitete Faustregel – eure Runde kann es anders handhaben.</p>
+      ${body}${done ? `<ul class="nomlist">${done}</ul>` : ""}`;
+  }
+  function bindExile(day) {
+    $("#exilestart") && $("#exilestart").addEventListener("click", () => { game.exile = { on: +$("#exileon").value, hands: [] }; save(); renderSL(); });
+    $$("[data-exhand]").forEach(b => b.addEventListener("click", () => {
+      const i = +b.dataset.exhand, h = game.exile.hands;
+      game.exile.hands = h.includes(i) ? h.filter(x => x !== i) : [...h, i];
+      save(); renderSL();
+    }));
+    $("#exilecancel") && $("#exilecancel").addEventListener("click", () => { game.exile = null; save(); renderSL(); });
+    $("#botexile") && $("#botexile").addEventListener("click", () => {
+      const ex = game.exile, t = game.seats[ex.on];
+      game.seats.forEach((x, i) => {
+        if (!isBot(x) || i === ex.on) return;
+        // Böse schützen böse Reisende, Gute sind misstrauisch
+        const sameSide = seatGood(x) === seatGood(t);
+        const p = seatGood(x) ? (sameSide ? 0.35 : 0.6) : (sameSide ? 0.05 : 0.85);
+        if (Math.random() < p && !ex.hands.includes(i)) ex.hands.push(i);
+      });
+      save(); renderSL();
+    });
+    $("#exiledo") && $("#exiledo").addEventListener("click", () => {
+      const ex = game.exile, t = game.seats[ex.on], needed = votesNeeded(), ok = ex.hands.length >= needed;
+      day.exiles = [...(day.exiles || []), { name: t.name, count: ex.hands.length, needed, ok }];
+      if (ok) {
+        t.alive = false; t.ghost = true;
+        hist(`🧳 ${t.name} (${roleName(t.role)}) wurde verbannt (${ex.hands.length} / ${needed})`, "day");
+        histDeath(t);
+      } else hist(`🧳 Verbannung von ${t.name} gescheitert (${ex.hands.length} / ${needed})`, "day");
+      game.exile = null;
+      save(); renderSL();
+      toast(ok ? `🧳 ${t.name} wurde verbannt und stirbt` : `${t.name} bleibt im Spiel`);
+    });
+  }
+
   function dayPanel() {
     const day = today();
     const ps = game.seats;
@@ -1205,6 +1269,7 @@
         <p class="small">Nötig für die Hinrichtung: <b>${votesNeeded()}</b> Stimmen (Hälfte der Lebenden). ${blockLine}</p>
         ${body}
         ${noms ? `<h3>Nominierungen heute</h3><ul class="nomlist">${noms}</ul>` : ""}
+        ${exileHtml(day)}
         ${execBtns}
       </details>
     </section>`;
@@ -1234,6 +1299,7 @@
     }));
     $("#cancelvote") && $("#cancelvote").addEventListener("click", () => { botVoteRun++; game.vote = null; save(); renderSL(); });
     $("#botnom") && $("#botnom").addEventListener("click", botNominate);
+    bindExile(day);
     $("#botvote") && $("#botvote").addEventListener("click", () => { $("#botvote").disabled = true; botVote(); });
     $("#savevote") && $("#savevote").addEventListener("click", () => {
       const v = game.vote;
