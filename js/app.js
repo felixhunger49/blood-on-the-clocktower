@@ -1524,6 +1524,7 @@
       const k = b.dataset.mk, m = s.marks || [];
       s.marks = m.includes(k) ? m.filter(x => x !== k) : [...m, k];
       if (!s.marks.includes(k)) s.keep = (s.keep || []).filter(x => x !== k);
+      markHist(s, k, s.marks.includes(k));
       again();
     }));
     root.querySelectorAll("[data-keep]").forEach(b => b.addEventListener("click", () => {
@@ -1744,6 +1745,13 @@
   // =====================================================================
   function hist(text, ph) {
     game.history = [...(game.history || []), { n: game.nightNo || 1, ph: ph || game.phase || "night", t: text, at: Date.now() }].slice(-200);
+  }
+  // Wichtige Zustände im Spielverlauf festhalten (Gift, Trunkenheit, Schutz)
+  const MARK_HIST = { poison: ["🧪", "ist vergiftet", "ist nicht mehr vergiftet"], drunk: ["🍺", "ist betrunken", "ist nicht mehr betrunken"], protect: ["🛡️", "ist geschützt", null] };
+  function markHist(x, k, on, by) {
+    const h = MARK_HIST[k];
+    if (!h || (!on && !h[2])) return;
+    hist(`${h[0]} ${x.name} ${on ? h[1] : h[2]}${on && by ? ` (${by})` : ""}`);
   }
   function histDeath(x) {
     const r = ROLE_BY_ID[x.role];
@@ -2525,7 +2533,12 @@
     const x = game.seats[i];
     const def = ACTIONS[r.step] || {};
     // Marker automatisch setzen
-    if (!r.skip && def.mark) r.picks.forEach(k => { const t = game.seats[k]; t.marks = [...new Set([...(t.marks || []), def.mark])]; if (def.keep) t.keep = [...new Set([...(t.keep || []), def.mark])]; });
+    if (!r.skip && def.mark) r.picks.forEach(k => {
+      const t = game.seats[k], had = (t.marks || []).includes(def.mark);
+      t.marks = [...new Set([...(t.marks || []), def.mark])];
+      if (def.keep) t.keep = [...new Set([...(t.keep || []), def.mark])];
+      if (!had) markHist(t, def.mark, true, roleName(r.step) + (impaired(x) ? " – ist selbst vergiftet/betrunken, wirkt also nicht" : ""));
+    });
     if (!r.skip && r.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [r.step]: r.role });
     // Einmal-Fähigkeit benutzt -> ab der nächsten Nacht grau
     if (!r.skip && ONCE_PER_GAME.includes(r.step) && r.step !== "philosopher" && (r.picks.length || r.role)) {
