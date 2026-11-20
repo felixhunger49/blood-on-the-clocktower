@@ -108,6 +108,32 @@
     if (game.edition === "custom" && (game.script || []).length && game.seats.length) return game.script.slice();
     return null;
   }
+  function scriptInfo() {
+    const sc = gameScript();
+    if (sc) return { ids: sc, name: "Euer Skript" };
+    const mine = store.get("botc.myrole", null), role = mine && ROLE_BY_ID[mine.r];
+    let ed = typeof pubState !== "undefined" && pubState && pubState.ed && pubState.ed !== "custom" ? pubState.ed : null;
+    if (!ed && role && EDITIONS[role.ed] && !EDITIONS[role.ed].extra && role.t !== "traveller") ed = role.ed;
+    if (!ed && game.seats.length && game.edition !== "custom" && EDITIONS[game.edition]) ed = game.edition;
+    return ed ? { ids: ROLES.filter(r => r.ed === ed).map(r => r.id), name: EDITIONS[ed].name } : null;
+  }
+  // Nachtreihenfolge für eine Rollenliste (erste Nacht / andere Nächte)
+  function nightOrderHtml(ids, title) {
+    const col = (order, key, head) => {
+      let k = 0;
+      const items = order.map(id => {
+        if (id === "dusk" || id === "dawn") return "";
+        if (NIGHT_STEPS[id]) return key === "n1" ? `<li class="no-step"><span class="no-n">${++k}</span> 🤫 ${esc(NIGHT_STEPS[id].de)} <small>(ab 7 Spielern)</small></li>` : "";
+        const r = ROLE_BY_ID[id];
+        if (!r || !ids.includes(id) || !r[key]) return "";
+        return `<li><details><summary><span class="no-n">${++k}</span> <span class="lex-ic">${r.ic}</span><b class="t-${r.t}-text">${esc(r.de)}</b>${r.t === "traveller" ? ` <small class="small">(Reisender)</small>` : ""}</summary><p class="small">${esc(r.a)}</p></details></li>`;
+      }).join("");
+      return `<div class="no-col"><h3>${head}</h3><ol class="no-list">${items || "<li class='small'>–</li>"}</ol></div>`;
+    };
+    return `<details class="panel nightorder"><summary><h2>🌙 Nachtreihenfolge <span class="small">(${esc(title)})</span></h2></summary>
+      <p class="small">In dieser Reihenfolge weckt der Spielleiter die Rollen – aber nur die, die wirklich im Spiel sind. Antippen zeigt die Fähigkeit.</p>
+      <div class="no-cols">${col(NIGHT_FIRST, "n1", "Erste Nacht")}${col(NIGHT_OTHER, "n", "Andere Nächte")}</div></details>`;
+  }
   const rolesOf = (ed, team) => ROLES.filter(r => inEd(r, ed) && r.t === team);
   const roleName = id => ROLE_BY_ID[id] ? ROLE_BY_ID[id].de : "?";
 
@@ -353,6 +379,7 @@
         </div>
       </section>
       ${notesHtml()}
+      ${(() => { const si = scriptInfo(); return si ? nightOrderHtml(si.ids, si.name) : ""; })()}
       <section class="panel muted">
         <div class="row center wrap">
           <a class="btn" href="#/rollen" onclick="this.dataset.go=1">${mine.sc ? "📜 Rollen in eurem Spiel" : "📖 Alle Rollen ansehen"}</a>
@@ -3377,7 +3404,10 @@
 
   function renderLex() {
     const sc = gameScript();
-    if (!lexFilter.ed || (lexFilter.ed === "game" && !sc)) lexFilter.ed = sc ? "game" : "all";
+    if (!lexFilter.ed || (lexFilter.ed === "game" && !sc)) {
+      const si = scriptInfo(), ed = si && !sc ? Object.keys(EDITIONS).find(k => EDITIONS[k].name === si.name) : null;
+      lexFilter.ed = sc ? "game" : ed || "all";
+    }
     view.innerHTML = `
       <section class="panel">
         <h2>Alle Rollen</h2>
@@ -3392,6 +3422,11 @@
           ${Object.entries(TEAMS).map(([k, t]) => `<button class="chip t-${k}-chip ${lexFilter.team === k ? "on" : ""}" data-lteam="${k}">${t.plural}</button>`).join("")}
         </div>
       </section>
+      ${(() => {
+        if (lexFilter.ed === "game" && sc) return nightOrderHtml(sc, "Euer Spiel");
+        if (EDITIONS[lexFilter.ed] && lexFilter.ed !== "custom") return nightOrderHtml(ROLES.filter(r => r.ed === lexFilter.ed).map(r => r.id), EDITIONS[lexFilter.ed].name);
+        return "";
+      })()}
       <div id="lexlist"></div>`;
     const draw = () => {
       const q = lexFilter.q.toLowerCase();
@@ -3620,6 +3655,7 @@
       sleep: tableOn(),
       dawn: game.dawn || null,
       script: game.edition === "custom" && (game.script || []).length ? game.script.map(id => ROLE_BY_ID[id].idx) : null,
+      ed: game.edition,
       fabled: game.fabled || [],
       timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0 } : null,
       started: game.seats.length > 0 && game.step !== "setup",

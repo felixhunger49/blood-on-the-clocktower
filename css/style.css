@@ -583,3 +583,13 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .grimlist li.dead { opacity: .55; }
 .grimlist .gl-marks { font-size: .85rem; }
 .wakeshow .grimbox { max-height: 55vh; overflow: auto; }
+.nightorder summary { cursor: pointer; list-style: none; }
+.nightorder summary h2 { display: inline; }
+.no-cols { display: grid; grid-template-columns: 1fr; gap: .8rem; margin-top: .6rem; }
+@media (min-width: 640px) { .no-cols { grid-template-columns: 1fr 1fr; } }
+.no-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .25rem; }
+.no-list li { background: var(--panel2); border-radius: 10px; padding: .35rem .6rem; }
+.no-list summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: .35rem; }
+.no-list p { margin: .3rem 0 .1rem; }
+.no-n { display: inline-block; min-width: 1.6rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.no-step { color: var(--muted); }
