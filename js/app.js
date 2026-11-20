@@ -1510,7 +1510,7 @@
       <label class="field">Notiz ${helpBtn("s:note")}: <input id="m-note" value="${esc(s.note || "")}" placeholder="z. B. Meister des Butlers"></label>
       <div class="row wrap">
         <button class="btn" data-m="info">ℹ️ Rolle</button>
-        ${isBot(s) ? `<button class="btn" data-m="phone">🤖 Handy ansehen</button>` : ""}
+        ${isBot(s) || s.pid ? `<button class="btn" data-m="phone">${isBot(s) ? "🤖" : "📱"} Handy ansehen</button>` : ""}
         ${s.grim ? `<button class="btn" data-m="spyhide">🙈 Grimoire vom Handy entfernen</button>` : ""}
         <button class="btn" data-m="change">🔁 Rolle ändern</button>
         ${cer ? `<span class="hint-pair"><button class="btn" data-m="mad">😵 Wahnsinn</button>${helpBtn("s:mad")}</span>` : ""}
@@ -1944,7 +1944,8 @@
   function showBotPhone(i) {
     const s = game.seats[i];
     const info = seatInfo(s, i);
-    openModal(`<p class="small center">🤖 So sieht das Handy von ${esc(s.name)} aus</p>
+    const live = !isBot(s) && s.pid;
+    openModal(`<p class="small center">${isBot(s) ? "🤖" : "📱"} So sieht das Handy von ${esc(s.name)} aus${live ? (lobby[s.pid] ? " <span class='okmsg'>· 🟢 verbunden</span>" : " <span class='warnmsg'>· ⚪ gerade nicht verbunden</span>") : ""}</p>
       <div class="botphone">${cardHtml(info)}</div>
       <div class="row center"><button class="btn primary" id="botclose">Zurück</button></div>`, "full");
     $("#botclose").addEventListener("click", () => { closeModal(); seatModal(i); });
