@@ -2722,6 +2722,7 @@
     hist(text, "night");
     if (!r.skip && r.role && r.picks.length && ["cerenovus", "pithag"].includes(r.step)) applyRolePick(x, r);
     if (!r.skip && ["sailor", "innkeeper", "courtier"].includes(r.step)) applyDrunkMaker(i, r);
+    if (!r.skip && r.step === "snakecharmer" && r.picks.length) snakeCharm(i, r.picks[0]);
     if (!r.skip && KILL_STEPS.includes(r.step)) setTimeout(wakeDeathTriggered, 50);
     if (!r.skip && r.step === "philosopher" && r.role && x.role === "philosopher") setPhilo(i, r.role);
     else { save(); refreshHostView(); }
@@ -2744,6 +2745,23 @@
     setDrunk(i, "Schläger");
     game.ignoreEnd = null;
     toast(`🥊 Schläger! ${x.name} ist betrunken, ${g.name} ist jetzt ${newAlign === "e" ? "BÖSE" : "gut"}${oldGood === (newAlign === "g") ? " (bleibt gleich)" : ""}${reachable(g) && oldGood !== (newAlign === "g") ? " – sieht es auf dem Handy" : ""}`);
+  }
+
+  // Schlangenbeschwörer: Trifft er den Dämon, tauschen beide Rolle und Gesinnung.
+  // Der alte Dämon ist danach dauerhaft vergiftet – darum kann er nicht zurücktauschen.
+  function snakeCharm(i, k) {
+    const x = game.seats[i], t = game.seats[k];
+    if (!t || !t.alive || ROLE_BY_ID[t.role].t !== "demon") return;
+    if (impaired(x)) { hist(`🐍 ${x.name} (Schlangenbeschwörer) trifft den Dämon, ist aber vergiftet/betrunken – kein Tausch`, "night"); toast("🐍 Treffer, aber der Schlangenbeschwörer ist vergiftet/betrunken – kein Tausch"); return; }
+    const demonRole = t.role, myRole = x.role, a1 = x.align, a2 = t.align;
+    x.role = demonRole; t.role = myRole;
+    if (a2) x.align = a2; else delete x.align;
+    if (a1) t.align = a1; else delete t.align;
+    t.marks = [...new Set([...(t.marks || []), "poison"])];
+    t.keep = [...new Set([...(t.keep || []), "poison"])];
+    hist(`🐍 ${x.name} (Schlangenbeschwörer) hat den Dämon gefunden! ${x.name} ist jetzt ${roleName(demonRole)} (böse), ${t.name} ist jetzt ${roleName(myRole)} (gut) und dauerhaft vergiftet`, "night");
+    game.ignoreEnd = null;
+    toast(`🐍 Tausch! ${x.name} ist jetzt ${roleName(demonRole)}, ${t.name} ist vergifteter Schlangenbeschwörer${reachable(x) || reachable(t) ? " – beide sehen es auf dem Handy" : " – zeig es beiden"}`);
   }
 
   // Seemann / Wirt / Höfling machen jemanden betrunken
