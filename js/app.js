@@ -1469,7 +1469,9 @@
       const role = ROLE_BY_ID[s.role];
       let msg = `${s.name} hinrichten?`;
       if (s.role === "saint") msg += "\n\n⚠️ Das ist der HEILIGE – wird er hingerichtet, gewinnt Böse!";
-      const rule = s.alive ? deathRule(s) : null;
+      const da = game.seats.find(y => y.role === "devilsadvocate" && y.alive);
+      const rule = !s.alive ? null : (s.marks || []).includes("survives") && da && !impaired(da)
+        ? { dies: false, why: "⚖️ Advokat des Teufels – überlebt diese Hinrichtung" } : deathRule(s);
       if (rule) msg += `\n\n${rule.why}.`;
       else if (["pacifist", "tealady", "devilsadvocate"].some(id => game.seats.some(x => x.role === id)) || (s.marks || []).includes("survives"))
         msg += "\n\nHinweis: Eine Rolle im Spiel kann die Hinrichtung verhindern (z. B. Pazifist, Teedame, Advocatus Diaboli). Prüfe das, bevor du bestätigst.";
@@ -2352,6 +2354,7 @@
   // Tod anwenden (inkl. Narr verbraucht / Zombuul scheintot)
   function applyDeath(x, rule) {
     if (rule && rule.fool) { x.used = true; hist(`🃏 ${x.name} (Narr) überlebt seinen ersten Tod`); return; }
+    if (rule && rule.dies === false) { hist(`🛡️ ${x.name} überlebt (${rule.why})`); return; }
     if (rule && rule.zombuul) { x.zfake = true; x.alive = false; histDeath(x); hist(`🧟 ${x.name} (Zombuul) wirkt tot, lebt aber weiter`); return; }
     if (!x.alive && x.zfake) { x.zfake = false; hist(`🧟 ${x.name} (Zombuul) stirbt jetzt wirklich`); swCheck(x); return; }
     x.alive = false; histDeath(x);
@@ -2674,11 +2677,20 @@
     const x = game.seats[i];
     const def = ACTIONS[r.step] || {};
     // Marker automatisch setzen
-    if (!r.skip && def.mark) r.picks.forEach(k => {
+    // Vergiftete/betrunkene Spieler wählen trotzdem (sie wissen es nicht) – ihre Fähigkeit wirkt aber nicht.
+    // Ausnahmen: Ziel des Dämons (wird am Morgen geprüft) und Meister des Butlers (nur eine Wahl, keine Wirkung).
+    const noEffect = !r.skip && def.mark && impaired(x) && !["target", "master"].includes(def.mark);
+    if (noEffect) {
+      hist(`⚠️ ${x.name} (${roleName(r.step)}) ist vergiftet/betrunken – die Wahl (${r.picks.map(k => game.seats[k].name).join(", ")}) wirkt nicht`, "night");
+      toast(`⚠️ ${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung`);
+    }
+    if (!r.skip && def.mark && !noEffect) r.picks.forEach(k => {
       const t = game.seats[k], had = (t.marks || []).includes(def.mark);
       t.marks = [...new Set([...(t.marks || []), def.mark])];
       if (def.keep) t.keep = [...new Set([...(t.keep || []), def.mark])];
-      if (!had) markHist(t, def.mark, true, roleName(r.step) + (impaired(x) ? " – ist selbst vergiftet/betrunken, wirkt also nicht" : ""));
+      if (!had) markHist(t, def.mark, true, roleName(r.step));
+      // Hat das Opfer heute Nacht schon gewählt (z. B. Mönch antwortet vor dem Giftmischer)? Dann wirkt das nachträglich nicht.
+      if (["poison", "drunk"].includes(def.mark)) undoPoisonedActs(k);
     });
     if (!r.skip && r.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [r.step]: r.role });
     // Einmal-Fähigkeit benutzt -> ab der nächsten Nacht grau
@@ -2694,6 +2706,17 @@
     if (!r.skip && r.step === "philosopher" && r.role && x.role === "philosopher") setPhilo(i, r.role);
     else { save(); refreshHostView(); }
     notice(text);
+  }
+
+  function undoPoisonedActs(k) {
+    const t = game.seats[k];
+    (game.acts || []).filter(a => a.night === game.nightNo && a.i === k && !a.skip && !a.undone).forEach(a => {
+      const d = ACTIONS[a.step] || {};
+      if (!d.mark || ["target", "master"].includes(d.mark)) return;
+      a.picks.forEach(j => { const y = game.seats[j]; y.marks = (y.marks || []).filter(m => m !== d.mark); });
+      a.undone = true;
+      hist(`⚠️ ${t.name} (${roleName(a.step)}) ist jetzt vergiftet/betrunken – die Wahl von vorhin (${a.picks.map(j => game.seats[j].name).join(", ")}) wirkt nicht`, "night");
+    });
   }
 
   // Cerenovus (Wahnsinn) und Grubenhexe (Rollenwechsel) direkt übernehmen – nicht, wenn sie vergiftet/betrunken sind.
