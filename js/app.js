@@ -1221,6 +1221,7 @@
         toast(t.alive ? `🏹 Treffer – aber ${t.name} überlebt (${roleName(t.role)})` : swMsg || `🏹 Treffer! ${t.name} war der Dämon und stirbt`);
       } else {
         hist(`🏹 ${x.name} schießt auf ${t.name} – nichts passiert${!real ? (x.role === "slayer" ? " (vergiftet/betrunken)" : " (kein echter Dämonenjäger)") : ""}`, "day");
+        if (!real && x.role === "slayer" && ROLE_BY_ID[t.role].t === "demon") abn(x, "Dämonenjäger trifft den Dämon, ist aber vergiftet/betrunken");
         toast(`🏹 Nichts passiert${!real && x.role !== "slayer" ? ` – ${x.name} ist kein echter Dämonenjäger` : !real ? " – Dämonenjäger ist vergiftet/betrunken" : ""}`);
       }
       save(); renderSL();
@@ -1230,7 +1231,7 @@
   // Heiliger: Wird er (gesund) hingerichtet, verliert Gut.
   function saintCheck(x) {
     if (!x || x.role !== "saint" || x.alive) return;
-    if (impaired(x)) { hist(`😇 ${x.name} (Heiliger) wurde hingerichtet, war aber vergiftet/betrunken – nichts passiert`, "day"); return; }
+    if (impaired(x)) { hist(`😇 ${x.name} (Heiliger) wurde hingerichtet, war aber vergiftet/betrunken – nichts passiert`, "day"); abn(x, "Heiliger hingerichtet, aber vergiftet – keine Folgen"); return; }
     game.saintLoss = x.name; game.ignoreEnd = null; game.endPopped = null;
   }
 
@@ -1240,7 +1241,7 @@
     const v = game.seats[on], n = game.seats[by];
     if (!v || v.role !== "virgin" || v.used || !n) return null;
     v.used = true;
-    if (impaired(v)) { hist(`👰 ${v.name} (Jungfrau) wurde nominiert – sie ist vergiftet/betrunken, nichts passiert`, "day"); return { msg: "👰 Jungfrau vergiftet/betrunken – nichts passiert (Fähigkeit trotzdem verbraucht)" }; }
+    if (impaired(v)) { hist(`👰 ${v.name} (Jungfrau) wurde nominiert – sie ist vergiftet/betrunken, nichts passiert`, "day"); if (ROLE_BY_ID[n.role].t === "townsfolk") abn(v, "Jungfrau vergiftet – Nominierung durch Dorfbewohner ohne Folgen"); return { msg: "👰 Jungfrau vergiftet/betrunken – nichts passiert (Fähigkeit trotzdem verbraucht)" }; }
     let towns = ROLE_BY_ID[n.role].t === "townsfolk";
     if (n.role === "spy" && !impaired(n)) towns = confirm(`${n.name} ist der Spion und darf als Dorfbewohner gelten.\n\nSoll die Jungfrau auslösen (Spion wird hingerichtet)?`);
     if (!towns) { hist(`👰 ${v.name} (Jungfrau) wurde zum ersten Mal nominiert – von keinem Dorfbewohner, nichts passiert`, "day"); return { msg: `👰 ${n.name} ist kein Dorfbewohner – nichts passiert (Jungfrau verbraucht)` }; }
@@ -1263,7 +1264,7 @@
     if (!x || !x.alive || !(x.marks || []).includes("cursed")) return null;
     const witch = game.seats.find(y => y.role === "witch" && y.alive);
     if (!witch) return null;
-    if (impaired(witch)) { hist(`🧹 ${x.name} war verflucht, aber die Hexe ist vergiftet/betrunken – nichts passiert`, "day"); return `🧹 Fluch wirkt nicht – die Hexe ist vergiftet/betrunken`; }
+    if (impaired(witch)) { hist(`🧹 ${x.name} war verflucht, aber die Hexe ist vergiftet/betrunken – nichts passiert`, "day"); abn(witch, "Hexenfluch ohne Wirkung (vergiftet/betrunken)"); return `🧹 Fluch wirkt nicht – die Hexe ist vergiftet/betrunken`; }
     if (game.seats.filter(y => y.alive && !y.trav).length <= 3) return null;
     hist(`🧹 ${x.name} war verflucht und hat nominiert – stirbt sofort`, "day");
     applyDeath(x, deathRule(x));
@@ -1856,6 +1857,11 @@
     if (!h || (!on && !h[2])) return;
     hist(`${h[0]} ${x.name} ${on ? h[1] : h[2]}${on && by ? ` (${by})` : ""}`);
   }
+  // Für den Mathematiker: Fähigkeiten, die wegen einer anderen Rolle nicht normal gewirkt haben
+  function abn(x, text) {
+    if (!x) return;
+    game.abnLog = [...(game.abnLog || []), { at: Date.now(), name: x.name, text }].slice(-60);
+  }
   function histDeath(x) {
     const r = ROLE_BY_ID[x.role];
     hist(x.alive ? `✨ ${x.name} lebt wieder` : `💀 ${x.name} ist gestorben (${r.ic} ${r.de})`);
@@ -2314,6 +2320,7 @@
       const done = lose => {
         game.klutzPending = null;
         hist(`🍌 ${x.name} (Tollpatsch) wählt ${t.name} – ${lose ? "böse, Gut verliert" : game.klutzWeak ? "ohne Wirkung (vergiftet/betrunken)" : "gut, das Spiel geht weiter"}`);
+        if (game.klutzWeak && !seatGood(t)) abn(x, "Tollpatsch wählt Böse, ist aber vergiftet – keine Wirkung");
         if (lose) { game.klutzLoss = { by: x.name, pick: t.name }; game.ignoreEnd = null; game.endPopped = null; }
         save(); closeModal(); renderSL();
       };
@@ -2471,6 +2478,7 @@
 
   function startDay() {
     const n = game.nightNo;
+    game.lastDawnAt = Date.now();
     const dead = [], back = [];
     (game.history || []).filter(h => h.n === n && h.ph === "night").forEach(h => {
       if (h.dead && !dead.includes(h.dead)) dead.push(h.dead);
@@ -2700,6 +2708,7 @@
     const noEffect = !r.skip && def.mark && impaired(x) && !["target", "master"].includes(def.mark);
     if (noEffect) {
       hist(`⚠️ ${x.name} (${roleName(r.step)}) ist vergiftet/betrunken – die Wahl (${r.picks.map(k => game.seats[k].name).join(", ")}) wirkt nicht`, "night");
+      abn(x, `${roleName(r.step)}: Wahl ohne Wirkung`);
       toast(`⚠️ ${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung`);
     }
     if (!r.skip && def.mark && !noEffect) r.picks.forEach(k => {
@@ -2743,6 +2752,7 @@
     g.align = newAlign;
     hist(`🥊 ${x.name} (${roleName(r.step)}) hat den Schläger ${g.name} gewählt – ${x.name} ist betrunken, ${g.name} ist jetzt ${newAlign === "e" ? "böse" : "gut"}`, "night");
     setDrunk(i, "Schläger");
+    abn(x, `${roleName(r.step)} hat den Schläger gewählt – betrunken`);
     game.ignoreEnd = null;
     toast(`🥊 Schläger! ${x.name} ist betrunken, ${g.name} ist jetzt ${newAlign === "e" ? "BÖSE" : "gut"}${oldGood === (newAlign === "g") ? " (bleibt gleich)" : ""}${reachable(g) && oldGood !== (newAlign === "g") ? " – sieht es auf dem Handy" : ""}`);
   }
@@ -2752,7 +2762,7 @@
   function snakeCharm(i, k) {
     const x = game.seats[i], t = game.seats[k];
     if (!t || !t.alive || ROLE_BY_ID[t.role].t !== "demon") return;
-    if (impaired(x)) { hist(`🐍 ${x.name} (Schlangenbeschwörer) trifft den Dämon, ist aber vergiftet/betrunken – kein Tausch`, "night"); toast("🐍 Treffer, aber der Schlangenbeschwörer ist vergiftet/betrunken – kein Tausch"); return; }
+    if (impaired(x)) { hist(`🐍 ${x.name} (Schlangenbeschwörer) trifft den Dämon, ist aber vergiftet/betrunken – kein Tausch`, "night"); abn(x, "Schlangenbeschwörer trifft den Dämon, aber kein Tausch"); toast("🐍 Treffer, aber der Schlangenbeschwörer ist vergiftet/betrunken – kein Tausch"); return; }
     const demonRole = t.role, myRole = x.role, a1 = x.align, a2 = t.align;
     x.role = demonRole; t.role = myRole;
     if (a2) x.align = a2; else delete x.align;
@@ -2785,7 +2795,7 @@
   function applyDrunkMaker(i, r) {
     const x = game.seats[i];
     if (impaired(x)) {
-      if (r.step !== "innkeeper") { hist(`⚠️ ${x.name} (${roleName(r.step)}) ist vergiftet/betrunken – niemand wird betrunken`, "night"); toast(`⚠️ ${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung`); }
+      if (r.step !== "innkeeper") { hist(`⚠️ ${x.name} (${roleName(r.step)}) ist vergiftet/betrunken – niemand wird betrunken`, "night"); abn(x, `${roleName(r.step)}: niemand wird betrunken`); toast(`⚠️ ${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung`); }
       return;
     }
     if (r.step === "courtier") {
@@ -2827,6 +2837,7 @@
       a.picks.forEach(j => { const y = game.seats[j]; y.marks = (y.marks || []).filter(m => m !== d.mark); });
       a.undone = true;
       hist(`⚠️ ${t.name} (${roleName(a.step)}) ist jetzt vergiftet/betrunken – die Wahl von vorhin (${a.picks.map(j => game.seats[j].name).join(", ")}) wirkt nicht`, "night");
+      abn(t, `${roleName(a.step)}: Wahl ohne Wirkung`);
     });
   }
 
@@ -2836,6 +2847,7 @@
     if (!t) return;
     if (impaired(x)) {
       hist(`⚠️ ${x.name} (${roleName(r.step)}) ist vergiftet/betrunken – die Wahl hat keine Wirkung`, "night");
+      abn(x, `${roleName(r.step)}: Wahl ohne Wirkung`);
       toast(`${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung (du kannst trotzdem so tun als ob)`);
       return;
     }
@@ -3149,6 +3161,19 @@
         const k = rnd(S.map((x, j) => j).filter(j => S[j].alive && j !== me));
         return k === null ? null : { r: [S[k].role], text: `Lebende Rolle: ${roleName(S[k].role)} (${name(k)})` };
       }
+      case "mathematician": {
+        const since = game.lastDawnAt || 0, seen = new Map();
+        (game.abnLog || []).filter(e => e.at > since).forEach(e => { if (!seen.has(e.name)) seen.set(e.name, e.text); });
+        // Angriffe dieser Nacht, die nicht gewirkt haben (Soldat, Schutz, vergifteter Dämon …)
+        if (game.phase !== "day") nightKills().filter(x => !x.dies).forEach(x => {
+          const att = (game.acts || []).find(a => a.night === game.nightNo && a.picks && a.picks.includes(x.k) && KILL_STEPS.includes(a.step) && !a.undone);
+          const who = att ? S[att.i] : S.find(y => (y.alive || y.zfake) && ROLE_BY_ID[y.role].t === "demon");
+          if (who && !seen.has(who.name)) seen.set(who.name, `Angriff auf ${S[x.k].name} wirkte nicht: ${x.why}`);
+        });
+        S.forEach(y => { if ((y.marks || []).includes("abnormal") && !seen.has(y.name)) seen.set(y.name, "❗-Marker gesetzt"); });
+        const list = [...seen.entries()];
+        return { t: String(list.length), text: `${list.length}${list.length ? " – " + list.map(([n, w]) => `${n}: ${w}`).join("; ") : " – seit der letzten Dämmerung hat alles normal funktioniert"}. Prüfe, ob etwas fehlt (z. B. Spion/Einsiedler falsch registriert).` };
+      }
       case "towncrier": {
         const day = (game.days || {})[game.nightNo - 1];
         if (!day || !day.noms.length) return { t: "Nein", text: "Nein – heute wurden (laut Abstimmungs-Helfer) keine Nominierungen eingetragen." };
@@ -3312,6 +3337,12 @@
     };
     const store_ = ({ i, r, t }) => {
       const s = game.seats[i];
+      // Weicht die gesendete Info von der wahren ab, hat die Fähigkeit nicht normal funktioniert
+      try {
+        const truth = suggestInfo(stepId, i, picked.slice());
+        const sent = ($("#infotext") ? $("#infotext").value : "").trim();
+        if (truth && truth.t && !truth.p && sent && sent.toLowerCase() !== String(truth.t).toLowerCase()) abn(s, `${roleName(stepId)} bekam eine falsche Info`);
+      } catch (e) { /* kein Vorschlag möglich */ }
       s.infos = [...(s.infos || []), { n: game.nightNo, r, t }].slice(-10);
       hist(`📨 Info an ${s.name} (${roleName(stepId)}): ${[r.map(roleName).join(" / "), t].filter(Boolean).join(" – ")}`);
       const d = game.done[game.nightNo] || [];
