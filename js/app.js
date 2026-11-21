@@ -546,7 +546,7 @@
     game.nightNo = 1;
     game.days = {};
     game.vote = null;
-    game.winner = null; game.klutzLoss = null; game.klutzPending = null; game.saintLoss = null; game.exile = null;
+    game.winner = null; game.klutzLoss = null; game.klutzPending = null; game.saintLoss = null; game.juggle = null; game.exile = null;
     game.ignoreEnd = null;
     game.evilSent = {};
     game.phase = "night";
@@ -1195,6 +1195,40 @@
     return tie ? { tie: true, count: best.count } : best;
   }
 
+  // ---------- Jongleur: am ersten Tag bis zu 5 Rollen raten, nachts die Anzahl der Treffer ----------
+  function jugglerDialog() {
+    const S = game.seats;
+    const ji = S.findIndex(y => y.alive && actingRole(y) === "juggler");
+    if (ji < 0) return;
+    const x = S[ji];
+    const script = (scriptInfo() || { ids: ROLES.filter(r => r.ed === game.edition).map(r => r.id) }).ids.filter(id => ROLE_BY_ID[id] && !["fabled"].includes(ROLE_BY_ID[id].t));
+    const cur = (game.juggle && game.juggle.guesses) || [];
+    const others = S.map((y, i) => i).filter(i => i !== ji);
+    const row = (k, g) => `<div class="row wrap jugrow">
+      <select data-jp="${k}"><option value="">– Spieler –</option>${others.map(i => `<option value="${i}" ${g && g.k === i ? "selected" : ""}>${esc(S[i].name)}</option>`).join("")}</select>
+      <select data-jr="${k}"><option value="">– Rolle –</option>${script.map(id => `<option value="${id}" ${g && g.role === id ? "selected" : ""}>${esc(roleName(id))}</option>`).join("")}</select></div>`;
+    openModal(`<h2>🤹 ${esc(x.name)} jongliert</h2>
+      <p class="small">Er sagt laut bis zu 5 Vermutungen, z. B. „Anna ist Uhrmacher“. Trag sie hier ein – heute Nacht schlägt die App die Anzahl der Treffer vor.</p>
+      ${[0, 1, 2, 3, 4].map(k => row(k, cur[k])).join("")}
+      ${isBot(x) ? `<div class="row wrap"><button class="btn" id="jugbot">🤖 Bot raten lassen</button></div>` : ""}
+      <div class="row end"><button class="btn" id="jugcancel">Abbrechen</button><button class="btn primary" id="jugsave">Speichern</button></div>`);
+    $("#jugcancel").addEventListener("click", closeModal);
+    $("#jugbot") && $("#jugbot").addEventListener("click", () => {
+      shuffle(others).slice(0, 3 + randInt(3)).forEach((i, k) => {
+        const role = Math.random() < 0.45 ? S[i].role : script[randInt(script.length)];
+        $(`[data-jp="${k}"]`).value = String(i); $(`[data-jr="${k}"]`).value = role;
+      });
+    });
+    $("#jugsave").addEventListener("click", () => {
+      const guesses = [0, 1, 2, 3, 4].map(k => ({ k: $(`[data-jp="${k}"]`).value, role: $(`[data-jr="${k}"]`).value }))
+        .filter(g => g.k !== "" && g.role).map(g => ({ k: +g.k, role: g.role }));
+      game.juggle = { by: ji, day: game.nightNo, guesses };
+      hist(`🤹 ${x.name} (Jongleur) rät: ${guesses.map(g => `${S[g.k].name} = ${roleName(g.role)}`).join(", ") || "nichts"}`, "day");
+      save(); closeModal(); renderSL();
+      toast(`🤹 ${guesses.length} Vermutung(en) gespeichert`);
+    });
+  }
+
   // ---------- Gelehrter: zwei Aussagen, eine wahr, eine falsch ----------
   // Jede Vorlage liefert für wahr=true eine wahre, für wahr=false eine falsche Aussage (oder null, wenn nicht möglich).
   function savantFacts(me) {
@@ -1519,9 +1553,11 @@
     else if (b) blockLine = `Auf dem Block: <b>${esc(ps[b.on].name)}</b> mit ${b.count} Stimmen.`;
 
     const slayers = ps.map((x, i) => i).filter(i => ps[i].alive && (actingRole(ps[i]) === "slayer") && !(ps[i].role === "philosopher" ? ps[i].gainedUsed : ps[i].used));
+    const jug = ps.map((x, i) => i).filter(i => ps[i].alive && actingRole(ps[i]) === "juggler");
+    const jugBtn = jug.length && !v && game.nightNo === 1 ? `<div class="row wrap"><button class="btn" id="juggo">🤹 Jongleur rät Rollen${game.juggle ? ` <small>(${game.juggle.guesses.length} Tipps ✔)</small>` : ""}</button></div>` : "";
     const sav = ps.map((x, i) => i).filter(i => ps[i].alive && actingRole(ps[i]) === "savant");
     const savBtn = sav.length && !v ? `<div class="row wrap"><button class="btn" id="savantgo">🎓 Gelehrter besucht dich${day.savant ? " <small>(heute schon ✔)</small>" : ""}</button></div>` : "";
-    const slayerBtn = savBtn + (slayers.length && !v ? `<div class="row wrap"><button class="btn" id="slayshot">🏹 Dämonenjäger schießt …</button></div>` : "");
+    const slayerBtn = jugBtn + savBtn + (slayers.length && !v ? `<div class="row wrap"><button class="btn" id="slayshot">🏹 Dämonenjäger schießt …</button></div>` : "");
     const execBtns = day.exec || v ? slayerBtn : slayerBtn + `<div class="row wrap">
         ${b && !b.tie ? `<button class="btn danger" id="execute">⚔️ ${esc(ps[b.on].name)} hinrichten</button>` : ""}
         <button class="btn" id="noexec">Niemand wird hingerichtet</button>
@@ -1566,6 +1602,7 @@
     $("#botnom") && $("#botnom").addEventListener("click", botNominate);
     $("#slayshot") && $("#slayshot").addEventListener("click", slayerDialog);
     $("#savantgo") && $("#savantgo").addEventListener("click", savantDialog);
+    $("#juggo") && $("#juggo").addEventListener("click", jugglerDialog);
     bindExile(day);
     $("#botvote") && $("#botvote").addEventListener("click", () => { $("#botvote").disabled = true; botVote(); });
     $("#savevote") && $("#savevote").addEventListener("click", () => {
@@ -3274,6 +3311,13 @@
         if (dead < alive) return { text: "Noch nicht: Die Toten sind weniger als die Lebenden – keine Info." };
         const k = rnd(S.map((x, j) => j).filter(j => S[j].alive && j !== me));
         return k === null ? null : { r: [S[k].role], text: `Lebende Rolle: ${roleName(S[k].role)} (${name(k)})` };
+      }
+      case "juggler": {
+        const j = game.juggle;
+        if (!j || !j.guesses.length) return { t: "0", text: "Keine Vermutungen eingetragen (Knopf „🤹 Jongleur rät Rollen“ am ersten Tag) – zeige 0." };
+        const res = j.guesses.map(g => { const y = S[g.k]; const ok = y && y.role === g.role; const mis = y && !ok && ((y.role === "spy" && ROLE_BY_ID[g.role].t !== "minion") || (y.role === "recluse" && ["minion", "demon"].includes(ROLE_BY_ID[g.role].t))) && !impaired(y); return { g, ok, mis }; });
+        const c = res.filter(r => r.ok).length;
+        return { t: String(c), text: `${c} richtig – ${res.map(r => `${S[r.g.k].name} = ${roleName(r.g.role)} ${r.ok ? "✅" : r.mis ? "❌ (darf als ✅ zählen: " + roleName(S[r.g.k].role) + " registriert falsch)" : "❌ (" + roleName(S[r.g.k].role) + ")"}`).join("; ")}` };
       }
       case "mathematician": {
         const since = game.lastDawnAt || 0, seen = new Map();

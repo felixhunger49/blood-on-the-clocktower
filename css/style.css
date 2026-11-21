@@ -593,3 +593,4 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .no-list p { margin: .3rem 0 .1rem; }
 .no-n { display: inline-block; min-width: 1.6rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .no-step { color: var(--muted); }
+.jugrow select { flex: 1; min-width: 8rem; }
