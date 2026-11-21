@@ -602,7 +602,10 @@
   }
   function seatCode(seat, i) {
     const align = seat.trav ? (seat.align === "e" ? 2 : 1) : 0;
-    return makeCode(ROLE_BY_ID[seat.swPending ? "scarletwoman" : shownRole(seat.role)].idx, align, i, seat.salt);
+    const idx = ROLE_BY_ID[seat.swPending ? "scarletwoman" : shownRole(seat.role)].idx;
+    // Der 5-stellige Code hat nur Platz für die ersten 128 Rollen – neuere Rollen nur per QR/Link
+    if (idx >= 128) return "nur QR/Link";
+    return makeCode(idx, align, i, seat.salt);
   }
   const seatLink = (seat, i) => baseUrl() + "#k=" + encodeLink(seatInfo(seat, i));
 
@@ -748,7 +751,7 @@
         ${extra}
         ${["townsfolk", "outsider", "minion", "demon"].map(teamBlock).join("")}
         <details class="fabledpick" ${(game.fabled || []).length ? "open" : ""}><summary><h3 class="team-h t-fabled-text">Fabelwesen <span class="small">(optional – Sonderregeln, alle wissen davon)</span></h3></summary>
-          <div class="tiles">${ROLES.filter(r => r.t === "fabled").map(r => `<button class="tile t-fabled ${(game.fabled || []).includes(r.id) ? "on" : ""}" data-fabled="${r.id}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></button>`).join("")}</div>
+          <div class="tiles">${ROLES.filter(r => r.t === "fabled").map(r => `<button class="tile t-fabled ${(game.fabled || []).includes(r.id) ? "on" : ""}" data-fabled="${r.id}"><b>${r.ic} ${esc(r.de)}${r.ed === "loric" ? " <small>(Loric)</small>" : ""}</b><small>${esc(r.a)}</small></button>`).join("")}</div>
         </details>
         <div class="row end"><button class="btn primary" id="next2" ${total === game.count ? "" : "disabled"}>Weiter: Verteilen →</button></div>
       </section>`;
