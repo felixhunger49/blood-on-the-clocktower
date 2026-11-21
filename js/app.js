@@ -95,7 +95,7 @@
   const baseUrl = () => location.href.split("#")[0];
 
   // ---------- Hilfen zu Rollen ----------
-  const isGood = (role, align) => role.t === "traveller" ? align !== "e" : TEAMS[role.t].good;
+  const isGood = (role, align) => role.t === "traveller" || align ? align !== "e" : TEAMS[role.t].good;
   const teamClass = (role, align) => role.t === "traveller" ? (align === "e" ? "t-evil-trav" : "t-traveller") : "t-" + role.t;
   // Gehört eine Rolle zur Edition? Bei „Eigene Liste“ entscheidet die Rollenliste des Spielleiters.
   const scIds = sc => (sc || []).map(x => typeof x === "number" ? (ROLES[x] || {}).id : x).filter(Boolean);
@@ -587,7 +587,7 @@
   function seatInfo(seat, i) {
     const shown = seat.swPending ? "scarletwoman" : shownRole(seat.role);
     const info = { r: shown, n: seat.name, s: i };
-    if (seat.trav) info.a = seat.align;
+    if (seat.trav || seat.align) info.a = seat.align;
     if (game.edition === "custom" && (game.script || []).length) info.sc = game.script.map(id => ROLE_BY_ID[id].idx);
     const x = evilInfoFor(seat);
     if (x) info.x = x;
@@ -2172,7 +2172,7 @@
     assassin: { n: 1, optional: true, text: "Willst du jemanden töten, egal wie geschützt? (einmal pro Spiel)" },
     godfather: { n: 1, optional: true, text: "Ist heute ein Außenseiter gestorben? Dann wähle ein Opfer." },
     zombuul: { n: 1, optional: true, mark: "target", text: "Ist heute niemand gestorben? Dann wähle ein Opfer." },
-    pukka: { n: 1, mark: "poison", text: "Wähle einen Spieler, den du vergiftest (er stirbt in der nächsten Nacht)." },
+    pukka: { n: 1, mark: "poison", keep: true, text: "Wähle einen Spieler, den du vergiftest (er stirbt in der nächsten Nacht)." },
     shabaloth: { n: 2, self: true, text: "Wähle zwei Spieler, die sterben." },
     po: { n: 3, min: 0, self: true, text: "Wähle einen Spieler – oder niemanden, um nächste Nacht drei zu töten. (Wenn du letzte Nacht niemanden gewählt hast: bis zu drei.)" },
     lunatic: { n: 1, self: true, text: "Wähle einen Spieler, den du angreifst." },
@@ -2373,6 +2373,9 @@
     (game.acts || []).filter(a => a.night === n && !a.skip && KILL_STEPS.includes(a.step) && !(a.step === "lleech" && n === 1))
       .forEach(a => (a.picks || []).forEach(k => { if (!attacks.has(k)) attacks.set(k, { step: a.step, by: a.i }); }));
     S.forEach((x, k) => { if ((x.marks || []).includes("target") && !attacks.has(k)) attacks.set(k, { step: null, by: null }); });
+    // Pukka: Wer seit einer früheren Nacht vergiftet ist, stirbt jetzt
+    const pukka = S.findIndex(y => y.role === "pukka" && (y.alive || y.zfake));
+    S.forEach((x, k) => { if (x.pukkaNight && x.pukkaNight < n && x.alive && !attacks.has(k)) attacks.set(k, { step: "pukka", by: pukka >= 0 ? pukka : null }); });
     const out = [];
     attacks.forEach((at, k) => {
       const x = S[k];
@@ -2380,7 +2383,7 @@
       const attacker = at.by !== null ? S[at.by] : S.find(y => (y.alive || y.zfake) && ROLE_BY_ID[y.role].t === "demon");
       const m = x.marks || [];
       const strong = at.step === "assassin";
-      let dies = true, why = `angegriffen${at.step ? ` (${roleName(at.step)})` : ""}`;
+      let dies = true, why = at.step === "pukka" && x.pukkaNight && x.pukkaNight < n ? `stirbt durch die Pukka (vergiftet seit Nacht ${x.pukkaNight}) – danach wieder gesund` : `angegriffen${at.step ? ` (${roleName(at.step)})` : ""}`;
       if (attacker && impaired(attacker)) { dies = false; why = `${attacker.name} ist vergiftet/betrunken – der Angriff wirkt nicht`; }
       else if (!strong && m.includes("protect")) { dies = false; why = "🛡️ geschützt – überlebt"; }
       else if (!strong && x.role === "soldier" && !impaired(x)) { dies = false; why = "🛡️ Soldat – der Dämon kann ihn nicht töten"; }
@@ -2451,6 +2454,14 @@
         const x = game.seats[+c.dataset.kill], rule = deathRule(x);
         if (rule && rule.fool) { if (!c.checked) applyDeath(x, rule); else { x.alive = false; histDeath(x); swCheck(x); } return; }
         if (c.checked && x.alive) applyDeath(x, rule && rule.zombuul ? rule : null);
+      });
+      // Pukka-Opfer sind danach wieder gesund (ob gestorben oder geschützt)
+      kills.filter(x => x.step === "pukka").forEach(x => {
+        const y = game.seats[x.k];
+        if (!y.pukkaNight || y.pukkaNight >= game.nightNo) return;
+        delete y.pukkaNight;
+        y.marks = (y.marks || []).filter(m => m !== "poison"); y.keep = (y.keep || []).filter(m => m !== "poison");
+        hist(`💧 ${y.name} ist nach der Pukka wieder gesund`, "night");
       });
       closeModal();
       const self = kills.find(x => x.self && !game.seats[x.k].alive && ROLE_BY_ID[game.seats[x.k].role].t === "demon");
@@ -2685,6 +2696,7 @@
     // Marker automatisch setzen
     // Vergiftete/betrunkene Spieler wählen trotzdem (sie wissen es nicht) – ihre Fähigkeit wirkt aber nicht.
     // Ausnahmen: Ziel des Dämons (wird am Morgen geprüft) und Meister des Butlers (nur eine Wahl, keine Wirkung).
+    if (!r.skip) goonCheck(i, r);
     const noEffect = !r.skip && def.mark && impaired(x) && !["target", "master"].includes(def.mark);
     if (noEffect) {
       hist(`⚠️ ${x.name} (${roleName(r.step)}) ist vergiftet/betrunken – die Wahl (${r.picks.map(k => game.seats[k].name).join(", ")}) wirkt nicht`, "night");
@@ -2695,6 +2707,7 @@
       t.marks = [...new Set([...(t.marks || []), def.mark])];
       if (def.keep) t.keep = [...new Set([...(t.keep || []), def.mark])];
       if (!had) markHist(t, def.mark, true, roleName(r.step));
+      if (r.step === "pukka") t.pukkaNight = game.nightNo;
       // Hat das Opfer heute Nacht schon gewählt (z. B. Mönch antwortet vor dem Giftmischer)? Dann wirkt das nachträglich nicht.
       if (["poison", "drunk"].includes(def.mark)) undoPoisonedActs(k);
     });
@@ -2713,6 +2726,24 @@
     if (!r.skip && r.step === "philosopher" && r.role && x.role === "philosopher") setPhilo(i, r.role);
     else { save(); refreshHostView(); }
     notice(text);
+  }
+
+  // Schläger: Der erste Spieler, der ihn nachts mit seiner Fähigkeit wählt, ist bis zur Dämmerung betrunken,
+  // und der Schläger nimmt dessen Gesinnung an.
+  function goonCheck(i, r) {
+    const x = game.seats[i];
+    const k = (r.picks || []).find(j => j !== i && game.seats[j] && game.seats[j].role === "goon");
+    if (k === undefined) return;
+    const g = game.seats[k];
+    if (g.goonNight === game.nightNo) return; // heute schon ausgelöst
+    g.goonNight = game.nightNo;
+    if (impaired(g)) { hist(`🥊 ${x.name} wählt ${g.name} (Schläger) – der ist vergiftet/betrunken, nichts passiert`, "night"); return; }
+    const oldGood = seatGood(g), newAlign = seatGood(x) ? "g" : "e";
+    g.align = newAlign;
+    hist(`🥊 ${x.name} (${roleName(r.step)}) hat den Schläger ${g.name} gewählt – ${x.name} ist betrunken, ${g.name} ist jetzt ${newAlign === "e" ? "böse" : "gut"}`, "night");
+    setDrunk(i, "Schläger");
+    game.ignoreEnd = null;
+    toast(`🥊 Schläger! ${x.name} ist betrunken, ${g.name} ist jetzt ${newAlign === "e" ? "BÖSE" : "gut"}${oldGood === (newAlign === "g") ? " (bleibt gleich)" : ""}${reachable(g) && oldGood !== (newAlign === "g") ? " – sieht es auf dem Handy" : ""}`);
   }
 
   // Seemann / Wirt / Höfling machen jemanden betrunken
@@ -4036,6 +4067,7 @@
         else if (info.g && old && !info.wk && JSON.stringify(old.g || null) !== JSON.stringify(info.g)) notice("📖 Das Grimoire ist da – schau auf deine Rollenkarte.");
         else if (info.m && (!old || old.m !== info.m)) notice("😵 Du bist verrückt! Schau auf deine Rollenkarte, welche Rolle du am Tag behaupten musst.");
         else if (old && old.online && old.r !== info.r) notice("Der Spielleiter hat deine Rolle geändert – schau sie dir an.");
+        else if (old && old.online && (old.a || "") !== (info.a || "")) notice(`Deine Gesinnung hat sich geändert – du bist jetzt ${info.a === "e" ? "BÖSE 😈" : "GUT 😇"}.`);
         refreshPlayerView(true);
       }
     }));
