@@ -178,7 +178,7 @@
           ${role.tip ? `<div class="box"><h4>💡 Tipp</h4><p>${esc(role.tip)}</p></div>` : ""}
           ${grim}
           ${(info.i || []).length ? `<div class="box infos"><h4>🌙 Deine Infos vom Spielleiter</h4><ul>${info.i.map(x =>
-            `<li><b>Nacht ${x.n}:</b> ${[(x.r || []).map(id => esc(roleName(id))).join(" / "), x.t ? esc(x.t) : ""].filter(Boolean).join(" – ")}</li>`).join("")}</ul></div>` : ""}
+            `<li>${String(x.t || "").startsWith("☀️") ? "" : `<b>Nacht ${x.n}:</b> `}${[(x.r || []).map(id => esc(roleName(id))).join(" / "), x.t ? esc(x.t) : ""].filter(Boolean).join(" – ")}</li>`).join("")}</ul></div>` : ""}
           ${info.m && ROLE_BY_ID[info.m] ? `<div class="box madness"><h4>😵 Wahnsinn</h4>
             <p>Du musst am Tag <b>überzeugend behaupten, ${esc(ROLE_BY_ID[info.m].de)} zu sein</b>. Tust du es nicht, kann der Spielleiter dich hinrichten lassen.</p>
             <p class="small">${esc(ROLE_BY_ID[info.m].de)}: ${esc(ROLE_BY_ID[info.m].a)}</p></div>` : ""}
@@ -1195,6 +1195,117 @@
     return tie ? { tie: true, count: best.count } : best;
   }
 
+  // ---------- Gelehrter: zwei Aussagen, eine wahr, eine falsch ----------
+  // Jede Vorlage liefert für wahr=true eine wahre, für wahr=false eine falsche Aussage (oder null, wenn nicht möglich).
+  function savantFacts(me) {
+    const S = game.seats, P = S.map((x, i) => i).filter(i => !S[i].trav), n = S.length;
+    const T = i => ROLE_BY_ID[S[i].role].t, nm = i => S[i].name;
+    const others = P.filter(i => i !== me);
+    const rnd1 = a => a.length ? a[randInt(a.length)] : null;
+    const script = (scriptInfo() || { ids: ROLES.filter(r => r.ed === game.edition).map(r => r.id) }).ids.filter(id => ROLE_BY_ID[id] && !["traveller", "fabled"].includes(ROLE_BY_ID[id].t));
+    const inPlay = new Set(P.map(i => S[i].role));
+    const demon = P.find(i => T(i) === "demon");
+    const dist = (a, b) => Math.min((a - b + n) % n, (b - a + n) % n) - 1;
+    const tName = { townsfolk: "Dorfbewohner", outsider: "Außenseiter", minion: "Scherge", demon: "Dämon" };
+    const shift = v => Math.max(0, v + (v === 0 || Math.random() < 0.5 ? 1 : -1));
+    const tpl = [
+      w => { // Rolle im Spiel
+        const pool = w ? [...inPlay].filter(id => id !== "savant" && S[me].role !== id && ROLE_BY_ID[id].t !== "demon") : script.filter(id => !inPlay.has(id) && id !== "savant");
+        const id = rnd1(pool); return id ? `${roleName(id)} ist im Spiel.` : null;
+      },
+      w => { // Anzahl Außenseiter
+        const c = P.filter(i => T(i) === "outsider").length; return `Es sind genau ${w ? c : shift(c)} Außenseiter im Spiel.`;
+      },
+      w => { // zwei Spieler im selben Team
+        const a = rnd1(others), b = rnd1(others.filter(i => i !== a)); if (a === null || b === null) return null;
+        const same = seatGood(S[a]) === seatGood(S[b]);
+        return (same === w) ? `${nm(a)} und ${nm(b)} sind im selben Team.` : `${nm(a)} und ${nm(b)} sind in verschiedenen Teams.`;
+      },
+      w => { // Dämon neben Scherge
+        if (demon === undefined) return null;
+        const nb = [(demon + 1) % n, (demon - 1 + n) % n].filter(k => !S[k].trav);
+        const yes = nb.some(k => T(k) === "minion");
+        return (yes === w) ? "Der Dämon sitzt direkt neben einem Schergen." : "Der Dämon sitzt neben keinem Schergen.";
+      },
+      w => { // Abstand zum Dämon
+        if (demon === undefined || demon === me) return null;
+        const d = dist(me, demon); return `Zwischen dir und dem Dämon sitzen (auf dem kürzeren Weg) ${w ? d : shift(d)} Spieler.`;
+      },
+      w => { // Typ eines Spielers
+        const a = rnd1(others); if (a === null) return null;
+        const real = T(a); if (w && real === "demon") return null; // „X ist der Dämon“ wäre zu stark
+        const fake = rnd1(["townsfolk", "outsider", "minion"].filter(t => t !== real));
+        return `${nm(a)} ist ${real === "demon" && w ? "der Dämon" : "ein " + tName[w ? real : fake]}.`;
+      },
+      w => { // Böse links von dir
+        const k = Math.min(4, P.length - 1), left = []; for (let j = 1; left.length < k && j < n; j++) { const q = (me - j + n) % n; if (!S[q].trav) left.push(q); }
+        const c = left.filter(q => !seatGood(S[q])).length;
+        return `Von den ${k} Spielern links von dir sind genau ${w ? c : shift(c)} böse.`;
+      },
+      w => { // lebende Schergen
+        const c = P.filter(i => S[i].alive && T(i) === "minion").length, v = w ? c : shift(c); return v === 1 ? "Es lebt noch genau 1 Scherge." : `Es leben noch genau ${v} Schergen.`;
+      },
+      w => { // Paar: einer ist böse
+        const a = rnd1(others), b = rnd1(others.filter(i => i !== a)); if (a === null || b === null) return null;
+        const any = !seatGood(S[a]) || !seatGood(S[b]);
+        return (any === w) ? `Mindestens einer von ${nm(a)} und ${nm(b)} ist böse.` : `${nm(a)} und ${nm(b)} sind beide gut.`;
+      },
+    ];
+    return tpl;
+  }
+  function savantPair(me, mode) {
+    const tpl = shuffle(savantFacts(me).map((f, k) => k)), F = savantFacts(me);
+    const truths = mode === "false" ? [false, false] : mode === "true" ? [true, true] : shuffle([true, false]);
+    const out = [];
+    for (const k of tpl) { if (out.length === 2) break; const txt = F[k](truths[out.length]); if (txt) out.push({ t: txt, w: truths[out.length] }); }
+    return out;
+  }
+  function savantDialog() {
+    const S = game.seats;
+    const sav = S.map((x, i) => i).filter(i => S[i].alive && actingRole(S[i]) === "savant");
+    if (!sav.length) return;
+    const i = sav[0], x = S[i];
+    const vortox = S.some(y => y.role === "vortox" && y.alive);
+    const weak = impaired(x);
+    let mode = vortox ? "false" : "mix";
+    let pair = savantPair(i, mode);
+    const draw = () => {
+      openModal(`<h2>🎓 ${esc(x.name)} besucht dich</h2>
+        ${vortox ? `<p class="warnmsg">⚠️ Vortox im Spiel: Beide Aussagen müssen falsch sein.</p>` : weak ? `<p class="warnmsg">⚠️ ${x.role === "drunk" ? "Er ist der Säufer" : "Der Gelehrte ist vergiftet/betrunken"} – du darfst beide falsch (oder beide wahr) sagen.</p>` : `<p class="small">Eine Aussage ist wahr, eine falsch. Die Markierung siehst nur du.</p>`}
+        <div class="chips">
+          <button class="chip ${mode === "mix" ? "on" : ""}" data-svmode="mix" ${vortox ? "disabled" : ""}>1 wahr + 1 falsch</button>
+          <button class="chip ${mode === "false" ? "on" : ""}" data-svmode="false" ${!(weak || vortox) ? "disabled" : ""}>beide falsch</button>
+          <button class="chip ${mode === "true" ? "on" : ""}" data-svmode="true" ${!weak || vortox ? "disabled" : ""}>beide wahr</button>
+        </div>
+        ${pair.map((f, k) => `<label class="field">${f.w ? "✅ wahr" : "❌ falsch"} – Aussage ${k + 1}:<textarea id="sv${k}" rows="2">${esc(f.t)}</textarea></label>`).join("")}
+        <div class="row wrap"><button class="btn" id="svnew">🎲 Andere Aussagen</button></div>
+        <div class="row end wrap"><button class="btn" id="svshow">👁️ Hier zeigen</button>${reachable(x) ? `<button class="btn primary" id="svsend">📱 Aufs Handy</button>` : ""}</div>`);
+      $$("[data-svmode]").forEach(b => b.addEventListener("click", () => { mode = b.dataset.svmode; pair = savantPair(i, mode); draw(); }));
+      $("#svnew").addEventListener("click", () => { pair = savantPair(i, mode); draw(); });
+      const store_ = () => {
+        const a = $("#sv0").value.trim(), b2 = $("#sv1") ? $("#sv1").value.trim() : "";
+        const day = today();
+        day.savant = true;
+        x.infos = [...(x.infos || []), { n: game.nightNo, t: `☀️ Tag ${game.nightNo}: ① ${a} ② ${b2}` }].slice(-10);
+        hist(`🎓 ${x.name} (Gelehrter): ① ${a} [${pair[0].w ? "wahr" : "falsch"}] ② ${b2} [${pair[1] && pair[1].w ? "wahr" : "falsch"}]`, "day");
+        const truthMix = pair.length === 2 && pair[0].w !== pair[1].w;
+        if (!truthMix && !weak && !vortox) abn(x, "Gelehrter bekam keine Mischung aus wahr und falsch");
+        save();
+        return [a, b2];
+      };
+      $("#svsend") && $("#svsend").addEventListener("click", () => { store_(); closeModal(); renderSL(); toast(`🎓 Aussagen an ${x.name} gesendet`); });
+      $("#svshow").addEventListener("click", () => {
+        const [a, b2] = store_();
+        openModal(`<div class="nightshow pickshow"><p class="ns-label">${esc(x.name)} · 🎓 Gelehrter</p>
+          <h2>Eine Aussage ist wahr, eine ist falsch:</h2>
+          <p class="ns-text">① ${esc(a)}</p><p class="ns-text">② ${esc(b2)}</p></div>
+          <div class="row center"><button class="btn big" id="svdone">✓ Fertig</button></div>`, "full night");
+        $("#svdone").addEventListener("click", () => { closeModal(); renderSL(); });
+      });
+    };
+    draw();
+  }
+
   // Dämonenjäger: einmal pro Spiel öffentlich auf einen Spieler schießen – ist es der Dämon, stirbt er.
   function slayerDialog() {
     const S = game.seats;
@@ -1408,7 +1519,9 @@
     else if (b) blockLine = `Auf dem Block: <b>${esc(ps[b.on].name)}</b> mit ${b.count} Stimmen.`;
 
     const slayers = ps.map((x, i) => i).filter(i => ps[i].alive && (actingRole(ps[i]) === "slayer") && !(ps[i].role === "philosopher" ? ps[i].gainedUsed : ps[i].used));
-    const slayerBtn = slayers.length && !v ? `<div class="row wrap"><button class="btn" id="slayshot">🏹 Dämonenjäger schießt …</button></div>` : "";
+    const sav = ps.map((x, i) => i).filter(i => ps[i].alive && actingRole(ps[i]) === "savant");
+    const savBtn = sav.length && !v ? `<div class="row wrap"><button class="btn" id="savantgo">🎓 Gelehrter besucht dich${day.savant ? " <small>(heute schon ✔)</small>" : ""}</button></div>` : "";
+    const slayerBtn = savBtn + (slayers.length && !v ? `<div class="row wrap"><button class="btn" id="slayshot">🏹 Dämonenjäger schießt …</button></div>` : "");
     const execBtns = day.exec || v ? slayerBtn : slayerBtn + `<div class="row wrap">
         ${b && !b.tie ? `<button class="btn danger" id="execute">⚔️ ${esc(ps[b.on].name)} hinrichten</button>` : ""}
         <button class="btn" id="noexec">Niemand wird hingerichtet</button>
@@ -1452,6 +1565,7 @@
     $("#cancelvote") && $("#cancelvote").addEventListener("click", () => { botVoteRun++; game.vote = null; save(); renderSL(); });
     $("#botnom") && $("#botnom").addEventListener("click", botNominate);
     $("#slayshot") && $("#slayshot").addEventListener("click", slayerDialog);
+    $("#savantgo") && $("#savantgo").addEventListener("click", savantDialog);
     bindExile(day);
     $("#botvote") && $("#botvote").addEventListener("click", () => { $("#botvote").disabled = true; botVote(); });
     $("#savevote") && $("#savevote").addEventListener("click", () => {
