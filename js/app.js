@@ -948,6 +948,10 @@
           <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
             <div class="ns-head">${s.inactive ? `<span class="dead-mark">${s.mark}</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${s.inactive ? s.why : esc(s.text)}</p>
+            ${["sailor", "innkeeper"].includes(s.id) && game.drunkPick && game.drunkPick.night === game.nightNo && game.drunkPick.step === s.id ? (() => {
+              const d = game.drunkPick, other = d.opts.find(k => k !== d.on);
+              return `<div class="actrow">🍺 Betrunken ist: <b>${esc(game.seats[d.on].name)}</b>${other !== undefined ? ` <button class="btn sm" data-swapdrunk="1">⇄ Stattdessen ${esc(game.seats[other].name)}</button>` : ""}</div>`;
+            })() : ""}
             ${s.id === "spy" && !s.inactive && (game.online || game.test) ? `<button class="btn sm primary" data-spygrim="1">📖 Grimoire aufs Handy${tableOn() ? " (wecken)" : ""}</button>` : ""}
             ${s.id === "spy" && game.seats.some(x => x.grim) ? `<button class="btn sm" data-spyhide="1">🙈 Grimoire vom Handy entfernen</button>` : ""}
             ${s.id === "scarletwoman" && !s.inactive ? game.seats.map((x, i) => x.swPending ? `<button class="btn sm primary" data-swshow="${i}">👑 ${esc(x.name)} zeigen: Du bist ${esc(roleName(x.role))}${game.online || game.test ? " (aufs Handy)" : ""}</button>` : "").join("") : ""}
@@ -1107,6 +1111,7 @@
       save(); renderSL();
     }));
     $("#daystart") && $("#daystart").addEventListener("click", dawnDialog);
+    $$("[data-swapdrunk]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); swapDrunk(); }));
     $$("[data-spygrim]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); spyGrimDialog(); }));
     $$("[data-spyhide]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); spyGrimHide(); }));
     $$("[data-swshow]").forEach(b => b.addEventListener("click", () => {
@@ -1131,6 +1136,7 @@
       // Schutz-/Ziel-Marker gelten nur eine Nacht; Gift & Betrunken bis zur nächsten Nacht (außer 📌)
       const healed = [];
       game.seats.forEach(x => {
+        if (x.drunkUntil && game.nightNo + 1 >= x.drunkUntil) { x.keep = (x.keep || []).filter(m => m !== "drunk"); delete x.drunkUntil; }
         const keep = x.keep || [];
         const before = x.marks || [];
         x.marks = before.filter(m => { const d = markerByKey(m) || {}; return !d.n && !(d.t && !keep.includes(m)); });
@@ -2702,10 +2708,56 @@
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
     hist(text, "night");
     if (!r.skip && r.role && r.picks.length && ["cerenovus", "pithag"].includes(r.step)) applyRolePick(x, r);
+    if (!r.skip && ["sailor", "innkeeper", "courtier"].includes(r.step)) applyDrunkMaker(i, r);
     if (!r.skip && KILL_STEPS.includes(r.step)) setTimeout(wakeDeathTriggered, 50);
     if (!r.skip && r.step === "philosopher" && r.role && x.role === "philosopher") setPhilo(i, r.role);
     else { save(); refreshHostView(); }
     notice(text);
+  }
+
+  // Seemann / Wirt / Höfling machen jemanden betrunken
+  function setDrunk(k, by) {
+    const t = game.seats[k];
+    if ((t.marks || []).includes("drunk")) return;
+    t.marks = [...(t.marks || []), "drunk"];
+    markHist(t, "drunk", true, by);
+    undoPoisonedActs(k);
+  }
+  function applyDrunkMaker(i, r) {
+    const x = game.seats[i];
+    if (impaired(x)) {
+      if (r.step !== "innkeeper") { hist(`⚠️ ${x.name} (${roleName(r.step)}) ist vergiftet/betrunken – niemand wird betrunken`, "night"); toast(`⚠️ ${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung`); }
+      return;
+    }
+    if (r.step === "courtier") {
+      const k = game.seats.findIndex(y => y.role === r.role);
+      if (k < 0) { hist(`👑 Höfling wählt ${roleName(r.role)} – die Rolle ist nicht im Spiel, nichts passiert`, "night"); toast(`${roleName(r.role)} ist nicht im Spiel – nichts passiert`); return; }
+      const t = game.seats[k];
+      setDrunk(k, "Höfling, 3 Tage und Nächte");
+      t.keep = [...new Set([...(t.keep || []), "drunk"])];
+      t.drunkUntil = game.nightNo + 3;
+      toast(`🍺 ${t.name} (${roleName(r.role)}) ist jetzt 3 Tage und Nächte betrunken`);
+      return;
+    }
+    // Seemann: er ODER der Gewählte; Wirt: einer der beiden Geschützten. Standard = der Gewählte, der Spielleiter kann tauschen.
+    const opts = r.step === "sailor" ? [r.picks[0], i] : r.picks.slice(0, 2);
+    if (!opts.length || opts[0] === undefined) return;
+    game.drunkPick = { night: game.nightNo, step: r.step, opts: [...new Set(opts)], on: opts[0] };
+    setDrunk(opts[0], roleName(r.step));
+    toast(`🍺 ${game.seats[opts[0]].name} ist betrunken (${roleName(r.step)}) – in der Nachtliste kannst du das tauschen`);
+  }
+  function swapDrunk() {
+    const d = game.drunkPick;
+    if (!d || d.night !== game.nightNo) return;
+    const old = d.on, nu = d.opts.find(k => k !== old);
+    if (nu === undefined) return;
+    const o = game.seats[old];
+    o.marks = (o.marks || []).filter(m => m !== "drunk");
+    markHist(o, "drunk", false);
+    d.on = nu;
+    setDrunk(nu, roleName(d.step));
+    save(); renderSL();
+    toast(`🍺 Jetzt ist ${game.seats[nu].name} betrunken`);
   }
 
   function undoPoisonedActs(k) {
