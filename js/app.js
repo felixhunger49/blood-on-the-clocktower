@@ -2370,7 +2370,7 @@
   function nightKills() {
     const S = game.seats, n = game.nightNo;
     const attacks = new Map(); // Ziel -> Angreifer
-    (game.acts || []).filter(a => a.night === n && !a.skip && KILL_STEPS.includes(a.step) && !(a.step === "lleech" && n === 1))
+    (game.acts || []).filter(a => a.night === n && !a.skip && !a.undone && KILL_STEPS.includes(a.step) && !(a.step === "lleech" && n === 1))
       .forEach(a => (a.picks || []).forEach(k => { if (!attacks.has(k)) attacks.set(k, { step: a.step, by: a.i }); }));
     S.forEach((x, k) => { if ((x.marks || []).includes("target") && !attacks.has(k)) attacks.set(k, { step: null, by: null }); });
     // Pukka: Wer seit einer früheren Nacht vergiftet ist, stirbt jetzt
@@ -2759,6 +2759,16 @@
     if (a1) t.align = a1; else delete t.align;
     t.marks = [...new Set([...(t.marks || []), "poison"])];
     t.keep = [...new Set([...(t.keep || []), "poison"])];
+    // Der Schlangenbeschwörer ist vor dem Dämon dran: Eine schon abgegebene Wahl des alten Dämons zählt nicht,
+    // stattdessen wählt jetzt der neue Dämon.
+    (game.acts || []).filter(a => a.night === game.nightNo && a.i === k && a.step === demonRole && !a.undone).forEach(a => {
+      a.undone = true;
+      a.picks.forEach(j => { const y = game.seats[j]; y.marks = (y.marks || []).filter(m => m !== "target"); });
+      hist(`↩︎ Die Wahl des alten Dämons ${t.name} (${a.picks.map(j => game.seats[j].name).join(", ")}) zählt nicht – der neue Dämon wählt`, "night");
+    });
+    const pend = (game.asks || {})[k];
+    if (pend && pend.night === game.nightNo && !pend.done && pend.step === demonRole) askSeat(k, true);
+    if (nightOn() && reachable(x) && !tableOn() && !(game.seq && game.seq.night === game.nightNo && !game.seq.done)) setTimeout(() => { askSeat(i, false, demonRole); save(); refreshHostView(); }, 50);
     hist(`🐍 ${x.name} (Schlangenbeschwörer) hat den Dämon gefunden! ${x.name} ist jetzt ${roleName(demonRole)} (böse), ${t.name} ist jetzt ${roleName(myRole)} (gut) und dauerhaft vergiftet`, "night");
     game.ignoreEnd = null;
     toast(`🐍 Tausch! ${x.name} ist jetzt ${roleName(demonRole)}, ${t.name} ist vergifteter Schlangenbeschwörer${reachable(x) || reachable(t) ? " – beide sehen es auf dem Handy" : " – zeig es beiden"}`);
