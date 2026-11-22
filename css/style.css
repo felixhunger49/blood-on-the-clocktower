@@ -594,3 +594,8 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .no-n { display: inline-block; min-width: 1.6rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .no-step { color: var(--muted); }
 .jugrow select { flex: 1; min-width: 8rem; }
+.box.jinx { border-left: 4px solid var(--accent); }
+.box.jinx ul, .jinx-role ul { margin: .3rem 0 0; padding-left: 1.1rem; display: grid; gap: .35rem; }
+.jinx-en summary { display: inline; cursor: pointer; margin-left: .3rem; }
+.jinx-role summary { cursor: pointer; margin-top: .4rem; }
+#imptext { width: 100%; margin-top: .5rem; font-family: monospace; font-size: .8rem; }

@@ -746,6 +746,7 @@
         <p class="small">${esc(EDITIONS[game.edition].name)} · Tippe Rollen an, um sie hinzuzufügen oder zu entfernen.</p>
         ${requireWarnings()}
         ${balanceHints()}
+        ${game.edition === "custom" ? "" : jinxHtml(ROLES.filter(r => inEd(r, game.edition)).map(r => r.id))}
         <div class="row wrap"><button class="btn primary" id="auto">🎲 Zufällig auswählen</button><button class="btn" id="clear">Auswahl leeren</button></div>
         ${warn}
         ${extra}
@@ -1032,6 +1033,7 @@
       save(); renderSL();
     }));
     $("#editscript") && $("#editscript").addEventListener("click", scriptEditor);
+    $("#importscript") && $("#importscript").addEventListener("click", scriptImport);
     $("#drunkShown") && $("#drunkShown").addEventListener("change", e => { game.drunkShown = e.target.value; game.bluffs = game.bluffs.filter(b => b !== game.drunkShown); refreshHidden(); save(); });
     $("#marionetteShown") && $("#marionetteShown").addEventListener("change", e => { game.marionetteShown = e.target.value; game.bluffs = game.bluffs.filter(b => b !== game.marionetteShown); refreshHidden(); save(); });
     $("#lunaticShown") && $("#lunaticShown").addEventListener("change", e => { game.lunaticShown = e.target.value; save(); });
@@ -2222,6 +2224,19 @@
     list.forEach(id => { const r = ROLE_BY_ID[id]; if (r && c[r.t] !== undefined) c[r.t]++; });
     return c;
   }
+  // Jinxes, die für eine Rollenliste gelten (beide Rollen auf der Liste)
+  function jinxesFor(ids) {
+    const set = new Set(ids);
+    return JINXES.filter(([a, b]) => set.has(a) && set.has(b));
+  }
+  function jinxHtml(ids, title) {
+    const js = jinxesFor(ids);
+    if (!js.length) return "";
+    return `<div class="box jinx"><h4>🧞 ${esc(title || "Djinn-Sonderregeln")} (${js.length})</h4>
+      <p class="small">Diese Rollen-Paare beißen sich. Verkünde die Regeln zu Spielbeginn allen – auch wenn die Rollen gar nicht im Spiel sind.</p>
+      <ul>${js.map(([a, b, de, en]) => `<li><b>${ROLE_BY_ID[a].ic} ${esc(roleName(a))} + ${ROLE_BY_ID[b].ic} ${esc(roleName(b))}:</b> ${esc(de)} <details class="jinx-en"><summary class="small">Original</summary><span class="small">${esc(en)}</span></details></li>`).join("")}</ul></div>`;
+  }
+
   function scriptSummary() {
     const sc = game.script || [];
     const c = scriptCounts(sc);
@@ -2231,11 +2246,11 @@
     if (c.townsfolk < SETUP_COUNTS[game.count][0] + 2) warn.push(`mehr Dorfbewohner (mind. ${SETUP_COUNTS[game.count][0] + 2} empfohlen)`);
     if (c.minion < SETUP_COUNTS[game.count][2]) warn.push(`mind. ${SETUP_COUNTS[game.count][2]} Schergen`);
     return `<div class="box script">
-      <h4>📜 Deine Rollenliste (${sc.length} Rollen)</h4>
+      <h4>📜 ${esc(game.scriptName || "Deine Rollenliste")} (${sc.length} Rollen)</h4>
       <p class="small">${c.townsfolk} Dorfbewohner · ${c.outsider} Außenseiter · ${c.minion} Schergen · ${c.demon} Dämonen${c.traveller ? ` · ${c.traveller} Reisende` : ""}</p>
       ${warn.length ? `<p class="warnmsg">Für ${game.count} Spieler fehlt noch: ${warn.join(", ")}.</p>` : ""}
-      <button class="btn primary" id="editscript">✏️ Rollenliste bearbeiten</button>
-    </div>`;
+      <div class="row wrap"><button class="btn primary" id="editscript">✏️ Rollenliste bearbeiten</button><button class="btn" id="importscript">📥 Skript importieren</button></div>
+    </div>${jinxHtml(sc)}`;
   }
   // Tipps zur Ausgewogenheit der gewählten Rollen
   function balanceHints() {
@@ -2263,6 +2278,45 @@
     return w.length ? `<p class="warnmsg">⚠️ ${w.join(" · ")} im Spiel.</p>` : "";
   }
   let scriptFilter = "all";
+  // Skript aus dem offiziellen Script-Tool (JSON) übernehmen
+  const normId = x => String(x || "").toLowerCase().replace(/[^a-z]/g, "");
+  function scriptImport() {
+    openModal(`<h2>📥 Skript importieren</h2>
+      <p class="small">Füge den Inhalt einer Skript-Datei ein (JSON aus dem offiziellen Script-Tool, z. B. „…json“-Download) oder wähle die Datei aus.</p>
+      <input type="file" id="impfile" accept=".json,application/json,text/plain">
+      <textarea id="imptext" rows="6" placeholder='[{"id":"_meta","name":"Mein Skript"},"washerwoman","empath", …]'></textarea>
+      <div id="impmsg"></div>
+      <div class="row end"><button class="btn" id="impcancel">Abbrechen</button><button class="btn primary" id="impgo">Übernehmen</button></div>`);
+    $("#impcancel").addEventListener("click", closeModal);
+    $("#impfile").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { $("#imptext").value = rd.result; }; rd.readAsText(f); });
+    $("#impgo").addEventListener("click", () => {
+      let data;
+      try { data = JSON.parse($("#imptext").value); } catch (e) { $("#impmsg").innerHTML = `<p class="error">Das ist kein gültiges Skript (JSON). Bitte den kompletten Inhalt einfügen.</p>`; return; }
+      if (!Array.isArray(data)) data = data && Array.isArray(data.roles) ? data.roles : [];
+      const lookup = new Map();
+      ROLES.forEach(r => { lookup.set(normId(r.id.replace(/^[fl]_/, "")), r.id); lookup.set(normId(r.en), r.id); });
+      let name = "", author = "";
+      const ids = [], unknown = [];
+      data.forEach(x => {
+        const id = typeof x === "string" ? x : x && x.id;
+        if (!id) return;
+        if (id === "_meta") { name = x.name || ""; author = x.author || ""; return; }
+        const hit = lookup.get(normId(id)) || (x && x.name && lookup.get(normId(x.name)));
+        if (hit) ids.push(hit); else unknown.push((x && x.name) || id);
+      });
+      if (!ids.length) { $("#impmsg").innerHTML = `<p class="error">Keine bekannte Rolle gefunden.</p>`; return; }
+      const uniq = [...new Set(ids)];
+      game.edition = "custom";
+      game.script = ROLES.filter(r => uniq.includes(r.id) && r.t !== "fabled").map(r => r.id);
+      const fab = uniq.filter(id => ROLE_BY_ID[id].t === "fabled");
+      if (fab.length) game.fabled = [...new Set([...(game.fabled || []), ...fab])];
+      game.scriptName = name ? name + (author ? ` (von ${author})` : "") : "";
+      game.selected = []; game.bluffs = [];
+      save(); closeModal(); renderSL();
+      toast(`📥 ${game.script.length} Rollen übernommen${fab.length ? ` + ${fab.length} Fabelwesen/Lorics` : ""}${unknown.length ? ` – unbekannt: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? " …" : ""}` : ""}`);
+    });
+  }
+
   function scriptEditor() {
     const sc = new Set(game.script || []);
     const draw = () => {
@@ -2276,6 +2330,7 @@
           <button class="chip" data-preset="snv">+ Sects &amp; Violets</button>
           <button class="chip" data-preset="exp">+ Experimentelle</button>
           <button class="chip" data-preset="none">Liste leeren</button>
+          <button class="chip" id="importscript2">📥 Skript importieren</button>
         </div>
         <div class="chips">${["all", "tb", "bmr", "snv", "exp"].map(k => `<button class="chip ${scriptFilter === k ? "on" : ""}" data-sfilter="${k}">${k === "all" ? "Alle zeigen" : EDITIONS[k].name}</button>`).join("")}</div>
         <p class="scriptcount">${sc.size} gewählt: ${c.townsfolk} Dorfb. · ${c.outsider} Außens. · ${c.minion} Schergen · ${c.demon} Dämonen · ${c.traveller} Reisende</p>
@@ -2299,8 +2354,10 @@
         draw();
       }));
       $$("[data-sfilter]").forEach(b => b.addEventListener("click", () => { scriptFilter = b.dataset.sfilter; draw(); }));
+      $("#importscript2").addEventListener("click", () => { closeModal(); scriptImport(); });
       $("#savescript").addEventListener("click", () => {
         game.script = ROLES.filter(r => sc.has(r.id)).map(r => r.id);
+        game.scriptName = "";
         game.selected = game.selected.filter(id => sc.has(id));
         game.bluffs = [];
         save(); closeModal(); renderSL();
@@ -3827,10 +3884,12 @@
   let lexFilter = { ed: null, team: "all", q: "" };
 
   function roleDetail(r, forST) {
+    const jx = JINXES.filter(([a, b]) => a === r.id || b === r.id);
     return `<div class="lex-detail">
       <div class="lex-title t-${r.t}-text"><b>${r.ic} ${esc(r.de)}</b> <span class="small">${esc(r.en)} · ${TEAMS[r.t].name} · ${esc(EDITIONS[r.ed].name)}</span></div>
       <p class="ability-line">${esc(r.a)}</p>
       <p>${esc(r.e)}</p>
+      ${jx.length ? `<details class="jinx-role"><summary class="small">🧞 ${jx.length} Jinx${jx.length > 1 ? "es" : ""} mit anderen Rollen</summary><ul class="small">${jx.map(([a, b, de]) => { const o = a === r.id ? b : a; return `<li><b>${ROLE_BY_ID[o].ic} ${esc(roleName(o))}:</b> ${esc(de)}</li>`; }).join("")}</ul></details>` : ""}
       ${r.tip ? `<p><b>💡 Tipp:</b> ${esc(r.tip)}</p>` : ""}
       ${r.setup ? `<p><b>⚙️ Aufbau:</b> ${esc(r.setup)}</p>` : ""}
       ${forST || r.st || r.n1 || r.n ? `<div class="st-notes">
@@ -3861,6 +3920,7 @@
           ${Object.entries(TEAMS).map(([k, t]) => `<button class="chip t-${k}-chip ${lexFilter.team === k ? "on" : ""}" data-lteam="${k}">${t.plural}</button>`).join("")}
         </div>
       </section>
+      ${lexFilter.ed === "game" && sc ? jinxHtml(sc, "Sonderregeln eures Skripts") : ""}
       ${(() => {
         if (lexFilter.ed === "game" && sc) return nightOrderHtml(sc, "Euer Spiel");
         if (EDITIONS[lexFilter.ed] && lexFilter.ed !== "custom") return nightOrderHtml(ROLES.filter(r => r.ed === lexFilter.ed).map(r => r.id), EDITIONS[lexFilter.ed].name);
@@ -4095,6 +4155,7 @@
       dawn: game.dawn || null,
       script: game.edition === "custom" && (game.script || []).length ? game.script.map(id => ROLE_BY_ID[id].idx) : null,
       ed: game.edition,
+      scn: game.edition === "custom" ? game.scriptName || "" : "",
       fabled: game.fabled || [],
       timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0 } : null,
       started: game.seats.length > 0 && game.step !== "setup",
