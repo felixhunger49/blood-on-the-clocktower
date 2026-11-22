@@ -605,3 +605,5 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 #ssres { display: grid; gap: .4rem; margin: .5rem 0; }
 .ssitem { text-align: left; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: .55rem .7rem; font: inherit; cursor: pointer; }
 .ssitem:active { transform: scale(.98); }
+.amnbox select, .amnbox textarea { width: 100%; margin: .3rem 0; }
+.amnbox select option { white-space: normal; }

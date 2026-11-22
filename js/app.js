@@ -162,7 +162,7 @@
       if (x.b && x.b.length) evil += `<p>Deine Bluffs (gute Rollen, die nicht im Spiel sind):</p><ul>${x.b.map(id => `<li><b>${esc(roleName(id))}</b> – ${esc(ROLE_BY_ID[id].a)}</li>`).join("")}</ul>`;
       evil += `</div>`;
     }
-    const grim = info.g ? grimBox(info.g) : "";
+    const grim = (info.g ? grimBox(info.g) : "") + (info.amk ? `<div class="box ability"><h4>❓ Deine Fähigkeit (erraten!)</h4><p>${esc(info.amk)}</p></div>` : "");
     return `
       <div class="rolecard ${teamClass(role, info.a)}">
         <div class="rc-head">
@@ -595,9 +595,10 @@
     if ((seat.infos || []).length) info.i = seat.infos.slice(-10);
     if (seat.grim && seat.role === "spy") info.g = seat.grim;
     const ask = (game.asks || {})[i];
-    if (nightOn() && ask && ask.night === game.nightNo && !ask.done) info.q = { id: ask.id, step: ask.step, sleep: !!ask.sleep };
+    if (nightOn() && ask && ask.night === game.nightNo && !ask.done) info.q = { id: ask.id, step: ask.step, sleep: !!ask.sleep, amn: seat.role === "amnesiac" && !(seat.amn && seat.amn.known) };
     const wk = (game.wakes || {})[i];
-    if (tableOn() && wk && wk.night === game.nightNo && !wk.done) info.wk = { id: wk.id, step: wk.step, r: wk.r, t: wk.t };
+    if (tableOn() && wk && wk.night === game.nightNo && !wk.done) info.wk = { id: wk.id, step: seat.role === "amnesiac" ? "amnesiac" : wk.step, r: wk.r, t: wk.t };
+    if (seat.role === "amnesiac" && seat.amn && seat.amn.known) info.amk = seat.amn.text;
     return info;
   }
   function seatCode(seat, i) {
@@ -835,7 +836,17 @@
       <div class="row end"><button class="btn primary" id="next3">Weiter: Grimoire →</button></div>`;
   }
 
+  function ensureAmnesiac() {
+    game.seats.forEach(x => {
+      if (x.role !== "amnesiac" || x.amn) return;
+      const pool = AMNESIAC_IDEAS.filter(a => !a.like || !game.seats.some(y => y.role === a.like));
+      setAmn(x, pool[randInt(pool.length)].k);
+      hist(`❓ Geheime Fähigkeit von ${x.name} (Amnesiker, gewürfelt): ${x.amn.text}`);
+      save();
+    });
+  }
   function slGrim() {
+    ensureAmnesiac();
     const ps = game.seats;
     const seats = ps.map((s, i) => {
       const shown = shownRole(s.role);
@@ -880,11 +891,11 @@
       }
       const role = ROLE_BY_ID[id];
       if (!role || !role[key]) return;
-      const holders = ps.filter(s => s.role === id || (id === "scarletwoman" && s.swPending));
+      const holders = ps.filter(s => (s.role === id && !(id === "amnesiac" && s.amn && s.amn.like)) || (id === "scarletwoman" && s.swPending) || (s.role === "amnesiac" && s.amn && s.amn.like === id));
       const drunks = ps.filter(s => (s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id);
       const philos = ps.filter(s => s.role === "philosopher" && s.gained === id);
       if (!holders.length && !drunks.length && !philos.length) return;
-      const who = [...holders.map(s => esc(s.name) + (s.alive ? "" : " †") + (philos.length ? " (betrunken durch Philosoph)" : "")),
+      const who = [...holders.map(s => esc(s.name) + (s.role === "amnesiac" && id !== "amnesiac" ? " (Amnesiker ❓)" : "") + (s.alive ? "" : " †") + (philos.length ? " (betrunken durch Philosoph)" : "")),
         ...drunks.map(s => esc(s.name) + (s.alive ? "" : " †") + (s.role === "drunk" ? " (Säufer – Info darf falsch sein)" : " (Marionette – Info darf falsch sein)")),
         ...philos.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Philosoph)")].join(", ");
       // Tote Spieler haben keine Fähigkeit mehr – außer Rollen, die gerade durch ihren Tod ausgelöst werden.
@@ -952,6 +963,7 @@
           <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
             <div class="ns-head">${s.inactive ? `<span class="dead-mark">${s.mark}</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${s.inactive ? s.why : esc(s.text)}</p>
+            ${s.id === "amnesiac" ? game.seats.filter(x => x.role === "amnesiac").map(x => `<p class="small">❓ ${esc(x.name)}: <b>${x.amn ? esc(x.amn.text) : "noch keine Fähigkeit festgelegt"}</b></p>`).join("") : ""}
             ${["sailor", "innkeeper"].includes(s.id) && game.drunkPick && game.drunkPick.night === game.nightNo && game.drunkPick.step === s.id ? (() => {
               const d = game.drunkPick, other = d.opts.find(k => k !== d.on);
               return `<div class="actrow">🍺 Betrunken ist: <b>${esc(game.seats[d.on].name)}</b>${other !== undefined ? ` <button class="btn sm" data-swapdrunk="1">⇄ Stattdessen ${esc(game.seats[other].name)}</button>` : ""}</div>`;
@@ -1198,6 +1210,31 @@
       else if (n.count === best.count) tie = true;
     });
     return tie ? { tie: true, count: best.count } : best;
+  }
+
+  // ---------- Amnesiker: tagsüber privat raten, Antwort kalt/warm/heiß/Bingo ----------
+  function amnesiacDialog() {
+    const S = game.seats;
+    const i = S.findIndex(y => y.alive && y.role === "amnesiac");
+    if (i < 0) return;
+    const x = S[i];
+    if (!x.amn) { const pool = AMNESIAC_IDEAS.filter(a => !a.like || !S.some(y => y.role === a.like)); setAmn(x, pool[randInt(pool.length)].k); }
+    const ANS = [["kalt", "🥶 Kalt", "hat nichts mit der Fähigkeit zu tun"], ["warm", "🙂 Warm", "auf der richtigen Spur"], ["heiß", "🔥 Heiß", "fast richtig"], ["Bingo", "🎯 Bingo", "erraten – auch wenn anders formuliert"]];
+    openModal(`<h2>❓ ${esc(x.name)} rät seine Fähigkeit</h2>
+      <p class="small">Nur für dich – seine geheime Fähigkeit:</p><div class="box">${esc(x.amn.text)}</div>
+      ${impaired(x) ? `<p class="warnmsg">⚠️ Er ist vergiftet/betrunken – die Antwort darf falsch sein.</p>` : ""}
+      <label class="field">Seine Vermutung (optional):<input id="amnguess" placeholder="z. B. „Ich erfahre etwas über Schergen?“"></label>
+      <div class="row wrap">${ANS.map(([k, l, d]) => `<button class="btn ${k === "Bingo" ? "primary" : ""}" data-amn="${k}" title="${esc(d)}">${l}</button>`).join("")}</div>
+      <p class="small">Kalt = hat nichts damit zu tun · Warm = richtige Spur · Heiß = fast · Bingo = erraten</p>`);
+    $$("[data-amn]").forEach(b => b.addEventListener("click", () => {
+      const a = b.dataset.amn, g = $("#amnguess").value.trim();
+      today().amn = true;
+      x.infos = [...(x.infos || []), { n: game.nightNo, t: `☀️ Tag ${game.nightNo}: ${g ? `„${g}“ → ` : ""}${a}` }].slice(-10);
+      if (a === "Bingo") x.amn.known = true;
+      hist(`❓ ${x.name} (Amnesiker) rät${g ? ` „${g}“` : ""}: ${a}`, "day");
+      save(); closeModal(); renderSL();
+      toast(a === "Bingo" ? `🎯 ${x.name} hat seine Fähigkeit erraten – steht jetzt auf seiner Karte` : `❓ Antwort „${a}“${reachable(x) ? " steht auf seinem Handy" : " – sag es ihm"}`);
+    }));
   }
 
   // ---------- Jongleur: am ersten Tag bis zu 5 Rollen raten, nachts die Anzahl der Treffer ----------
@@ -1558,11 +1595,13 @@
     else if (b) blockLine = `Auf dem Block: <b>${esc(ps[b.on].name)}</b> mit ${b.count} Stimmen.`;
 
     const slayers = ps.map((x, i) => i).filter(i => ps[i].alive && (actingRole(ps[i]) === "slayer") && !(ps[i].role === "philosopher" ? ps[i].gainedUsed : ps[i].used));
+    const amn = ps.map((x, i) => i).filter(i => ps[i].alive && ps[i].role === "amnesiac");
+    const amnBtn = amn.length && !v ? `<div class="row wrap"><button class="btn" id="amngo">❓ Amnesiker rät${day.amn ? " <small>(heute schon ✔)</small>" : ""}</button></div>` : "";
     const jug = ps.map((x, i) => i).filter(i => ps[i].alive && actingRole(ps[i]) === "juggler");
     const jugBtn = jug.length && !v && game.nightNo === 1 ? `<div class="row wrap"><button class="btn" id="juggo">🤹 Jongleur rät Rollen${game.juggle ? ` <small>(${game.juggle.guesses.length} Tipps ✔)</small>` : ""}</button></div>` : "";
     const sav = ps.map((x, i) => i).filter(i => ps[i].alive && actingRole(ps[i]) === "savant");
     const savBtn = sav.length && !v ? `<div class="row wrap"><button class="btn" id="savantgo">🎓 Gelehrter besucht dich${day.savant ? " <small>(heute schon ✔)</small>" : ""}</button></div>` : "";
-    const slayerBtn = jugBtn + savBtn + (slayers.length && !v ? `<div class="row wrap"><button class="btn" id="slayshot">🏹 Dämonenjäger schießt …</button></div>` : "");
+    const slayerBtn = amnBtn + jugBtn + savBtn + (slayers.length && !v ? `<div class="row wrap"><button class="btn" id="slayshot">🏹 Dämonenjäger schießt …</button></div>` : "");
     const execBtns = day.exec || v ? slayerBtn : slayerBtn + `<div class="row wrap">
         ${b && !b.tie ? `<button class="btn danger" id="execute">⚔️ ${esc(ps[b.on].name)} hinrichten</button>` : ""}
         <button class="btn" id="noexec">Niemand wird hingerichtet</button>
@@ -1608,6 +1647,7 @@
     $("#slayshot") && $("#slayshot").addEventListener("click", slayerDialog);
     $("#savantgo") && $("#savantgo").addEventListener("click", savantDialog);
     $("#juggo") && $("#juggo").addEventListener("click", jugglerDialog);
+    $("#amngo") && $("#amngo").addEventListener("click", amnesiacDialog);
     bindExile(day);
     $("#botvote") && $("#botvote").addEventListener("click", () => { $("#botvote").disabled = true; botVote(); });
     $("#savevote") && $("#savevote").addEventListener("click", () => {
@@ -1749,6 +1789,20 @@
     return `<span class="mkchip"><button class="chip ${on ? "on" : ""}" data-mk="${m.k}">${m.i} ${esc(m.l)}${m.n || (m.t && !kept) ? " 🌙" : ""}</button>${m.t && on ? `<button class="chip pin ${kept ? "on" : ""}" data-keep="${m.k}" title="${kept ? "bleibt dauerhaft" : "verschwindet nächste Nacht – antippen zum Festheften"}">📌</button>` : ""}${helpBtn(m.k)}</span>`;
   };
 
+  function amnSelect(i) {
+    const s = game.seats[i], cur = s.amn || {};
+    const cats = [...new Set(AMNESIAC_IDEAS.map(x => x.cat))];
+    return `<div class="box amnbox"><h4>❓ Geheime Fähigkeit des Amnesikers</h4>
+      <select id="amnsel"><option value="">– Idee wählen –</option>${cats.map(c => `<optgroup label="${esc(c)}">${AMNESIAC_IDEAS.filter(x => x.cat === c).map(x => `<option value="${x.k}" ${cur.k === x.k ? "selected" : ""}>${esc(x.text)}${x.like ? ` (wie ${esc(roleName(x.like))})` : ""}</option>`).join("")}</optgroup>`).join("")}<option value="_own" ${cur.k === "_own" ? "selected" : ""}>✏️ Eigene Fähigkeit …</option></select>
+      <textarea id="amntext" rows="2" placeholder="Eigene Fähigkeit beschreiben" ${cur.k === "_own" ? "" : "hidden"}>${cur.k === "_own" ? esc(cur.text) : ""}</textarea>
+      <div class="row wrap"><button class="btn sm" id="amnrand">🎲 Würfeln</button><button class="btn sm primary" id="amnsave">Speichern</button>${cur.known ? `<span class="small okmsg">✅ erraten</span>` : ""}</div>
+      <p class="small">${cur.like ? `Nachts wird er wie <b>${esc(roleName(cur.like))}</b> geweckt – mit Aufgabe und Info-Vorschlag. Sein Handy verrät die Rolle nicht.` : "Bei eigener Fähigkeit weckst du ihn im Schritt „Amnesiker“."}</p></div>`;
+  }
+  function setAmn(s, k, text) {
+    const idea = amnIdea(k);
+    s.amn = idea ? { k, text: idea.text, like: idea.like || null, pick: !!idea.pick, known: s.amn && s.amn.k === k ? s.amn.known : false } : { k: "_own", text: text || "", like: null, pick: true, known: false };
+  }
+
   function seatModal(i) {
     const s = game.seats[i];
     if (!s) return;
@@ -1777,6 +1831,7 @@
         ${ONCE_PER_GAME.includes(s.role) && s.role !== "philosopher" ? `<span class="hint-pair"><button class="btn ${s.used ? "used" : ""}" data-m="used">${s.used ? "✔ Fähigkeit benutzt" : "○ Fähigkeit frei"}</button>${helpBtn("s:used")}</span>` : ""}
       </div>
       ${s.role === "philosopher" ? philoSelect(i) : ""}
+      ${s.role === "amnesiac" ? amnSelect(i) : ""}
       <div class="row end"><button class="btn primary" data-m="close">Fertig</button></div>`);
     const root = $("#modal-content");
     const again = () => { save(); renderSL(); seatModal(i); };
@@ -1794,6 +1849,11 @@
       again();
     }));
     root.querySelector("#m-note").addEventListener("input", e => { s.note = e.target.value; save(); });
+    if (root.querySelector("#amnsel")) {
+      root.querySelector("#amnsel").addEventListener("change", e => { root.querySelector("#amntext").hidden = e.target.value !== "_own"; });
+      root.querySelector("#amnrand").addEventListener("click", () => { const inPlay = new Set(game.seats.map(x => x.role)); const pool = AMNESIAC_IDEAS.filter(x => !x.like || !inPlay.has(x.like)); setAmn(s, pool[randInt(pool.length)].k); hist(`❓ ${s.name} (Amnesiker) hat eine neue geheime Fähigkeit`); again(); });
+      root.querySelector("#amnsave").addEventListener("click", () => { const v = root.querySelector("#amnsel").value; if (!v) return; setAmn(s, v, root.querySelector("#amntext").value.trim()); hist(`❓ Geheime Fähigkeit von ${s.name}: ${s.amn.text}`); again(); toast("❓ Fähigkeit gespeichert"); });
+    }
     // ⓘ-Erklärungen
     root.querySelectorAll("[data-help]").forEach(b => b.addEventListener("click", e => {
       e.preventDefault(); e.stopPropagation();
@@ -2442,6 +2502,42 @@
   // =====================================================================
   // n = Anzahl Spieler, min = Mindestzahl, self = darf sich selbst wählen, dead = darf Tote wählen,
   // role = wählt (zusätzlich) eine Rolle ("good" | "all"), mark = Marker, der automatisch gesetzt wird
+  // Amnesiker: erprobte geheime Fähigkeiten. like = verhält sich nachts wie diese Rolle (Aufgaben, Infos, Vorschläge).
+  // pick = eigene Fähigkeit, bei der er nachts Spieler wählt.
+  const AMNESIAC_IDEAS = [
+    { k: "a_empath", cat: "Zahl", like: "empath", text: "Jede Nacht erfährst du, wie viele deiner beiden lebenden Nachbarn böse sind." },
+    { k: "a_oracle", cat: "Zahl", like: "oracle", text: "Jede Nacht (außer der ersten) erfährst du, wie viele tote Spieler böse sind." },
+    { k: "a_chef", cat: "Zahl", like: "chef", text: "Du beginnst mit dem Wissen, wie viele Paare böser Spieler nebeneinander sitzen." },
+    { k: "a_clock", cat: "Zahl", like: "clockmaker", text: "Du beginnst mit dem Wissen, wie viele Plätze der Dämon von seinem nächsten Schergen entfernt sitzt." },
+    { k: "a_town", cat: "Zahl", text: "Jede Nacht erfährst du, wie viele deiner lebenden Nachbarn Dorfbewohner sind." },
+    { k: "a_votes", cat: "Zahl", text: "Jede Nacht erfährst du, wie viele böse Spieler heute abgestimmt haben." },
+    { k: "a_flower", cat: "Ja/Nein", like: "flowergirl", text: "Jede Nacht (außer der ersten) erfährst du, ob der Dämon heute abgestimmt hat." },
+    { k: "a_crier", cat: "Ja/Nein", like: "towncrier", text: "Jede Nacht (außer der ersten) erfährst du, ob heute ein Scherge nominiert hat." },
+    { k: "a_ft", cat: "Ja/Nein", like: "fortuneteller", text: "Jede Nacht wählst du 2 Spieler: Du erfährst, ob einer davon der Dämon ist. (Ein Guter gilt als Dämon.)" },
+    { k: "a_minion2", cat: "Ja/Nein", pick: true, text: "Jede Nacht wählst du 2 Spieler: Du erfährst, ob mindestens einer davon ein Scherge ist." },
+    { k: "a_outsider", cat: "Ja/Nein", pick: true, text: "Jede Nacht wählst du einen Spieler: Du erfährst, ob er ein Außenseiter ist." },
+    { k: "a_nominated", cat: "Ja/Nein", pick: true, text: "Jede Nacht wählst du einen Spieler: Du erfährst, ob er heute nominiert hat." },
+    { k: "a_exec", cat: "Ja/Nein", text: "Jede Nacht erfährst du, ob der heute Hingerichtete böse war." },
+    { k: "a_idiot", cat: "Gesinnung", like: "villageidiot", text: "Jede Nacht wählst du einen Spieler: Du erfährst seine Gesinnung." },
+    { k: "a_seam", cat: "Gesinnung", pick: true, text: "Jede Nacht wählst du 2 Spieler: Du erfährst, ob sie die gleiche Gesinnung haben." },
+    { k: "a_side", cat: "Richtung", text: "Jede Nacht erfährst du, ob der nächste böse Spieler im oder gegen den Uhrzeigersinn sitzt." },
+    { k: "a_under", cat: "Rolle", like: "undertaker", text: "Jede Nacht (außer der ersten) erfährst du die Rolle des heute Hingerichteten." },
+    { k: "a_dreamer", cat: "Rolle", like: "dreamer", text: "Jede Nacht wählst du einen Spieler: Du erfährst eine gute und eine böse Rolle – eine davon hat er." },
+    { k: "a_wash", cat: "Rolle", like: "washerwoman", text: "Du beginnst mit dem Wissen, dass einer von 2 Spielern eine bestimmte Dorfbewohner-Rolle hat." },
+    { k: "a_inv", cat: "Rolle", like: "investigator", text: "Du beginnst mit dem Wissen, dass einer von 2 Spielern eine bestimmte Schergen-Rolle hat." },
+    { k: "a_letter", cat: "Rolle", text: "Jede Nacht erfährst du einen Buchstaben aus dem Rollennamen des Dämons." },
+    { k: "a_steward", cat: "Spieler", like: "steward", text: "Du beginnst mit dem Wissen, dass ein bestimmter Spieler gut ist." },
+    { k: "a_noble", cat: "Spieler", like: "noble", text: "Du beginnst mit 3 Spielern, von denen genau einer böse ist." },
+    { k: "a_balloon", cat: "Spieler", like: "balloonist", text: "Jede Nacht erfährst du einen Spieler eines anderen Rollentyps als in der Nacht davor." },
+    { k: "a_chamber", cat: "Spieler", like: "chambermaid", text: "Jede Nacht wählst du 2 Spieler (nicht dich): Du erfährst, wie viele davon heute Nacht wegen ihrer Fähigkeit aufgewacht sind." },
+    { k: "a_monk", cat: "Schutz", like: "monk", text: "Jede Nacht (außer der ersten) wählst du einen Spieler (nicht dich): Er ist heute Nacht vor dem Dämon geschützt." },
+    { k: "a_soldier", cat: "Passiv", like: "soldier", text: "Du bist vor dem Dämon geschützt." },
+    { k: "a_raven", cat: "Passiv", like: "ravenkeeper", text: "Stirbst du nachts, wirst du geweckt und erfährst die Rolle eines Spielers deiner Wahl." },
+    { k: "a_mayor", cat: "Passiv", like: "mayor", text: "Leben nur noch 3 Spieler und gibt es keine Hinrichtung, gewinnt dein Team. Stirbst du nachts, stirbt vielleicht ein anderer." },
+    { k: "a_drunkmin", cat: "Wirkung", pick: true, text: "Jede Nacht wählst du einen Spieler: Ist er ein Scherge, ist er bis zur Dämmerung betrunken." }
+  ];
+  const amnIdea = k => AMNESIAC_IDEAS.find(x => x.k === k);
+
   const ACTIONS = {
     fortuneteller: { n: 2, self: true, text: "Wähle zwei Spieler: Ist einer davon der Dämon?" },
     monk: { n: 1, mark: "protect", text: "Wähle einen Spieler, den du heute Nacht beschützt." },
@@ -2489,14 +2585,15 @@
     bureaucrat: { n: 1, text: "Wähle einen Spieler: Seine Stimme zählt morgen dreifach." },
     thief: { n: 1, text: "Wähle einen Spieler: Seine Stimme zählt morgen negativ." },
     harlot: { n: 1, text: "Wähle einen Spieler, den du besuchst." },
-    bonecollector: { n: 1, dead: true, onlyDead: true, optional: true, text: "Willst du einem Toten seine Fähigkeit zurückgeben? (einmal pro Spiel)" }
+    bonecollector: { n: 1, dead: true, onlyDead: true, optional: true, text: "Willst du einem Toten seine Fähigkeit zurückgeben? (einmal pro Spiel)" },
+    amnesiac: { n: 2, min: 1, self: true, text: "Deine unbekannte Fähigkeit verlangt eine Wahl: Wähle einen oder zwei Spieler." }
   };
   const nightOn = () => !!((game.online || game.test) && game.nightActions);
   // Kann dieser Platz Aufgaben am Handy bekommen? (verbundenes Handy oder Test-Bot)
   const isBot = x => !!(x && x.pid && String(x.pid).startsWith("bot-"));
   const reachable = x => !!(x && x.pid && (isBot(x) || lobby[x.pid]));
   // Als welche Rolle handelt dieser Spieler? (Säufer/Marionette glauben an ihre Rolle, Philosoph an die gewählte)
-  const actingRole = x => x.role === "philosopher" && x.gained ? x.gained : shownRole(x.role);
+  const actingRole = x => x.role === "philosopher" && x.gained ? x.gained : x.role === "amnesiac" && x.amn && x.amn.like ? x.amn.like : shownRole(x.role);
 
   function nightActionsBar(steps) {
     if (!game.online && !game.test) return "";
@@ -2913,6 +3010,7 @@
       if (actingRole(x) !== stepId || !x.pid) return false;
       if (ONCE_PER_GAME.includes(stepId) && x.used) return false;
       if (stepId === "philosopher" && x.gained) return false;
+      if (stepId === "amnesiac" && !(x.amn && x.amn.pick)) return false;
       return ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : (x.alive || x.zfake) && !killedBefore(x, stepId);
     });
   }
@@ -3215,7 +3313,8 @@
         $("#ndone").addEventListener("click", () => { closeModal(); refreshPlayerView(true); });
       });
     };
-    const def = q.sleep ? FAKE_ACTION : (ACTIONS[q.step] || { n: 1 });
+    let def = q.sleep ? FAKE_ACTION : (ACTIONS[q.step] || { n: 1 });
+    if (q.amn && !q.sleep) def = { ...def, text: `Deine unbekannte Fähigkeit verlangt eine Wahl${def.n ? `: Wähle ${def.n === 1 ? "einen Spieler" : def.n + " Spieler"}` : ""}${def.role ? " und eine Rolle" : ""}.` };
     const min = def.min !== undefined ? def.min : (def.optional ? 0 : def.n);
     const close = $(".nightsent"); if (close) closeModal();
     const list = seats.map((x, k) => ({ ...x, k })).filter(x => (def.self || x.k !== mine.s) && (def.onlyDead ? !x.a : (x.a || def.dead)));
@@ -3226,7 +3325,7 @@
     }
     openModal(`<div class="nightshow nightact">
         <p class="ns-label">🌙 Nacht</p>
-        <h2>${q.sleep ? "Schein-Auswahl" : esc(roleName(q.step))}</h2>
+        <h2>${q.sleep ? "Schein-Auswahl" : q.amn ? "❓ Deine Fähigkeit" : esc(roleName(q.step))}</h2>
         <p class="ns-hint">${esc(def.text || "")}</p>
         ${def.n ? `<div class="pickgrid">${list.map(x => `<button class="pickbtn ${x.a ? "" : "dead"}" data-pk="${x.k}">${esc(x.n)}${x.a ? "" : " 💀"}</button>`).join("")}</div>
           <p class="small" id="pkcount">0 von ${def.n} gewählt</p>` : ""}
@@ -3264,7 +3363,7 @@
     // Bad Moon Rising
     "grandmother", "chambermaid", "godfather",
     // Sects & Violets
-    "clockmaker", "dreamer", "mathematician", "flowergirl", "towncrier", "oracle", "seamstress", "juggler", "sage",
+    "clockmaker", "dreamer", "mathematician", "flowergirl", "towncrier", "oracle", "seamstress", "juggler", "sage", "amnesiac",
     // Experimentelle Rollen
     "noble", "pixie", "highpriestess", "balloonist", "general", "villageidiot", "knight", "steward", "shugenja",
     "choirboy", "king", "bountyhunter", "nightwatchman", "preacher"
@@ -3539,7 +3638,7 @@
 
   // Wer wacht bei diesem Nacht-Schritt auf? (inkl. Säufer, Marionette, Philosoph)
   const stepHolders = id => game.seats.map((s, i) => [s, i]).filter(([s]) =>
-    s.role === id || ((s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id) || (s.role === "philosopher" && s.gained === id));
+    (s.role === id && !(id === "amnesiac" && s.amn && s.amn.like)) || (s.role === "amnesiac" && s.amn && s.amn.like === id) || ((s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id) || (s.role === "philosopher" && s.gained === id));
 
   function infoDialog(stepId) {
     const holders = stepHolders(stepId);
