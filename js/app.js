@@ -1073,7 +1073,7 @@
             ${["spy", "widow"].includes(s.id) && !s.inactive && (game.online || game.test) ? `<button class="btn sm primary" data-spygrim="${s.id}">📖 Grimoire aufs Handy${tableOn() ? " (wecken)" : ""}</button>` : ""}
             ${s.id === "widow" && !s.inactive ? `<button class="btn sm" data-widowknow="1">🕸️ Guten Spieler einweihen${game.seats.some(x => (x.marks || []).includes("knows")) ? " ✔" : ""}</button>` : ""}
             ${s.id === "spy" && game.seats.some(x => x.grim) ? `<button class="btn sm" data-spyhide="1">🙈 Grimoire vom Handy entfernen</button>` : ""}
-            ${s.id === "scarletwoman" && !s.inactive ? game.seats.map((x, i) => x.swPending ? `<button class="btn sm primary" data-swshow="${i}">👑 ${esc(x.name)} zeigen: Du bist ${esc(roleName(x.role))}${game.online || game.test ? " (aufs Handy)" : ""}</button>` : "").join("") : ""}
+            ${s.id === "scarletwoman" && !s.inactive ? game.seats.map((x, i) => x.swPending ? `<button class="btn sm primary" data-swshow="${i}">💋 ${esc(x.name)} zeigen: Du bist ${esc(roleName(x.role))}${game.online || game.test ? " (aufs Handy)" : ""}</button>` : "").join("") : ""}
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
             ${s.once && !s.inactive && s.id !== "philosopher" ? `<button class="btn sm useonce" data-useonce="${s.id}">✔ Fähigkeit wurde benutzt</button>` : ""}
             ${!s.inactive && nightOn() ? actionStatusHtml(s.id) : ""}
@@ -1327,7 +1327,7 @@
     $$("[data-swshow]").forEach(b => b.addEventListener("click", () => {
       const x = game.seats[+b.dataset.swshow];
       x.swPending = false;
-      hist(`👑 ${x.name} hat erfahren: Du bist ${roleName(x.role)}`, "night");
+      hist(`💋 ${x.name} hat erfahren: Du bist ${roleName(x.role)}`, "night");
       const d = game.done[game.nightNo] || [];
       if (!d.includes("scarletwoman")) game.done[game.nightNo] = [...d, "scarletwoman"];
       save(); renderSL();
@@ -2148,7 +2148,7 @@
     const cl = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(v)));
     return {
       private: { ic: "🤫", l: "Private Gespräche", min: cl(a * 0.6 - d * 0.5, 2, 8), end: "Private Gespräche vorbei – alle zurück an den Tisch!" },
-      public: { ic: "🗣️", l: "Offene Runde", min: cl(a * 0.35, 2, 5), end: "Offene Runde vorbei – jetzt wird nominiert!" },
+      public: { ic: "💬", l: "Offene Runde", min: cl(a * 0.35, 2, 5), end: "Offene Runde vorbei – jetzt wird nominiert!" },
       noms: { ic: "⚖️", l: "Nominierungen", min: cl(a * 0.5, 3, 8), end: "Zeit für Nominierungen ist um – die Sonne geht unter!" }
     };
   }
@@ -3397,8 +3397,8 @@
     sw.role = x.role;
     sw.swPending = true;
     sw.marks = [...new Set([...(sw.marks || []), "isdemon"])];
-    hist(`👑 ${sw.name} (Scharlachrote Frau) ist jetzt der Dämon: ${roleName(x.role)}`);
-    toast(swMsg = `👑 ${sw.name} wird zum ${roleName(x.role)} – zeig es ihr heute Nacht`);
+    hist(`💋 ${sw.name} (Scharlachrote Frau) ist jetzt der Dämon: ${roleName(x.role)}`);
+    toast(swMsg = `💋 ${sw.name} wird zum ${roleName(x.role)} – zeig es ihr heute Nacht`);
   }
   // Wird der Dämon wiederbelebt / Hinrichtung rückgängig: Übernahme zurücknehmen
   function swRevert(i) {
@@ -3850,8 +3850,8 @@
       r.fake = true;
       if (!r.skip && x.role === "lunatic" && ROLE_BY_ID[r.step] && ROLE_BY_ID[r.step].t === "demon") {
         r.picks.forEach(k => { const t = game.seats[k]; t.marks = [...new Set([...(t.marks || []), "lun_attack"])]; });
-        hist(`🗡️ ${x.name} (Wahnsinniger) „greift“ ${r.picks.map(k => game.seats[k].name).join(", ")} an – stirbt nicht, aber der echte Dämon erfährt es`, "night");
-        toast(`🗡️ Wahnsinniger hat ${r.picks.map(k => game.seats[k].name).join(", ")} gewählt – kein echter Angriff`);
+        hist(`🤪 ${x.name} (Wahnsinniger) „greift“ ${r.picks.map(k => game.seats[k].name).join(", ")} an – stirbt nicht, aber der echte Dämon erfährt es`, "night");
+        toast(`🤪 Wahnsinniger hat ${r.picks.map(k => game.seats[k].name).join(", ")} gewählt – kein echter Angriff`);
       }
     }
     if (!r.skip && !r.fake) goonCheck(i, r);
@@ -3952,7 +3952,7 @@
     }
     if (r.step === "courtier") {
       const k = game.seats.findIndex(y => y.role === r.role);
-      if (k < 0) { hist(`👑 Höfling wählt ${roleName(r.role)} – die Rolle ist nicht im Spiel, nichts passiert`, "night"); toast(`${roleName(r.role)} ist nicht im Spiel – nichts passiert`); return; }
+      if (k < 0) { hist(`🍷 Höfling wählt ${roleName(r.role)} – die Rolle ist nicht im Spiel, nichts passiert`, "night"); toast(`${roleName(r.role)} ist nicht im Spiel – nichts passiert`); return; }
       const t = game.seats[k];
       setDrunk(k, "Höfling, 3 Tage und Nächte");
       t.keep = [...new Set([...(t.keep || []), "drunk"])];
