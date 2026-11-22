@@ -655,6 +655,10 @@
     game.phase = "night";
     game.history = [{ n: 1, ph: "night", t: `🎬 Spiel beginnt – ${EDITIONS[game.edition].name}, ${playerSeats().length} Spieler` }];
     game.jinxWin = null;
+    // Xaan: X = Anzahl der Außenseiter beim Spielstart
+    game.xaanX = game.seats.some(x => x.role === "xaan") ? game.seats.filter(x => !x.trav && ROLE_BY_ID[x.role].t === "outsider").length : null;
+    game.mez = null;
+    nightStartEffects();
     game.seats.filter(x => x.role === "damsel" && (x.marks || []).includes("poison")).forEach(x => hist(`🔗 Jinx: ${x.name} (Jungfer) ist vergiftet, weil ${game.seats.some(y => y.role === "spy") ? "der Spion" : "die Witwe"} im Spiel ist`, "night"));
     game.statsId = null;
   }
@@ -1134,6 +1138,9 @@
             ${s.inactive || !ROLE_BY_ID[s.id] ? "" : jinxNotesHtml(s.id)}
             ${s.id === "yaggababble" && !s.inactive ? yaggaStepHtml() : ""}
             ${s.id === "gossip" && !s.inactive ? gossipStepHtml() : ""}
+            ${s.id === "mezepheles" && !s.inactive ? mezStepHtml() : ""}
+            ${s.id === "ojo" && !s.inactive && game.nightNo > 1 ? ojoStepHtml() : ""}
+            ${s.id === "xaan" && game.xaanX !== null && game.xaanX !== undefined ? `<p class="small">🌘 X = ${game.xaanX} (Außenseiter beim Start)${game.xaanX === game.nightNo ? " – <b>heute Nacht sind alle Dorfbewohner vergiftet</b> (automatisch markiert)" : game.xaanX > game.nightNo ? ` – das passiert in Nacht ${game.xaanX}` : game.xaanX === 0 ? " – passiert nie" : " – schon vorbei"}.</p>` : ""}
             ${s.id === "shabaloth" && !s.inactive ? game.seats.map((x, k) => !x.alive && x.shabNight === game.nightNo - 1 ? `<button class="btn sm" data-shabre="${k}">♻️ ${esc(x.name)} ausspucken (wiederbeleben)</button>` : "").join("") : ""}
             ${s.id === "po" && !s.inactive && game.nightNo > 1 ? `<p class="small">${poCharged(game.nightNo) ? "💥 Der Po hat letzte Nacht niemanden gewählt – heute darf er <b>3 Spieler</b> töten." : "Der Po darf heute <b>1 Spieler</b> töten (oder niemanden – dann nächste Nacht 3)."}</p>` : ""}
             ${s.id === "eviltwin" && !s.inactive ? (() => { const t = game.seats.find(x => (x.marks || []).includes("twin")); return `<p class="small">👯 Guter Zwilling: <b>${t ? esc(t.name) + " (" + esc(roleName(t.role)) + ")" : "– setze den Marker 👯"}</b></p>`; })() : ""}
@@ -1429,6 +1436,7 @@
       game.nightNo++;
       game.phase = "night";
       hist(`🌙 Nacht ${game.nightNo} beginnt`, "night");
+      nightStartEffects();
       if (healed.length) hist(`💧 Gift/Trunkenheit vorbei: ${healed.join(", ")}`, "night");
       game.done[game.nightNo] = [];
       save(); renderSL();
@@ -1763,6 +1771,29 @@
       hist(`♻️ Der Shabaloth spuckt ${t.name} wieder aus – lebt wieder`, "night");
       save(); renderSL(); toast(`♻️ ${t.name} lebt wieder – verkünde es am Morgen`);
     }));
+    $$("[data-mznew]").forEach(b => b.addEventListener("click", () => { const m = mez(); let w; do { w = MEZ_WORDS[randInt(MEZ_WORDS.length)]; } while (w === m.word); m.word = w; save(); renderSL(); }));
+    $$("[data-mzown]").forEach(b => b.addEventListener("click", () => { const v = prompt("Eigenes geheimes Wort:", mez().word); if (v && v.trim()) { mez().word = v.trim(); save(); renderSL(); } }));
+    $$("[data-mzsend]").forEach(b => b.addEventListener("click", () => {
+      const m = mez(), x = game.seats.find(y => y.role === "mezepheles"); if (!x) return;
+      x.infos = [...(x.infos || []), { n: game.nightNo, t: `🔤 Dein geheimes Wort: „${m.word}“ – der erste gute Spieler, der es sagt, wird in dieser Nacht böse.`, mz: m.word }].slice(-10);
+      hist(`🔤 ${x.name} (Mezepheles) kennt sein Wort: „${m.word}“`, "night");
+      const d = game.done[game.nightNo] || []; if (!d.includes("mezepheles")) game.done[game.nightNo] = [...d, "mezepheles"];
+      save(); renderSL(); toast(game.online || game.test ? `📱 ${x.name} sieht das Wort auf dem Handy` : `Zeig ${x.name} das Wort „${m.word}“`);
+    }));
+    $("#mzsaid") && $("#mzsaid").addEventListener("click", () => {
+      const k = +$("#mzpick").value, t = game.seats[k], m = mez();
+      if (!seatGood(t)) { toast(`${t.name} ist böse – das zählt nicht`); return; }
+      m.turn = { k, night: game.nightNo + 1 };
+      hist(`🔤 ${t.name} hat das Wort des Mezepheles gesagt – wird heute Nacht böse`, "day");
+      save(); renderSL();
+    });
+    $$("[data-ojok], [data-ojonone]").forEach(b => b.addEventListener("click", () => {
+      const a = (game.acts || []).find(q => q.night === game.nightNo && q.step === "ojo" && !q.undone && !q.skip);
+      if (!a) return;
+      a.picks = b.dataset.ojonone ? [] : [+$("#ojopick").value];
+      hist(`👁️ Ojo (Rolle nicht im Spiel): ${a.picks.length ? game.seats[a.picks[0]].name + " soll sterben" : "niemand stirbt"}`, "night");
+      save(); renderSL();
+    }));
     $$("[data-gosk]").forEach(b => b.addEventListener("click", () => {
       const k = +$("#gospick").value;
       game.acts = (game.acts || []).filter(q => !(q.night === game.nightNo && q.step === "gossip"));
@@ -1894,6 +1925,72 @@
         save(); closeModal(); renderSL();
       });
     });
+  }
+
+  // Wirkungen zu Beginn einer Nacht
+  function nightStartEffects() {
+    const n = game.nightNo, S = game.seats;
+    // Xaan: In Nacht X sind alle Dorfbewohner bis zur Dämmerung vergiftet
+    const xa = S.find(x => x.role === "xaan" && x.alive && !impaired(x));
+    if (xa && game.xaanX && game.xaanX === n) {
+      S.forEach((x, k) => { if (ROLE_BY_ID[x.role].t === "townsfolk" && !(x.marks || []).includes("poison")) { x.marks = [...(x.marks || []), "poison"]; } });
+      hist(`🌘 Xaan: Nacht ${n} – alle Dorfbewohner sind bis zur Dämmerung vergiftet`, "night");
+      setTimeout(() => toast(`🌘 Xaan: Heute Nacht (Nacht ${n}) sind alle Dorfbewohner vergiftet`), 600);
+    }
+    // Mezepheles: Wer das Wort gesagt hat, wird jetzt böse
+    const mz = game.mez;
+    if (mz && mz.turn && mz.turn.night === n && !mz.done) {
+      const t = S[mz.turn.k], me = S.find(x => x.role === "mezepheles");
+      mz.done = true;
+      if (t && me && me.alive && !impaired(me) && seatGood(t)) {
+        t.align = "e";
+        t.infos = [...(t.infos || []), { n, t: "🔤 Du hast das geheime Wort des Mezepheles gesagt – du bist jetzt BÖSE." }].slice(-10);
+        hist(`🔤 ${t.name} hat das Wort gesagt und ist jetzt böse (Mezepheles)`, "night");
+        game.ignoreEnd = null;
+      } else if (t) hist(`🔤 ${t.name} hat das Wort gesagt – der Mezepheles ist tot oder vergiftet, nichts passiert`, "night");
+    }
+  }
+
+  // ---------- Mezepheles: geheimes Wort ----------
+  const MEZ_WORDS = ["Mond", "Kerze", "Nebel", "Rabe", "Glocke", "Schatten", "Laterne", "Spiegel", "Feder", "Schlüssel", "Asche", "Brunnen",
+    "Turm", "Rose", "Krone", "Sturm", "Wolke", "Fluss", "Apfel", "eigentlich", "komisch", "logisch", "sicher", "Beweis", "Zufall", "Bauchgefühl"];
+  function mez() {
+    game.mez = game.mez || {};
+    if (!game.mez.word) game.mez.word = MEZ_WORDS[randInt(MEZ_WORDS.length)];
+    return game.mez;
+  }
+  function mezStepHtml() {
+    const m = mez(), x = game.seats.find(y => y.role === "mezepheles");
+    if (!x) return "";
+    if (game.nightNo === 1) {
+      const sent = (x.infos || []).some(f => f.mz === m.word);
+      return `<div class="yagga"><p>🔤 Geheimes Wort: <b>„${esc(m.word)}“</b></p>
+        <div class="row wrap"><button class="btn sm" data-mznew="1">🎲 Anderes Wort</button><button class="btn sm" data-mzown="1">✏️ Eigenes</button>
+        <button class="btn sm ${sent ? "used" : "primary"}" data-mzsend="1">${sent ? "✔ Gesendet" : game.online || game.test ? "📱 Aufs Handy senden" : "✔ Gezeigt"}</button></div></div>`;
+    }
+    return m.done ? `<p class="small">🔤 Das Wort wurde schon von einem Guten gesagt – die Fähigkeit ist verbraucht.</p>`
+      : `<p class="small">🔤 Wort „${esc(m.word)}“ – noch kein guter Spieler hat es gesagt.</p>`;
+  }
+  function mezDayHtml() {
+    const x = game.seats.find(y => y.role === "mezepheles" && y.alive);
+    if (!x) return "";
+    const m = mez();
+    if (m.done || m.turn) return `<p class="small">🔤 Mezepheles: ${m.turn ? `${esc(game.seats[m.turn.k].name)} hat das Wort gesagt – wird heute Nacht böse.` : "Fähigkeit verbraucht."}</p>`;
+    return `<div class="box yagga">🔤 <b>Mezepheles</b> – Wort „${esc(m.word)}“. Hat ein <b>guter</b> Spieler es gesagt?
+      <div class="row wrap">${pickListAll("mzpick")}<button class="btn primary" id="mzsaid">Hat es gesagt</button></div>
+      <p class="small">Nur der erste gute Spieler zählt – er wird heute Nacht böse. Nur du siehst das.</p></div>`;
+  }
+  const pickListAll = id => `<select id="${id}">${game.seats.map((y, k) => y.alive ? `<option value="${k}">${esc(y.name)}</option>` : "").join("")}</select>`;
+
+  // ---------- Ojo: wählt eine Rolle ----------
+  function ojoStepHtml() {
+    const a = (game.acts || []).find(q => q.night === game.nightNo && q.step === "ojo" && !q.undone && !q.skip);
+    if (!a || !a.role) return `<p class="small">👁️ Wartet auf die Wahl des Ojo (eine Rolle). Ohne Handy: über „🏷️“ beim Spieler oder hier, sobald die Wahl gespeichert ist.</p>`;
+    const hit = game.seats.filter(y => y.role === a.role && y.alive);
+    if (hit.length) return `<p class="small">👁️ Ojo wählt ${esc(roleName(a.role))} → <b>${hit.map(y => esc(y.name)).join(", ")}</b> wird angegriffen.</p>`;
+    return `<div class="yagga"><p>👁️ Ojo wählt <b>${esc(roleName(a.role))}</b> – die Rolle ist <b>nicht im Spiel</b>. Du wählst, wer stirbt:</p>
+      ${(a.picks || []).length ? `<p class="okmsg">💀 Gewählt: ${a.picks.map(k => esc(game.seats[k].name)).join(", ")}</p>` : ""}
+      <div class="row wrap">${pickListAll("ojopick")}<button class="btn sm primary" data-ojok="1">💀 Festlegen</button><button class="btn sm" data-ojonone="1">Niemand</button></div></div>`;
   }
 
   // Jinxes bei Hinrichtungen (Leviathan/Riot)
@@ -2219,6 +2316,7 @@
         ${game.nomReq && !game.vote ? `<div class="box nomreq">📨 <b>${esc(game.seats[game.nomReq.by].name)}</b> möchte <b>${esc(game.seats[game.nomReq.on].name)}</b> nominieren.
           <div class="row wrap"><button class="btn primary" id="nomok">✅ Zulassen</button><button class="btn" id="nomno">Ablehnen</button></div></div>` : ""}
         ${yaggaDayHtml()}
+        ${mezDayHtml()}
         ${body}
         ${noms ? `<h3>Nominierungen heute</h3><ul class="nomlist">${noms}</ul>` : ""}
         ${exileHtml(day)}
@@ -3802,7 +3900,7 @@
 
   // Morgen: Nacht beenden, Tag beginnen, Tote der Nacht verkünden
   // ---------- Morgen: Wer stirbt durch den Dämon? ----------
-  const KILL_STEPS = ["imp", "fanggu", "vigormortis", "nodashii", "vortox", "zombuul", "shabaloth", "po", "assassin", "godfather", "lleech", "yaggababble"];
+  const KILL_STEPS = ["imp", "fanggu", "vigormortis", "nodashii", "vortox", "zombuul", "shabaloth", "po", "assassin", "godfather", "lleech", "yaggababble", "ojo"];
   // Philosoph und Kannibale können die Fähigkeit einer anderen Rolle haben (x.gained)
   const gainer = x => !!x && (x.role === "philosopher" || x.role === "cannibal");
   const impaired = x => { const m = x.marks || []; return m.includes("poison") || m.includes("drunk") || x.role === "drunk"; };
@@ -3939,7 +4037,9 @@
     const S = game.seats, n = game.nightNo;
     const attacks = new Map(); // Ziel -> Angreifer
     (game.acts || []).filter(a => a.night === n && !a.skip && !a.undone && !a.fake && !(S[a.i] && S[a.i].role === "lunatic") && KILL_STEPS.includes(a.step) && !(a.step === "lleech" && n === 1))
-      .forEach(a => (a.step === "po" && !poCharged(n) ? (a.picks || []).slice(0, 1) : (a.picks || [])).forEach(k => { if (!attacks.has(k)) attacks.set(k, { step: a.step, by: a.i }); }));
+      .forEach(a => (a.step === "po" && !poCharged(n) ? (a.picks || []).slice(0, 1)
+        : a.step === "ojo" ? (S.some(y => y.role === a.role && y.alive) ? S.map((y, k) => k).filter(k => S[k].role === a.role && S[k].alive) : (a.picks || []))
+        : (a.picks || [])).forEach(k => { if (!attacks.has(k)) attacks.set(k, { step: a.step, by: a.i }); }));
     S.forEach((x, k) => { if ((x.marks || []).includes("target") && !attacks.has(k)) attacks.set(k, { step: null, by: null }); });
     // Pukka: Wer seit einer früheren Nacht vergiftet ist, stirbt jetzt
     const pukka = S.findIndex(y => y.role === "pukka" && (y.alive || y.zfake));
