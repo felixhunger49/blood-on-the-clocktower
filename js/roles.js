@@ -22,6 +22,7 @@ const EDITIONS = {
   exp: { name: "Experimentelle Rollen", de: "Auswahl der beliebtesten", desc: "Zusätzliche offizielle Rollen außerhalb der Boxen – für eigene Rollenlisten.", extra: true },
   fabled: { name: "Fabelwesen", de: "für den Spielleiter", desc: "Sonderregeln, die der Spielleiter öffentlich ins Spiel bringt.", extra: true },
   loric: { name: "Lorics", de: "Spielleiter-Regeln, die das Spiel verändern", desc: "Wie Fabelwesen: Sonderregeln, die das ganze Spiel verändern. Sie können nicht sterben.", extra: true },
+  homebrew: { name: "Homebrew", de: "eigene Rollen", desc: "Selbst erfundene Rollen – aus importierten Skripten oder in der App erstellt.", extra: true },
   custom: { name: "Eigene Liste", de: "selbst zusammengestellt", desc: "Stelle aus allen Rollen deine eigene Rollenliste zusammen.", extra: true }
 };
 // Editionen, die man im Spielleiter-Bereich direkt spielen kann.

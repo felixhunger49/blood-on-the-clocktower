@@ -607,3 +607,6 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .ssitem:active { transform: scale(.98); }
 .amnbox select, .amnbox textarea { width: 100%; margin: .3rem 0; }
 .amnbox select option { white-space: normal; }
+.hbform textarea, .hbform select, .hbform input { width: 100%; }
+.hbform .row input { width: auto; }
+#expjson { width: 100%; font-family: monospace; font-size: .75rem; }

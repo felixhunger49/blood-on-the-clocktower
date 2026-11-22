@@ -317,6 +317,8 @@
   // =====================================================================
   function renderPlayer() {
     const mine = store.get("botc.myrole", null);
+    if (mine && mine.hbd) registerHomebrew(mine.hbd);
+    if (pubState && pubState.hb) registerHomebrew(pubState.hb);
     const on = store.get("botc.online", null);
     // Beitritts-Link gescannt oder „Online-Spiel beitreten“ gewählt: Formular zeigen, auch wenn noch eine alte Rolle gespeichert ist.
     if (!on && Net.configured() && (pendingJoin || showJoin)) {
@@ -588,7 +590,8 @@
     const shown = seat.swPending ? "scarletwoman" : shownRole(seat.role);
     const info = { r: shown, n: seat.name, s: i };
     if (seat.trav || seat.align) info.a = seat.align;
-    if (game.edition === "custom" && (game.script || []).length) info.sc = game.script.map(id => ROLE_BY_ID[id].idx);
+    if (game.edition === "custom" && (game.script || []).length) info.sc = game.script.map(id => ROLE_BY_ID[id].hb ? id : ROLE_BY_ID[id].idx);
+    if (ROLE_BY_ID[shown] && ROLE_BY_ID[shown].hb) info.hbd = [hbDef(shown)].filter(Boolean);
     const x = evilInfoFor(seat);
     if (x) info.x = x;
     if (seat.madness && seat.madness.night === game.nightNo && seat.alive) info.m = seat.madness.role;
@@ -1047,6 +1050,7 @@
     }));
     $("#editscript") && $("#editscript").addEventListener("click", scriptEditor);
     $("#importscript") && $("#importscript").addEventListener("click", scriptImport);
+    $("#exportscript") && $("#exportscript").addEventListener("click", exportScript);
     $("#drunkShown") && $("#drunkShown").addEventListener("change", e => { game.drunkShown = e.target.value; game.bluffs = game.bluffs.filter(b => b !== game.drunkShown); refreshHidden(); save(); });
     $("#marionetteShown") && $("#marionetteShown").addEventListener("change", e => { game.marionetteShown = e.target.value; game.bluffs = game.bluffs.filter(b => b !== game.marionetteShown); refreshHidden(); save(); });
     $("#lunaticShown") && $("#lunaticShown").addEventListener("change", e => { game.lunaticShown = e.target.value; save(); });
@@ -2311,7 +2315,7 @@
       <h4>📜 ${esc(game.scriptName || "Deine Rollenliste")} (${sc.length} Rollen)</h4>
       <p class="small">${c.townsfolk} Dorfbewohner · ${c.outsider} Außenseiter · ${c.minion} Schergen · ${c.demon} Dämonen${c.traveller ? ` · ${c.traveller} Reisende` : ""}</p>
       ${warn.length ? `<p class="warnmsg">Für ${game.count} Spieler fehlt noch: ${warn.join(", ")}.</p>` : ""}
-      <div class="row wrap"><button class="btn primary" id="editscript">✏️ Rollenliste bearbeiten</button><button class="btn" id="importscript">📥 Skript importieren</button></div>
+      <div class="row wrap"><button class="btn primary" id="editscript">✏️ Rollenliste bearbeiten</button><button class="btn" id="importscript">📥 Skript importieren</button><button class="btn" id="exportscript">📤 Exportieren</button></div>
     </div>${jinxHtml(sc)}`;
   }
   // Tipps zur Ausgewogenheit der gewählten Rollen
@@ -2340,6 +2344,133 @@
     return w.length ? `<p class="warnmsg">⚠️ ${w.join(" · ")} im Spiel.</p>` : "";
   }
   let scriptFilter = "all";
+  // ================= HOMEBREW-ROLLEN =================
+  // Definition: { id: "hb_…", de, t, a, e, ic, n1, pos1, n, pos, pick, rolePick, info, act, marks: [{i,l}], setup }
+  function registerHomebrew(defs) {
+    (defs || []).forEach(d => {
+      if (!d || !d.id || !String(d.id).startsWith("hb_") || !TEAMS[d.t]) return;
+      let r = ROLE_BY_ID[d.id];
+      if (!r) { r = { id: d.id }; ROLES.push(r); r.idx = ROLES.length - 1; ROLE_BY_ID[d.id] = r; }
+      Object.assign(r, { de: d.de || "Eigene Rolle", en: d.de || "Homebrew", t: d.t, ed: "homebrew", a: d.a || "", e: d.e || "Homebrew-Rolle – vom Spielleiter erfunden.", tip: d.tip || "", st: d.st || "", n1: d.n1 || "", n: d.n || "", setup: d.setup || "", ic: d.ic || "✳️", hb: true });
+      [[NIGHT_FIRST, d.n1, d.pos1], [NIGHT_OTHER, d.n, d.pos]].forEach(([arr, txt, after]) => {
+        const at = arr.indexOf(d.id); if (at >= 0) arr.splice(at, 1);
+        if (!txt) return;
+        let k = after ? arr.indexOf(after) : -1;
+        if (k < 0) k = arr.indexOf("dawn") - 1;
+        arr.splice(k + 1, 0, d.id);
+      });
+      if (d.pick || d.rolePick) ACTIONS[d.id] = { n: +d.pick || 0, self: true, role: d.rolePick ? "all" : undefined, text: d.act || `Wähle ${d.pick ? (+d.pick === 1 ? "einen Spieler" : d.pick + " Spieler") : ""}${d.pick && d.rolePick ? " und " : ""}${d.rolePick ? "eine Rolle" : ""}.` };
+      else delete ACTIONS[d.id];
+      const ii = INFO_ROLES.indexOf(d.id);
+      if (d.info && ii < 0) INFO_ROLES.push(d.id);
+      if (!d.info && ii >= 0) INFO_ROLES.splice(ii, 1);
+      ROLE_MARKERS[d.id] = (d.marks || []).filter(m => m && m.l).map((m, j) => ({ k: `${d.id}_m${j}`, i: m.i || "🏷️", l: m.l, d: `Marker der Homebrew-Rolle ${d.de}.` }));
+    });
+  }
+  function unregisterHomebrew(id) {
+    const at = ROLES.findIndex(r => r.id === id);
+    if (at >= 0) ROLES.splice(at, 1);
+    ROLES.forEach((r, i) => { r.idx = i; });
+    delete ROLE_BY_ID[id]; delete ACTIONS[id]; delete ROLE_MARKERS[id];
+    [NIGHT_FIRST, NIGHT_OTHER, INFO_ROLES].forEach(arr => { const k = arr.indexOf(id); if (k >= 0) arr.splice(k, 1); });
+  }
+  const hbDef = id => (game.homebrew || []).find(d => d.id === id);
+  const hbSlug = x => normId(String(x || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss"));
+  function saveHomebrew(d) {
+    game.homebrew = [...(game.homebrew || []).filter(x => x.id !== d.id), d];
+    registerHomebrew([d]);
+    game.edition = "custom";
+    game.script = [...new Set([...(game.script || []), d.id])];
+    if (!(game.fabled || []).includes("f_bootlegger")) game.fabled = [...(game.fabled || []), "f_bootlegger"];
+    save();
+  }
+  // Aus dem offiziellen Skript-Format (eigene Rolle als Objekt) eine Homebrew-Definition machen
+  function hbFromScript(x) {
+    const TEAM = { townsfolk: "townsfolk", outsider: "outsider", minion: "minion", demon: "demon", traveler: "traveller", traveller: "traveller" };
+    const t = TEAM[String(x.team || "").toLowerCase()];
+    if (!t || !x.ability) return null;
+    const id = "hb_" + hbSlug(x.id || x.name);
+    const n1 = x.firstNight > 0 ? (x.firstNightReminder || "Wecke die Rolle.") : "";
+    const n = x.otherNight > 0 ? (x.otherNightReminder || "Wecke die Rolle.") : "";
+    const txt = `${x.firstNightReminder || ""} ${x.otherNightReminder || ""}`;
+    const pick = /choose[s]? (2|two)|wählt (2|zwei)/i.test(txt) ? 2 : /choose|wählt|wähle/i.test(txt) ? 1 : 0;
+    const posAt = (arr, num) => { if (!(num > 0)) return null; const k = Math.max(0, Math.min(arr.length - 2, Math.round(num / 100 * (arr.length - 1)))); return arr[k]; };
+    return { id, de: x.name || x.id, t, a: x.ability, e: "Homebrew-Rolle aus einem importierten Skript.", ic: "✳️", n1, pos1: posAt(NIGHT_FIRST, x.firstNight), n, pos: posAt(NIGHT_OTHER, x.otherNight),
+      pick, rolePick: /character/i.test(txt) && /choose/i.test(txt), info: /learn|shows?|point|nod|erfährt|zeig/i.test(txt), marks: (x.reminders || []).map(l => ({ i: "🏷️", l })), setup: x.setup ? "Ändert den Aufbau (siehe Fähigkeit)." : "" };
+  }
+  function homebrewEditor(id) {
+    const d = hbDef(id) || { id: "", de: "", t: "townsfolk", a: "", e: "", ic: "✳️", n1: "", pos1: "", n: "", pos: "", pick: 0, rolePick: false, info: false, marks: [], setup: "" };
+    const stepName = x => NIGHT_STEPS[x] ? NIGHT_STEPS[x].de : roleName(x);
+    const posOpts = (arr, cur) => {
+      const ids = arr.filter(x => x !== d.id && (NIGHT_STEPS[x] || (game.script || []).includes(x)));
+      return `<option value="">– ganz am Ende –</option>${ids.map(x => `<option value="${x}" ${x === cur ? "selected" : ""}>nach: ${esc(stepName(x))}</option>`).join("")}`;
+    };
+    openModal(`<h2>✳️ ${d.id ? "Homebrew-Rolle bearbeiten" : "Eigene Rolle erstellen"}</h2>
+      <div class="hbform">
+        <div class="row wrap"><input id="hbic" value="${esc(d.ic)}" maxlength="4" style="width:3.5rem"><input id="hbname" placeholder="Name der Rolle" value="${esc(d.de)}" style="flex:1"></div>
+        <label class="field">Typ: <select id="hbteam">${["townsfolk", "outsider", "minion", "demon", "traveller"].map(t => `<option value="${t}" ${d.t === t ? "selected" : ""}>${TEAMS[t].name}</option>`).join("")}</select></label>
+        <label class="field">Fähigkeit (wie auf dem Skript):<textarea id="hba" rows="2">${esc(d.a)}</textarea></label>
+        <label class="field">Erklärung für Spieler (optional):<textarea id="hbe" rows="2">${esc(d.e === "Homebrew-Rolle – vom Spielleiter erfunden." ? "" : d.e)}</textarea></label>
+        <label class="switch"><input type="checkbox" id="hbw1" ${d.n1 ? "checked" : ""}><span>Wacht in der <b>ersten Nacht</b></span></label>
+        <div id="hbw1box" ${d.n1 ? "" : "hidden"}><textarea id="hbn1" rows="2" placeholder="Was machst du als Spielleiter?">${esc(d.n1)}</textarea><select id="hbpos1">${posOpts(NIGHT_FIRST, d.pos1)}</select></div>
+        <label class="switch"><input type="checkbox" id="hbw" ${d.n ? "checked" : ""}><span>Wacht in den <b>anderen Nächten</b></span></label>
+        <div id="hbwbox" ${d.n ? "" : "hidden"}><textarea id="hbn" rows="2" placeholder="Was machst du als Spielleiter?">${esc(d.n)}</textarea><select id="hbpos">${posOpts(NIGHT_OTHER, d.pos)}</select></div>
+        <label class="field">Wählt nachts am Handy: <select id="hbpick"><option value="0" ${!+d.pick ? "selected" : ""}>keine Spieler</option><option value="1" ${+d.pick === 1 ? "selected" : ""}>1 Spieler</option><option value="2" ${+d.pick === 2 ? "selected" : ""}>2 Spieler</option></select></label>
+        <label class="switch"><input type="checkbox" id="hbrole" ${d.rolePick ? "checked" : ""}><span>… und eine <b>Rolle</b></span></label>
+        <label class="switch"><input type="checkbox" id="hbinfo" ${d.info ? "checked" : ""}><span>Bekommt <b>Infos</b> vom Spielleiter (📱-Info-Knopf)</span></label>
+        <label class="field">Eigene Marker (mit Komma, z. B. „🎯 Gejagt, 🔥 Brennt“):<input id="hbmarks" value="${esc((d.marks || []).map(m => `${m.i} ${m.l}`).join(", "))}"></label>
+        <label class="field">Setup-Änderung (optional, z. B. „+1 Außenseiter“):<input id="hbsetup" value="${esc(d.setup)}"></label>
+      </div>
+      <p class="small">Die App kennt die Regelwirkung nicht – du wertest sie selbst aus. Nachtschritt, Handy-Aufgaben, Infos und Marker funktionieren wie bei offiziellen Rollen.</p>
+      <div class="row end wrap">${d.id ? `<button class="btn danger" id="hbdel">🗑️ Löschen</button>` : ""}<button class="btn" id="hbcancel">Abbrechen</button><button class="btn primary" id="hbsave">Speichern</button></div>`, "full");
+    $("#hbw1").addEventListener("change", e => { $("#hbw1box").hidden = !e.target.checked; });
+    $("#hbw").addEventListener("change", e => { $("#hbwbox").hidden = !e.target.checked; });
+    $("#hbcancel").addEventListener("click", () => { closeModal(); scriptEditor(); });
+    $("#hbdel") && $("#hbdel").addEventListener("click", () => {
+      if (!confirm(`„${d.de}“ wirklich löschen?`)) return;
+      game.homebrew = (game.homebrew || []).filter(x => x.id !== d.id);
+      game.script = (game.script || []).filter(x => x !== d.id);
+      game.selected = game.selected.filter(x => x !== d.id);
+      unregisterHomebrew(d.id); save(); closeModal(); scriptEditor();
+    });
+    $("#hbsave").addEventListener("click", () => {
+      const name = $("#hbname").value.trim(), ab = $("#hba").value.trim();
+      if (!name || !ab) { toast("Bitte Name und Fähigkeit eintragen."); return; }
+      const marks = $("#hbmarks").value.split(",").map(x => x.trim()).filter(Boolean).map(x => { const m = x.match(/^(\p{Extended_Pictographic}\uFE0F?)\s*(.*)$/u); return m ? { i: m[1], l: m[2] || m[1] } : { i: "🏷️", l: x }; });
+      const nd = { id: d.id || "hb_" + (hbSlug(name) || "rolle") + (hbDef("hb_" + hbSlug(name)) ? randInt(999) : ""), de: name, t: $("#hbteam").value, a: ab, e: $("#hbe").value.trim(), ic: $("#hbic").value.trim() || "✳️",
+        n1: $("#hbw1").checked ? ($("#hbn1").value.trim() || "Wecke die Rolle.") : "", pos1: $("#hbpos1").value, n: $("#hbw").checked ? ($("#hbn").value.trim() || "Wecke die Rolle.") : "", pos: $("#hbpos").value,
+        pick: +$("#hbpick").value, rolePick: $("#hbrole").checked, info: $("#hbinfo").checked, marks, setup: $("#hbsetup").value.trim() };
+      saveHomebrew(nd);
+      hist(`✳️ Homebrew-Rolle „${nd.de}“ ${d.id ? "geändert" : "erstellt"}`);
+      closeModal(); scriptEditor();
+      toast(`✳️ „${nd.de}“ gespeichert und zur Rollenliste hinzugefügt`);
+    });
+  }
+  // Skript exportieren (offizielles Format, inkl. Homebrew)
+  function exportScript() {
+    const out = [{ id: "_meta", name: game.scriptName ? game.scriptName.replace(/ \(von .*\)$/, "") : "Mein Skript", author: "" }];
+    (game.script || []).forEach(id => {
+      const r = ROLE_BY_ID[id];
+      if (!r) return;
+      if (r.hb) out.push({ id: id.replace(/^hb_/, ""), name: r.de, team: r.t, ability: r.a, firstNight: r.n1 ? NIGHT_FIRST.indexOf(id) + 1 : 0, otherNight: r.n ? NIGHT_OTHER.indexOf(id) + 1 : 0,
+        firstNightReminder: r.n1 || "", otherNightReminder: r.n || "", reminders: (ROLE_MARKERS[id] || []).map(m => m.l), setup: !!r.setup });
+      else out.push(id.replace(/^[fl]_/, ""));
+    });
+    (game.fabled || []).forEach(id => out.push(id.replace(/^[fl]_/, "")));
+    const json = JSON.stringify(out, null, 1);
+    openModal(`<h2>📤 Skript exportieren</h2>
+      <p class="small">Im offiziellen Format – zum Teilen, für die offizielle App oder botcscripts.com. Homebrew-Rollen sind mit drin.</p>
+      <textarea id="expjson" rows="8" readonly>${esc(json)}</textarea>
+      <div class="row end wrap"><button class="btn" id="expcopy">📋 Kopieren</button><button class="btn primary" id="expdl">💾 Herunterladen</button></div>`);
+    $("#expcopy").addEventListener("click", () => { (navigator.clipboard ? navigator.clipboard.writeText(json) : Promise.reject()).then(() => toast("📋 Kopiert"), () => { $("#expjson").select(); document.execCommand("copy"); toast("📋 Kopiert"); }); });
+    $("#expdl").addEventListener("click", () => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      a.download = (out[0].name || "skript").replace(/[^\wäöüÄÖÜß-]+/g, "_") + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+  }
+
   // Skript aus dem offiziellen Script-Tool (JSON) übernehmen
   const normId = x => String(x || "").toLowerCase().replace(/[^a-z]/g, "");
   function scriptImport() {
@@ -2367,19 +2498,27 @@
     const lookup = new Map();
     ROLES.forEach(r => { lookup.set(normId(r.id.replace(/^[fl]_/, "")), r.id); lookup.set(normId(r.en), r.id); });
     let name = "", author = "";
-    const ids = [], unknown = [];
+    const ids = [], unknown = [], hb = [];
     data.forEach(x => {
       const id = typeof x === "string" ? x : x && x.id;
       if (!id) return;
       if (id === "_meta") { name = x.name || ""; author = x.author || ""; return; }
-      const hit = lookup.get(normId(id)) || (x && x.name && lookup.get(normId(x.name)));
-      if (hit) ids.push(hit); else unknown.push((x && x.name) || id);
+      const hb1 = typeof x === "object" && x.ability ? hbFromScript(x) : null;
+      const hit = !hb1 && (lookup.get(normId(id)) || (x && x.name && lookup.get(normId(x.name))));
+      if (hit) ids.push(hit);
+      else if (hb1) { hb.push(hb1); ids.push(hb1.id); }
+      else unknown.push((x && x.name) || id);
     });
-    return { ids: [...new Set(ids)], unknown, name, author };
+    return { ids: [...new Set(ids)], unknown, name, author, hb };
   }
   function applyScript(data) {
-    const { ids, unknown, name, author } = scriptRoles(data);
+    const { ids, unknown, name, author, hb } = scriptRoles(data);
     if (!ids.length) return "Keine bekannte Rolle gefunden.";
+    if (hb.length) {
+      game.homebrew = [...(game.homebrew || []).filter(d => !hb.some(h => h.id === d.id)), ...hb];
+      registerHomebrew(hb);
+      if (!(game.fabled || []).includes("f_bootlegger")) game.fabled = [...(game.fabled || []), "f_bootlegger"];
+    }
     game.edition = "custom";
     game.script = ROLES.filter(r => ids.includes(r.id) && r.t !== "fabled").map(r => r.id);
     const fab = ids.filter(id => ROLE_BY_ID[id].t === "fabled");
@@ -2387,7 +2526,7 @@
     game.scriptName = name ? name + (author ? ` (von ${author})` : "") : "";
     game.selected = []; game.bluffs = [];
     save(); closeModal(); renderSL();
-    toast(`📥 ${game.script.length} Rollen übernommen${fab.length ? ` + ${fab.length} Fabelwesen/Lorics` : ""}${unknown.length ? ` – unbekannt: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? " …" : ""}` : ""}`);
+    toast(`📥 ${game.script.length} Rollen übernommen${hb.length ? ` (davon ${hb.length} Homebrew ✳️)` : ""}${fab.length ? ` + ${fab.length} Fabelwesen/Lorics` : ""}${unknown.length ? ` – unbekannt: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? " …" : ""}` : ""}`);
     return null;
   }
 
@@ -2412,7 +2551,7 @@
     const rows = scriptSearchState.results.map((r, k) => {
       const info = scriptRoles(r.content || []);
       return `<button class="ssitem" data-ss="${k}"><b>${esc(r.name)}</b> <span class="small">von ${esc(r.author || "?")}</span><br>
-        <span class="small">${esc(r.script_type || "")} · ⭐ ${r.score || 0} · ${info.ids.length} Rollen${info.unknown.length ? ` · ⚠️ ${info.unknown.length} unbekannt` : ""}</span></button>`;
+        <span class="small">${esc(r.script_type || "")} · ⭐ ${r.score || 0} · ${info.ids.length} Rollen${info.hb.length ? ` · ✳️ ${info.hb.length} Homebrew` : ""}${info.unknown.length ? ` · ⚠️ ${info.unknown.length} unbekannt` : ""}</span></button>`;
     }).join("");
     box.innerHTML = (rows || `<p class="small">Nichts gefunden.</p>`) + (scriptSearchState.next ? `<div class="row center"><button class="btn" id="ssmore">Mehr laden</button></div>` : "");
     $$("[data-ss]").forEach(b => b.addEventListener("click", () => {
@@ -2464,8 +2603,10 @@
           <button class="chip" data-preset="exp">+ Experimentelle</button>
           <button class="chip" data-preset="none">Liste leeren</button>
           <button class="chip" id="importscript2">📥 Skript importieren</button>
+          <button class="chip" id="hbnew">✳️ Eigene Rolle erstellen</button>
         </div>
-        <div class="chips">${["all", "tb", "bmr", "snv", "exp"].map(k => `<button class="chip ${scriptFilter === k ? "on" : ""}" data-sfilter="${k}">${k === "all" ? "Alle zeigen" : EDITIONS[k].name}</button>`).join("")}</div>
+        ${(game.homebrew || []).length ? `<div class="box"><h4>✳️ Deine Homebrew-Rollen</h4><div class="chips">${game.homebrew.map(d => `<button class="chip" data-hbedit="${d.id}">${esc(d.ic || "✳️")} ${esc(d.de)} ✏️</button>`).join("")}</div></div>` : ""}
+        <div class="chips">${["all", "tb", "bmr", "snv", "exp", ...((game.homebrew || []).length ? ["homebrew"] : [])].map(k => `<button class="chip ${scriptFilter === k ? "on" : ""}" data-sfilter="${k}">${k === "all" ? "Alle zeigen" : EDITIONS[k].name}</button>`).join("")}</div>
         <p class="scriptcount">${sc.size} gewählt: ${c.townsfolk} Dorfb. · ${c.outsider} Außens. · ${c.minion} Schergen · ${c.demon} Dämonen · ${c.traveller} Reisende</p>
         ${["townsfolk", "outsider", "minion", "demon", "traveller"].map(t => {
           const rs = list.filter(r => r.t === t);
@@ -2488,6 +2629,8 @@
       }));
       $$("[data-sfilter]").forEach(b => b.addEventListener("click", () => { scriptFilter = b.dataset.sfilter; draw(); }));
       $("#importscript2").addEventListener("click", () => { closeModal(); scriptImport(); });
+      $("#hbnew").addEventListener("click", () => { game.script = ROLES.filter(r => sc.has(r.id)).map(r => r.id); save(); closeModal(); homebrewEditor(null); });
+      $$("[data-hbedit]").forEach(b => b.addEventListener("click", () => { game.script = ROLES.filter(r => sc.has(r.id)).map(r => r.id); save(); closeModal(); homebrewEditor(b.dataset.hbedit); }));
       $("#savescript").addEventListener("click", () => {
         game.script = ROLES.filter(r => sc.has(r.id)).map(r => r.id);
         game.scriptName = "";
@@ -4395,7 +4538,8 @@
       phase: game.phase || "night",
       sleep: tableOn(),
       dawn: game.dawn || null,
-      script: game.edition === "custom" && (game.script || []).length ? game.script.map(id => ROLE_BY_ID[id].idx) : null,
+      script: game.edition === "custom" && (game.script || []).length ? game.script.map(id => ROLE_BY_ID[id].hb ? id : ROLE_BY_ID[id].idx) : null,
+      hb: (game.homebrew || []).filter(d => (game.script || []).includes(d.id)),
       ed: game.edition,
       scn: game.edition === "custom" ? game.scriptName || "" : "",
       fabled: game.fabled || [],
@@ -4597,6 +4741,7 @@
     playerSubs.push(api.listen(`${base}/public`, v => {
       const before = pubState;
       pubState = v;
+      if (v && v.hb) registerHomebrew(v.hb);
       store.set("botc.public", v);
       updateNetBar();
       const seatSig = x => JSON.stringify(((x && x.seats) || []).map(s => [s.n, s.a]));
@@ -4724,6 +4869,10 @@
     else if (tab === "anleitung") renderGuide();
     else renderPlayer();
   }
+  // Homebrew-Rollen (Spielleiter: aus dem Spiel; Spieler: von der Karte bzw. aus dem Online-Raum) bekannt machen
+  registerHomebrew(game.homebrew);
+  { const mine = store.get("botc.myrole", null); if (mine && mine.hbd) registerHomebrew(mine.hbd); }
+  if (pubState && pubState.hb) registerHomebrew(pubState.hb);
   window.addEventListener("hashchange", route);
   route();
   setTimeout(applyPhase, 0);
