@@ -593,7 +593,7 @@
     if (x) info.x = x;
     if (seat.madness && seat.madness.night === game.nightNo && seat.alive) info.m = seat.madness.role;
     if ((seat.infos || []).length) info.i = seat.infos.slice(-10);
-    if (seat.grim && seat.role === "spy") info.g = seat.grim;
+    if (seat.grim && ["spy", "widow"].includes(seat.role)) info.g = seat.grim;
     const ask = (game.asks || {})[i];
     if (nightOn() && ask && ask.night === game.nightNo && !ask.done) info.q = { id: ask.id, step: ask.step, sleep: !!ask.sleep, amn: seat.role === "amnesiac" && !(seat.amn && seat.amn.known) };
     const wk = (game.wakes || {})[i];
@@ -968,7 +968,8 @@
               const d = game.drunkPick, other = d.opts.find(k => k !== d.on);
               return `<div class="actrow">🍺 Betrunken ist: <b>${esc(game.seats[d.on].name)}</b>${other !== undefined ? ` <button class="btn sm" data-swapdrunk="1">⇄ Stattdessen ${esc(game.seats[other].name)}</button>` : ""}</div>`;
             })() : ""}
-            ${s.id === "spy" && !s.inactive && (game.online || game.test) ? `<button class="btn sm primary" data-spygrim="1">📖 Grimoire aufs Handy${tableOn() ? " (wecken)" : ""}</button>` : ""}
+            ${["spy", "widow"].includes(s.id) && !s.inactive && (game.online || game.test) ? `<button class="btn sm primary" data-spygrim="${s.id}">📖 Grimoire aufs Handy${tableOn() ? " (wecken)" : ""}</button>` : ""}
+            ${s.id === "widow" && !s.inactive ? `<button class="btn sm" data-widowknow="1">🕸️ Guten Spieler einweihen${game.seats.some(x => (x.marks || []).includes("knows")) ? " ✔" : ""}</button>` : ""}
             ${s.id === "spy" && game.seats.some(x => x.grim) ? `<button class="btn sm" data-spyhide="1">🙈 Grimoire vom Handy entfernen</button>` : ""}
             ${s.id === "scarletwoman" && !s.inactive ? game.seats.map((x, i) => x.swPending ? `<button class="btn sm primary" data-swshow="${i}">👑 ${esc(x.name)} zeigen: Du bist ${esc(roleName(x.role))}${game.online || game.test ? " (aufs Handy)" : ""}</button>` : "").join("") : ""}
             ${s.id === "philosopher" && !s.inactive ? game.seats.map((x, i) => x.role === "philosopher" && x.alive && !x.used ? philoSelect(i) : "").join("") : ""}
@@ -1129,7 +1130,8 @@
     }));
     $("#daystart") && $("#daystart").addEventListener("click", dawnDialog);
     $$("[data-swapdrunk]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); swapDrunk(); }));
-    $$("[data-spygrim]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); spyGrimDialog(); }));
+    $$("[data-spygrim]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); spyGrimDialog(b.dataset.spygrim); }));
+    $$("[data-widowknow]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); widowKnowDialog(); }));
     $$("[data-spyhide]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); spyGrimHide(); }));
     $$("[data-swshow]").forEach(b => b.addEventListener("click", () => {
       const x = game.seats[+b.dataset.swshow];
@@ -2668,6 +2670,16 @@
   // Scharlachrote Frau: Stirbt der Dämon bei 5+ Lebenden (vor dem Tod gezählt, ohne Reisende),
   // wird sie der Dämon – aber nicht, wenn sie vergiftet oder betrunken ist.
   // Tollpatsch: Stirbt er (und ist gesund), muss er öffentlich einen lebenden Spieler wählen.
+  // Stirbt die Witwe, endet ihr Gift
+  function widowCheck(x) {
+    if (!x || x.alive || x.role !== "widow") return;
+    game.seats.forEach(y => {
+      if (!y.widowPoison) return;
+      delete y.widowPoison;
+      y.marks = (y.marks || []).filter(m => m !== "poison"); y.keep = (y.keep || []).filter(m => m !== "poison");
+      hist(`💧 Die Witwe ist tot – ${y.name} ist nicht mehr vergiftet`);
+    });
+  }
   function klutzCheck(x) {
     if (!x || x.alive || x.zfake || x.role !== "klutz") return;
     game.klutzPending = game.seats.indexOf(x);
@@ -2715,6 +2727,7 @@
   function swCheck(x) {
     swMsg = null;
     klutzCheck(x);
+    widowCheck(x);
     if (!x || x.alive || x.zfake || ROLE_BY_ID[x.role].t !== "demon") return;
     const S = game.seats;
     const sw = S.find(y => y.role === "scarletwoman" && y.alive);
@@ -3097,6 +3110,7 @@
       if (def.keep) t.keep = [...new Set([...(t.keep || []), def.mark])];
       if (!had) markHist(t, def.mark, true, roleName(r.step));
       if (r.step === "pukka") t.pukkaNight = game.nightNo;
+      if (r.step === "widow") t.widowPoison = true;
       // Hat das Opfer heute Nacht schon gewählt (z. B. Mönch antwortet vor dem Giftmischer)? Dann wirkt das nachträglich nicht.
       if (["poison", "drunk"].includes(def.mark)) undoPoisonedActs(k);
     });
@@ -3283,7 +3297,7 @@
         <h2>${role ? role.ic + " " + esc(role.de) : ""}</h2>
         ${(wk.r || []).map(id => { const r = ROLE_BY_ID[id]; return r ? `<div class="ns-bluff t-${r.t}"><b>${r.ic} ${esc(r.de)}</b><small>${esc(r.a)}</small></div>` : ""; }).join("")}
         ${wk.t ? `<p class="ns-text">${esc(wk.t)}</p>` : ""}
-        ${wk.step === "spy" && mine.g ? grimBox(mine.g) : ""}
+        ${["spy", "widow"].includes(wk.step) && mine.g ? grimBox(mine.g) : ""}
         <p class="ns-hint">Merk dir die Info – sie steht auch auf deiner Rollenkarte.</p>
         <div class="row center"><button class="btn big" id="wkdone">😴 Augen wieder zu</button></div>
       </div>`, "full night sleep");
@@ -3780,29 +3794,59 @@
   function spyGrimHide() {
     game.seats.forEach(x => { if (x.grim) { delete x.grim; hist(`🙈 Grimoire vom Handy von ${x.name} entfernt`, "night"); } });
     save(); renderSL();
-    toast("🙈 Das Grimoire ist vom Handy des Spions verschwunden");
+    toast("🙈 Das Grimoire ist vom Handy verschwunden");
   }
-  function spyGrimDialog() {
-    const holders = stepHolders("spy").filter(([x]) => x.alive);
+  function widowKnowDialog() {
+    const S = game.seats;
+    const good = S.map((y, i) => i).filter(i => S[i].alive && seatGood(S[i]) && S[i].role !== "widow");
+    if (!good.length) return;
+    openModal(`<h2>🕸️ Wer erfährt von der Witwe?</h2>
+      <p class="small">Ein guter Spieler erfährt, dass eine Witwe im Spiel ist (aber nicht, wer). Er bekommt es aufs Handy bzw. du zeigst ihm das Witwe-Token.</p>
+      <div class="infopick">${good.map(i => `<button class="btn pickbtn" data-wk="${i}">${esc(S[i].name)}</button>`).join("")}</div>
+      <div class="row"><button class="btn sm" id="wkrand">🎲 Zufällig</button></div>`);
+    const pick = i => {
+      const t = S[i];
+      t.marks = [...new Set([...(t.marks || []), "knows"])];
+      t.infos = [...(t.infos || []), { n: game.nightNo, r: ["widow"], t: "Eine Witwe ist im Spiel." }].slice(-10);
+      if (tableOn()) {
+        game.wakes = game.wakes || {};
+        game.wakes[i] = { id: `w${game.nightNo}-${i}-${randInt(1e6)}`, night: game.nightNo, step: "widow", r: ["widow"], t: "Eine Witwe ist im Spiel." };
+        const wk = game.wakes[i];
+        if (isBot(t)) setTimeout(() => { if (!wk.done) { wk.done = true; save(); refreshHostView(); } }, 1500 + randInt(1500));
+      }
+      hist(`🕸️ ${t.name} erfährt, dass eine Witwe im Spiel ist`, "night");
+      save(); closeModal(); renderSL();
+      toast(reachable(t) ? `🕸️ ${t.name} erfährt es${tableOn() ? " – wird geweckt" : " auf dem Handy"}` : `🕸️ Zeig ${t.name} das Witwe-Token`);
+    };
+    $$("[data-wk]").forEach(b => b.addEventListener("click", () => pick(+b.dataset.wk)));
+    $("#wkrand").addEventListener("click", () => pick(good[randInt(good.length)]));
+  }
+  function spyGrimDialog(rid) {
+    rid = rid === "widow" ? "widow" : "spy";
+    const holders = stepHolders(rid).filter(([x]) => x.alive);
     if (!holders.length) return;
     const [x, i] = holders[0];
+    const rname = roleName(rid);
+    // Jinx: Hat der Mohnbauer seine Fähigkeit, sieht der Spion/die Witwe das Grimoire nicht
+    const poppy = game.seats.find(y => y.role === "poppygrower" && y.alive && !impaired(y));
+    if (poppy) { toast(`🌺 Der Mohnbauer lebt – ${rname} sieht das Grimoire nicht (Jinx)`); return; }
     const send = fake => {
       x.grim = grimSnapshot(fake);
       if (tableOn()) {
         game.wakes = game.wakes || {};
-        game.wakes[i] = { id: `w${game.nightNo}-${i}-${randInt(1e6)}`, night: game.nightNo, step: "spy", r: [], t: "Das Grimoire:" };
+        game.wakes[i] = { id: `w${game.nightNo}-${i}-${randInt(1e6)}`, night: game.nightNo, step: rid, r: [], t: rid === "widow" ? "Das Grimoire – wähle danach, wen du vergiftest:" : "Das Grimoire:" };
         const wk = game.wakes[i];
         if (isBot(x)) setTimeout(() => { if (!wk.done) { wk.done = true; save(); refreshHostView(); } }, 2500 + randInt(2000));
       }
       const d = game.done[game.nightNo] || [];
-      if (!d.includes("spy")) game.done[game.nightNo] = [...d, "spy"];
-      hist(`📖 ${x.name} (Spion) sieht das Grimoire${fake ? " (verfälscht)" : ""}`, "night");
+      if (rid === "spy" && !d.includes("spy")) game.done[game.nightNo] = [...d, "spy"];
+      hist(`📖 ${x.name} (${rname}) sieht das Grimoire${fake ? " (verfälscht)" : ""}`, "night");
       save(); closeModal(); renderSL();
       toast(reachable(x) ? `📖 Grimoire an ${x.name} gesendet${tableOn() ? " – wird geweckt" : ""}` : `${x.name} ist nicht online – zeig ihm dein Grimoire`);
     };
     if (!impaired(x)) return send(false);
     openModal(`<h2>📖 Grimoire für ${esc(x.name)}</h2>
-      <p class="warnmsg">⚠️ Der Spion ist vergiftet/betrunken – du darfst ihm ein falsches Grimoire zeigen.</p>
+      <p class="warnmsg">⚠️ ${esc(rname)} ist vergiftet/betrunken – du darfst ein falsches Grimoire zeigen.</p>
       <div class="row wrap"><button class="btn" id="spyreal">Echtes Grimoire senden</button><button class="btn primary" id="spyfake">🔀 Verfälscht senden (2 Rollen vertauscht)</button></div>`);
     $("#spyreal").addEventListener("click", () => send(false));
     $("#spyfake").addEventListener("click", () => send(true));
