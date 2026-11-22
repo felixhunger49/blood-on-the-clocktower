@@ -546,7 +546,7 @@
     game.nightNo = 1;
     game.days = {};
     game.vote = null;
-    game.winner = null; game.klutzLoss = null; game.klutzPending = null; game.saintLoss = null; game.juggle = null; game.exile = null;
+    game.winner = null; game.klutzLoss = null; game.klutzPending = null; game.saintLoss = null; game.juggle = null; game.fgJumped = false; game.exile = null;
     game.ignoreEnd = null;
     game.evilSent = {};
     game.phase = "night";
@@ -2782,12 +2782,18 @@
       const attacker = at.by !== null ? S[at.by] : S.find(y => (y.alive || y.zfake) && ROLE_BY_ID[y.role].t === "demon");
       const m = x.marks || [];
       const strong = at.step === "assassin";
+      let jump = null;
       let dies = true, why = at.step === "pukka" && x.pukkaNight && x.pukkaNight < n ? `stirbt durch die Pukka (vergiftet seit Nacht ${x.pukkaNight}) – danach wieder gesund` : `angegriffen${at.step ? ` (${roleName(at.step)})` : ""}`;
       if (attacker && impaired(attacker)) { dies = false; why = `${attacker.name} ist vergiftet/betrunken – der Angriff wirkt nicht`; }
       else if (!strong && m.includes("protect")) { dies = false; why = "🛡️ geschützt – überlebt"; }
       else if (!strong && x.role === "soldier" && !impaired(x)) { dies = false; why = "🛡️ Soldat – der Dämon kann ihn nicht töten"; }
       else if (!strong && m.includes("cantdie")) { dies = false; why = "🫖 Teedame – kann nicht sterben"; }
       else if (deathRule(x)) { const r = deathRule(x); dies = r.dies; why = r.why; }
+      else if (at.by === k && x.role !== "imp") why = `${roleName(x.role)} hat sich selbst gewählt und stirbt (nur der Imp kann einen Sternenwechsel machen)`;
+      else if (at.step === "fanggu" && at.by !== null && at.by !== k && !game.fgJumped && ROLE_BY_ID[x.role].t === "outsider") {
+        why = `🦇 Fang Gu springt: ${x.name} (Außenseiter) wird der neue Fang Gu (böse) – der alte Fang Gu ${S[at.by].name} stirbt stattdessen`;
+        dies = false; jump = at.by;
+      }
       else if (at.by === k) {
         const sw = S.find(y => y.role === "scarletwoman" && y.alive && !impaired(y));
         why = sw && S.filter(y => y.alive && !y.trav).length >= 5
@@ -2795,7 +2801,7 @@
           : "Dämon hat sich selbst gewählt – Sternenwechsel: Du wählst gleich, welcher Scherge der neue Dämon wird";
       }
       else if (x.role === "mayor" && !impaired(x)) why = "Bürgermeister: Du darfst den Tod auf einen anderen Spieler umlenken (dann hier abwählen und den anderen tot setzen)";
-      out.push({ k, dies, why, step: at.step || (attacker ? attacker.role : null), self: at.by === k });
+      out.push({ k, dies, why, step: at.step || (attacker ? attacker.role : null), self: at.by === k, jump });
     });
     return out;
   }
@@ -2863,7 +2869,19 @@
         hist(`💧 ${y.name} ist nach der Pukka wieder gesund`, "night");
       });
       closeModal();
-      const self = kills.find(x => x.self && !game.seats[x.k].alive && ROLE_BY_ID[game.seats[x.k].role].t === "demon");
+      // Fang Gu springt in einen Außenseiter
+      kills.filter(x => x.jump !== null && x.jump !== undefined).forEach(x => {
+        const t = game.seats[x.k], old = game.seats[x.jump];
+        if (!t.alive || !old) return;
+        game.fgJumped = true;
+        hist(`🦇 Der Fang Gu springt: ${t.name} (${roleName(t.role)}) ist jetzt der Fang Gu`, "night");
+        t.role = "fanggu"; delete t.align;
+        t.marks = [...new Set([...(t.marks || []), "jumped"])];
+        applyDeath(old, null);
+        game.ignoreEnd = null; game.endPopped = null;
+        toast(`🦇 ${t.name} ist jetzt der Fang Gu – wecke ihn und zeig es ihm${reachable(t) ? " (steht auf seinem Handy)" : ""}`);
+      });
+      const self = kills.find(x => x.self && !game.seats[x.k].alive && game.seats[x.k].role === "imp");
       if (!self || !starpassDialog(game.seats[self.k])) startDay();
     });
   }

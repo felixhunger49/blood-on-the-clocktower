@@ -1011,7 +1011,7 @@ const ROLE_ICONS = {
   professor: "🎓", minstrel: "🎻", tealady: "🫖", pacifist: "☮️", fool: "🃏", tinker: "🔧",
   moonchild: "🌙", goon: "👊", lunatic: "🤪", godfather: "🤵", devilsadvocate: "⚖️", assassin: "🗡️",
   mastermind: "🧠", zombuul: "🧟", pukka: "🐍", shabaloth: "🦑", po: "🔥", clockmaker: "🕰️",
-  dreamer: "💭", snakecharmer: "🎶", mathematician: "🧮", flowergirl: "💐", towncrier: "📣", oracle: "👁️",
+  dreamer: "💭", snakecharmer: "🐍", mathematician: "🧮", flowergirl: "💐", towncrier: "📣", oracle: "👁️",
   savant: "📜", seamstress: "🧵", philosopher: "🤔", artist: "🎨", juggler: "🤹", sage: "🦉",
   mutant: "🧬", sweetheart: "💘", barber: "💈", klutz: "🍌", eviltwin: "👯", witch: "🧙",
   cerenovus: "🌀", pithag: "🪄", fanggu: "🦇", vigormortis: "💀", nodashii: "🐙", vortox: "🌪️",
@@ -1029,7 +1029,7 @@ const ROLE_ICONS = {
   f_gardener: "🌱", f_ferryman: "⛵", f_deusexfiasco: "🎪",
   acrobat: "🤸", alchemist: "⚗️", alsaahir: "🧿", amnesiac: "❓", atheist: "🚫", banshee: "😱", cannibal: "🍖", cultleader: "🕯️",
   engineer: "⚙️", fisherman: "🎣", lycanthrope: "🐺", magician: "✨", poppygrower: "🌺", princess: "👸", hatter: "🎩",
-  hermit: "🧙", plaguedoctor: "🦠", zealot: "📢", boffin: "🔬", organgrinder: "🎶", summoner: "🔯", vizier: "👳",
+  hermit: "🧙", plaguedoctor: "🦠", zealot: "📢", boffin: "🔬", organgrinder: "🪗", summoner: "🔯", vizier: "👳",
   wizard: "🪄", wraith: "👻", xaan: "🌀", kazali: "🦂", lordoftyphon: "🐉", riot: "🔥", yaggababble: "🗯️",
   cacklejack: "🃏", gangster: "🔫", l_bigwig: "🧑‍⚖️", l_pope: "⛪", l_hindu: "🕉️", l_zenomancer: "🎯", l_ventriloquist: "🎭", l_tor: "🌫️", l_godofug: "🪨", l_knaves: "👯", gnome: "🍄"
 };
