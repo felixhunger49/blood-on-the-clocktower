@@ -2979,7 +2979,7 @@
   }
 
   // Skript aus dem offiziellen Script-Tool (JSON) übernehmen
-  const normId = x => String(x || "").toLowerCase().replace(/[^a-z]/g, "");
+  const normId = x => String(x || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/[^a-z]/g, "");
   function scriptImport() {
     openModal(`<h2>📥 Skript importieren</h2>
       ${scriptSearchHtml()}
@@ -3003,7 +3003,9 @@
   function scriptRoles(data) {
     if (!Array.isArray(data)) data = data && Array.isArray(data.roles) ? data.roles : [];
     const lookup = new Map();
+    // Englische ID, englischer und deutscher Name – die deutschen nur, wenn sie nicht schon belegt sind
     ROLES.forEach(r => { lookup.set(normId(r.id.replace(/^[fl]_/, "")), r.id); lookup.set(normId(r.en), r.id); });
+    ROLES.forEach(r => { if (!r.hb && r.de && !lookup.has(normId(r.de))) lookup.set(normId(r.de), r.id); });
     let name = "", author = "";
     const ids = [], unknown = [], hb = [];
     data.forEach(x => {
@@ -3033,6 +3035,16 @@
     game.scriptName = name ? name + (author ? ` (von ${author})` : "") : "";
     game.selected = []; game.bluffs = [];
     save(); closeModal(); renderSL();
+    if (unknown.length) {
+      const c = t => game.script.filter(id => ROLE_BY_ID[id].t === t).length;
+      openModal(`<h2>⚠️ ${unknown.length} Rolle(n) nicht erkannt</h2>
+        <p>Diese Rollen aus dem Skript kennt die App nicht – sie fehlen in deiner Rollenliste:</p>
+        <ul>${unknown.map(u => `<li><b>${esc(String(u))}</b></li>`).join("")}</ul>
+        <p class="small">Übernommen: ${c("townsfolk")} Dorfbewohner · ${c("outsider")} Außenseiter · ${c("minion")} Schergen · ${c("demon")} Dämonen${c("traveller") ? ` · ${c("traveller")} Reisende` : ""}</p>
+        <p class="small">Tipp: Lege fehlende Rollen unter „✏️ Rollenliste bearbeiten → ✳️ Eigene Rolle erstellen“ an – oder schick mir den Namen, dann baue ich sie ein.</p>
+        <div class="row end"><button class="btn primary" id="unkok">OK</button></div>`);
+      $("#unkok").addEventListener("click", closeModal);
+    }
     toast(`📥 ${game.script.length} Rollen übernommen${hb.length ? ` (davon ${hb.length} Homebrew ✳️)` : ""}${fab.length ? ` + ${fab.length} Fabelwesen/Lorics` : ""}${unknown.length ? ` – unbekannt: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? " …" : ""}` : ""}`);
     return null;
   }
