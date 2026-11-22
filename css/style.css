@@ -613,3 +613,7 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .pvote { border-left: 4px solid var(--accent); }
 .pvote select { flex: 1; min-width: 8rem; }
 .box.nomreq { border-left: 4px solid var(--accent); }
+.nightsum ul { margin: .2rem 0; padding-left: 1.1rem; display: grid; gap: .2rem; font-size: .88rem; }
+.nightsumwrap summary { cursor: pointer; margin-bottom: .4rem; }
+#gstext { width: 100%; font-family: monospace; font-size: .75rem; }
+.hbform input[type=checkbox] { width: 1.2rem; }

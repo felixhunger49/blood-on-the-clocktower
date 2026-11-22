@@ -455,7 +455,28 @@
   }
   let game = store.get("botc.game", null) || newGame();
   if (!game.nightNo) { game.nightNo = 1; game.done = {}; delete game.night; } // ältere Spielstände
-  const save = () => { store.set("botc.game", game); if (game.online) scheduleSync(); };
+  // Rückgängig: frühere Spielstände (nur im Speicher, schnell hintereinander gespeicherte Änderungen zählen als ein Schritt)
+  const undoStack = [];
+  let lastSavedJson = JSON.stringify(game), lastUndoPush = 0;
+  const save = () => {
+    const cur = JSON.stringify(game);
+    if (cur !== lastSavedJson) {
+      // alle Speicherungen einer einzelnen Aktion (gleicher Klick) zählen als ein Schritt
+      if (!lastUndoPush) { undoStack.push(lastSavedJson); if (undoStack.length > 30) undoStack.shift(); lastUndoPush = 1; setTimeout(() => { lastUndoPush = 0; }, 0); }
+      lastSavedJson = cur;
+    }
+    store.set("botc.game", game); if (game.online) scheduleSync();
+  };
+  function undo() {
+    if (!undoStack.length) return;
+    const prev = undoStack.pop();
+    game = JSON.parse(prev);
+    lastSavedJson = prev; lastUndoPush = 0;
+    store.set("botc.game", game);
+    if (game.online) scheduleSync();
+    closeModal(); renderSL();
+    toast(`↩️ Rückgängig gemacht${undoStack.length ? ` (noch ${undoStack.length} Schritte möglich)` : ""}`);
+  }
 
   const playerSeats = () => game.seats.filter(s => !s.trav);
   // Gesinnung: Reisende und umgedrehte Spieler (z. B. Schlangenbeschwörer) haben s.align, sonst gilt der Rollentyp.
@@ -961,7 +982,7 @@
       const allKilled = !allDead && !ACTS_WHEN_DEAD.includes(id) && all.every(s => (!s.alive && !s.zfake) || killedBefore(s, id));
       const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => ((s.role === "philosopher" && id !== "philosopher" ? s.gainedUsed : s.used) && s.usedNight !== game.nightNo) || !s.alive);
       // Der Jongleur erfährt sein Ergebnis nur in der Nacht nach dem ersten Tag.
-      const over = id === "juggler" && game.nightNo > 2;
+      const over = (id === "juggler" && game.nightNo > 2) || (ROLE_BY_ID[id] && ROLE_BY_ID[id].hbCond === "n2" && game.nightNo !== 2);
       const swIdle = id === "scarletwoman" && !holders.some(s => s.swPending);
       const inactive = allDead || allKilled || allUsed || over || notTriggered || swIdle;
       const why = allDead ? "Tot – keine Fähigkeit mehr, nicht wecken."
@@ -993,7 +1014,8 @@
     }
     return banner + `
       <section class="panel">
-        <h2>Grimoire</h2>
+        <div class="row" style="justify-content:space-between;align-items:center"><h2>Grimoire</h2>
+          <div class="row">${undoStack.length ? `<button class="btn sm" id="undobtn" title="Letzte Änderung zurücknehmen">↩️ Rückgängig</button>` : ""}<button class="btn sm" id="savegame" title="Spielstand sichern / übertragen">💾</button></div></div>
         ${game.online ? `<p class="small">${netDot()} Online-Spiel ${esc(game.online.code)}</p>` : ""}
         ${(game.log || []).length ? `<div class="box msglog"><h4>📨 Meldungen von Spielern</h4><ul>${game.log.slice(-5).reverse().map(l => `<li>${esc(l.text)}</li>`).join("")}</ul></div>` : ""}
         <div class="daycount">🌙 Nacht ${game.nightNo} <span>·</span> ☀️ ${game.nightNo > 1 ? `Tag ${game.nightNo - 1} vorbei` : "noch kein Tag"}</div>
@@ -1037,7 +1059,7 @@
             ${s.show && (game.online || game.test) ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
           </li>`).join("")}</ol>
         <div class="row wrap">
-          ${game.phase === "day" ? "" : `<button class="btn primary" id="daystart">☀️ Morgen – Tag ${game.nightNo} beginnt</button>`}
+          ${game.phase === "day" ? "" : `<button class="btn" id="nightsum">📋 Nachtübersicht</button><button class="btn primary" id="daystart">☀️ Morgen – Tag ${game.nightNo} beginnt</button>`}
           <button class="btn ${game.phase === "day" ? "primary" : ""}" id="nextnight">🌙 Tag ${game.nightNo} vorbei → Nacht ${game.nightNo + 1} beginnen</button>
           ${game.nightNo > 1 ? `<button class="btn sm" id="prevnight">↩︎ Zurück zu Nacht ${game.nightNo - 1}</button>` : ""}
         </div>
@@ -1186,6 +1208,9 @@
       save(); renderSL();
     }));
     $("#daystart") && $("#daystart").addEventListener("click", dawnDialog);
+    $("#undobtn") && $("#undobtn").addEventListener("click", undo);
+    $("#savegame") && $("#savegame").addEventListener("click", gameTransfer);
+    $("#nightsum") && $("#nightsum").addEventListener("click", () => openModal(`<h2>📋 Nachtübersicht</h2>${nightSummaryHtml()}<div class="row end"><button class="btn primary" id="nsclose">OK</button></div>`) || $("#nsclose").addEventListener("click", closeModal));
     $$("[data-swapdrunk]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); swapDrunk(); }));
     $$("[data-spygrim]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); spyGrimDialog(b.dataset.spygrim); }));
     $$("[data-widowknow]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); widowKnowDialog(); }));
@@ -1476,7 +1501,7 @@
 
   // Heiliger: Wird er (gesund) hingerichtet, verliert Gut.
   function saintCheck(x) {
-    if (!x || (x.role !== "saint" && (ROLE_BY_ID[x.role] || {}).hbEffect !== "saint") || x.alive) return;
+    if (!x || (x.role !== "saint" && !hbHas(x.role, "saint")) || x.alive) return;
     if (impaired(x)) { hist(`😇 ${x.name} (Heiliger) wurde hingerichtet, war aber vergiftet/betrunken – nichts passiert`, "day"); abn(x, "Heiliger hingerichtet, aber vergiftet – keine Folgen"); return; }
     game.saintLoss = x.name; game.saintLossRole = roleName(x.role); game.ignoreEnd = null; game.endPopped = null;
   }
@@ -2428,6 +2453,9 @@
   }
   let scriptFilter = "all";
   // ================= HOMEBREW-ROLLEN =================
+  const hbFx = rid => (ROLE_BY_ID[rid] || {}).hbEffects || [];
+  const hbHas = (rid, ...fxs) => hbFx(rid).some(f => fxs.includes(f));
+  const hbFind = (rid, list) => hbFx(rid).find(f => list.includes(f));
   // Bausteine: damit wirkt eine eigene Rolle automatisch (pick = wie viele Spieler sie nachts wählt)
   const HB_EFFECTS = {
     "": { l: "– keine (Wirkung wertest du selbst aus) –" },
@@ -2482,13 +2510,19 @@
         if (k < 0) k = arr.indexOf("dawn") - 1;
         arr.splice(k + 1, 0, d.id);
       });
-      const fx = HB_EFFECTS[d.effect || ""] || {};
+      const fx = HB_EFFECTS[d.effect || ""] || {}, fx2 = HB_EFFECTS[d.effect2 || ""] || {};
       r.hbEffect = d.effect || "";
-      if (fx.info) d.info = true;
+      r.hbEffects = [d.effect, d.effect2].filter(Boolean);
+      r.hbCond = d.cond || "";
+      if (fx.info || fx2.info) d.info = true;
       const pd = PICK_DEPENDENT.indexOf(d.id);
-      if (fx.info && fx.pick && pd < 0) PICK_DEPENDENT.push(d.id);
-      if (!(fx.info && fx.pick) && pd >= 0) PICK_DEPENDENT.splice(pd, 1);
-      if (d.pick || d.rolePick) ACTIONS[d.id] = { mark: fx.mark, n: +d.pick || 0, self: true, role: d.rolePick ? "all" : undefined, text: d.act || `Wähle ${d.pick ? (+d.pick === 1 ? "einen Spieler" : d.pick + " Spieler") : ""}${d.pick && d.rolePick ? " und " : ""}${d.rolePick ? "eine Rolle" : ""}.` };
+      const pickInfo = (fx.info && fx.pick) || (fx2.info && fx2.pick);
+      if (pickInfo && pd < 0) PICK_DEPENDENT.push(d.id);
+      if (!pickInfo && pd >= 0) PICK_DEPENDENT.splice(pd, 1);
+      const oi = ONCE_PER_GAME.indexOf(d.id);
+      if (d.cond === "once" && oi < 0) ONCE_PER_GAME.push(d.id);
+      if (d.cond !== "once" && oi >= 0) ONCE_PER_GAME.splice(oi, 1);
+      if (d.pick || d.rolePick) ACTIONS[d.id] = { mark: fx.mark || fx2.mark, mark2: fx.mark && fx2.mark && fx2.mark !== fx.mark ? fx2.mark : undefined, n: +d.pick || 0, self: true, role: d.rolePick ? "all" : undefined, text: d.act || `Wähle ${d.pick ? (+d.pick === 1 ? "einen Spieler" : d.pick + " Spieler") : ""}${d.pick && d.rolePick ? " und " : ""}${d.rolePick ? "eine Rolle" : ""}.` };
       else delete ACTIONS[d.id];
       const ii = INFO_ROLES.indexOf(d.id);
       if (d.info && ii < 0) INFO_ROLES.push(d.id);
@@ -2525,8 +2559,10 @@
     const pick = /choose[s]? (2|two)|wählt (2|zwei)/i.test(txt) ? 2 : /choose|wählt|wähle/i.test(txt) ? 1 : 0;
     const posAt = (arr, num) => { if (!(num > 0)) return null; const k = Math.max(0, Math.min(arr.length - 2, Math.round(num / 100 * (arr.length - 1)))); return arr[k]; };
     return { id, de: x.name || x.id, t, a: x.ability, e: "Homebrew-Rolle aus einem importierten Skript.", ic: "✳️", n1, pos1: posAt(NIGHT_FIRST, x.firstNight), n, pos: posAt(NIGHT_OTHER, x.otherNight),
-      pick, rolePick: /character/i.test(txt) && /choose/i.test(txt), info: /learn|shows?|point|nod|erfährt|zeig/i.test(txt), marks: (x.reminders || []).map(l => ({ i: "🏷️", l })), setup: x.setup ? "Ändert den Aufbau (siehe Fähigkeit)." : "" };
+      pick, rolePick: /character/i.test(txt) && /choose/i.test(txt), info: /learn|shows?|point|nod|erfährt|zeig/i.test(txt), marks: (x.reminders || []).map(l => ({ i: "🏷️", l })), setup: x.setup ? "Ändert den Aufbau (siehe Fähigkeit)." : "",
+      ...(x.app && typeof x.app === "object" ? { effect: String(x.app.effect || ""), effect2: String(x.app.effect2 || ""), cond: String(x.app.cond || ""), pick: +x.app.pick || pick, rolePick: !!x.app.rolePick, info: !!x.app.info } : {}) };
   }
+  const fxOpts = cur => HB_GROUPS.map(([g, ks]) => g === "" ? `<option value="">${esc(HB_EFFECTS[""].l)}</option>` : `<optgroup label="${esc(g)}">${ks.map(k => `<option value="${k}" ${(cur || "") === k ? "selected" : ""}>${esc(HB_EFFECTS[k].l)}</option>`).join("")}</optgroup>`).join("");
   function homebrewEditor(id) {
     const d = hbDef(id) || { id: "", de: "", t: "townsfolk", a: "", e: "", ic: "✳️", n1: "", pos1: "", n: "", pos: "", pick: 0, rolePick: false, info: false, marks: [], setup: "" };
     const stepName = x => NIGHT_STEPS[x] ? NIGHT_STEPS[x].de : roleName(x);
@@ -2544,7 +2580,9 @@
         <div id="hbw1box" ${d.n1 ? "" : "hidden"}><textarea id="hbn1" rows="2" placeholder="Was machst du als Spielleiter?">${esc(d.n1)}</textarea><select id="hbpos1">${posOpts(NIGHT_FIRST, d.pos1)}</select></div>
         <label class="switch"><input type="checkbox" id="hbw" ${d.n ? "checked" : ""}><span>Wacht in den <b>anderen Nächten</b></span></label>
         <div id="hbwbox" ${d.n ? "" : "hidden"}><textarea id="hbn" rows="2" placeholder="Was machst du als Spielleiter?">${esc(d.n)}</textarea><select id="hbpos">${posOpts(NIGHT_OTHER, d.pos)}</select></div>
-        <label class="field">⚙️ Automatische Wirkung (Baustein): <select id="hbfx">${HB_GROUPS.map(([g, ks]) => g === "" ? `<option value="">${esc(HB_EFFECTS[""].l)}</option>` : `<optgroup label="${esc(g)}">${ks.map(k => `<option value="${k}" ${(d.effect || "") === k ? "selected" : ""}>${esc(HB_EFFECTS[k].l)}</option>`).join("")}</optgroup>`).join("")}</select></label>
+        <label class="field">⚙️ Automatische Wirkung (Baustein): <select id="hbfx">${fxOpts(d.effect)}</select></label>
+        <label class="field">➕ Zweiter Baustein (optional): <select id="hbfx2">${fxOpts(d.effect2)}</select></label>
+        <label class="field">⏱️ Wann: <select id="hbcond"><option value="">immer</option><option value="once" ${d.cond === "once" ? "selected" : ""}>nur einmal pro Spiel</option><option value="n2" ${d.cond === "n2" ? "selected" : ""}>nur in Nacht 2</option></select></label>
         <label class="field">Wählt nachts am Handy: <select id="hbpick"><option value="0" ${!+d.pick ? "selected" : ""}>keine Spieler</option><option value="1" ${+d.pick === 1 ? "selected" : ""}>1 Spieler</option><option value="2" ${+d.pick === 2 ? "selected" : ""}>2 Spieler</option></select></label>
         <label class="switch"><input type="checkbox" id="hbrole" ${d.rolePick ? "checked" : ""}><span>… und eine <b>Rolle</b></span></label>
         <label class="switch"><input type="checkbox" id="hbinfo" ${d.info ? "checked" : ""}><span>Bekommt <b>Infos</b> vom Spielleiter (📱-Info-Knopf)</span></label>
@@ -2555,6 +2593,12 @@
       <div class="row end wrap">${d.id ? `<button class="btn danger" id="hbdel">🗑️ Löschen</button>` : ""}<button class="btn" id="hbcancel">Abbrechen</button><button class="btn primary" id="hbsave">Speichern</button></div>`, "full");
     $("#hbw1").addEventListener("change", e => { $("#hbw1box").hidden = !e.target.checked; });
     $("#hbw").addEventListener("change", e => { $("#hbwbox").hidden = !e.target.checked; });
+    $("#hbfx2").addEventListener("change", e => {
+      const fx = HB_EFFECTS[e.target.value] || {};
+      if ((fx.pick || 0) > +$("#hbpick").value) $("#hbpick").value = String(fx.pick);
+      if (fx.info) $("#hbinfo").checked = true;
+      if (fx.rolePick) $("#hbrole").checked = true;
+    });
     $("#hbfx").addEventListener("change", e => {
       const fx = HB_EFFECTS[e.target.value] || {};
       if (fx.pick !== undefined) $("#hbpick").value = String(fx.pick);
@@ -2578,7 +2622,7 @@
       const marks = $("#hbmarks").value.split(",").map(x => x.trim()).filter(Boolean).map(x => { const m = x.match(/^(\p{Extended_Pictographic}\uFE0F?)\s*(.*)$/u); return m ? { i: m[1], l: m[2] || m[1] } : { i: "🏷️", l: x }; });
       const nd = { id: d.id || "hb_" + (hbSlug(name) || "rolle") + (hbDef("hb_" + hbSlug(name)) ? randInt(999) : ""), de: name, t: $("#hbteam").value, a: ab, e: $("#hbe").value.trim(), ic: $("#hbic").value.trim() || "✳️",
         n1: $("#hbw1").checked ? ($("#hbn1").value.trim() || "Wecke die Rolle.") : "", pos1: $("#hbpos1").value, n: $("#hbw").checked ? ($("#hbn").value.trim() || "Wecke die Rolle.") : "", pos: $("#hbpos").value,
-        pick: +$("#hbpick").value, rolePick: $("#hbrole").checked, info: $("#hbinfo").checked, marks, setup: $("#hbsetup").value.trim(), effect: $("#hbfx").value };
+        pick: +$("#hbpick").value, rolePick: $("#hbrole").checked, info: $("#hbinfo").checked, marks, setup: $("#hbsetup").value.trim(), effect: $("#hbfx").value, effect2: $("#hbfx2").value, cond: $("#hbcond").value };
       saveHomebrew(nd);
       hist(`✳️ Homebrew-Rolle „${nd.de}“ ${d.id ? "geändert" : "erstellt"}`);
       closeModal(); scriptEditor();
@@ -2592,7 +2636,8 @@
       const r = ROLE_BY_ID[id];
       if (!r) return;
       if (r.hb) out.push({ id: id.replace(/^hb_/, ""), name: r.de, team: r.t, ability: r.a, firstNight: r.n1 ? NIGHT_FIRST.indexOf(id) + 1 : 0, otherNight: r.n ? NIGHT_OTHER.indexOf(id) + 1 : 0,
-        firstNightReminder: r.n1 || "", otherNightReminder: r.n || "", reminders: (ROLE_MARKERS[id] || []).map(m => m.l), setup: !!r.setup });
+        firstNightReminder: r.n1 || "", otherNightReminder: r.n || "", reminders: (ROLE_MARKERS[id] || []).map(m => m.l), setup: !!r.setup,
+        app: (() => { const d = hbDef(id) || {}; return { effect: d.effect || "", effect2: d.effect2 || "", cond: d.cond || "", pick: d.pick || 0, rolePick: !!d.rolePick, info: !!d.info }; })() });
       else out.push(id.replace(/^[fl]_/, ""));
     });
     (game.fabled || []).forEach(id => out.push(id.replace(/^[fl]_/, "")));
@@ -2948,9 +2993,8 @@
     if (impaired(x)) return null;
     if (x.role === "sailor") return { dies: false, why: "⚓ Seemann – kann nicht sterben, solange er nüchtern ist" };
     if (x.role === "vizier" && game.phase === "day") return { dies: false, why: "👳 Wesir – kann tagsüber nicht sterben" };
-    const hfx = (ROLE_BY_ID[x.role] || {}).hbEffect;
-    if (hfx === "unkillable") return { dies: false, why: `🛡️ ${roleName(x.role)} – kann nicht sterben, solange nüchtern` };
-    if (hfx === "fool" && !x.used) return { dies: false, fool: true, why: `🃏 ${roleName(x.role)} – erster Tod wird verhindert` };
+    if (hbHas(x.role, "unkillable")) return { dies: false, why: `🛡️ ${roleName(x.role)} – kann nicht sterben, solange nüchtern` };
+    if (hbHas(x.role, "fool") && !x.used) return { dies: false, fool: true, why: `🃏 ${roleName(x.role)} – erster Tod wird verhindert` };
     if (x.role === "fool" && !x.used) return { dies: false, fool: true, why: "🃏 Narr – sein erster Tod wird verhindert (Fähigkeit danach verbraucht)" };
     if (x.role === "zombuul" && !x.zfake) return { dies: true, zombuul: true, why: "🧟 Zombuul – erster Tod: gilt als tot, lebt aber heimlich weiter" };
     return null;
@@ -3075,9 +3119,9 @@
       if (t && impaired(t) && !attacks.has(a.i)) attacks.set(a.i, { step: "acrobat", by: a.i, hbkill: true, acro: t.name });
     });
     // Homebrew-Rollen mit dem Baustein „stirbt“
-    (game.acts || []).filter(a => a.night === n && !a.skip && !a.undone && !a.fake && ROLE_BY_ID[a.step] && ["kill", "kill_evil", "kill_minion"].includes(ROLE_BY_ID[a.step].hbEffect))
+    (game.acts || []).filter(a => a.night === n && !a.skip && !a.undone && !a.fake && ROLE_BY_ID[a.step] && hbHas(a.step, "kill", "kill_evil", "kill_minion"))
       .forEach(a => (a.picks || []).forEach(k => {
-        const fx = ROLE_BY_ID[a.step].hbEffect, t = S[k];
+        const fx = hbFind(a.step, ["kill", "kill_evil", "kill_minion"]), t = S[k];
         if (!t || (fx === "kill_evil" && seatGood(t)) || (fx === "kill_minion" && ROLE_BY_ID[t.role].t !== "minion")) return;
         if (!attacks.has(k)) attacks.set(k, { step: a.step, by: a.i, hbkill: true });
       }));
@@ -3098,7 +3142,7 @@
       else if (attacker && impaired(attacker)) { dies = false; why = `${attacker.name} ist vergiftet/betrunken – der Angriff wirkt nicht`; }
       else if (!strong && m.includes("protect")) { dies = false; why = "🛡️ geschützt – überlebt"; }
       else if (!strong && x.role === "soldier" && !impaired(x)) { dies = false; why = "🛡️ Soldat – der Dämon kann ihn nicht töten"; }
-      else if (!strong && ROLE_BY_ID[x.role].hbEffect === "immune" && !impaired(x)) { dies = false; why = `🛡️ ${roleName(x.role)} – der Dämon kann ihn nicht töten`; }
+      else if (!strong && hbHas(x.role, "immune") && !impaired(x)) { dies = false; why = `🛡️ ${roleName(x.role)} – der Dämon kann ihn nicht töten`; }
       else if (!strong && m.includes("cantdie")) { dies = false; why = "🫖 Teedame – kann nicht sterben"; }
       else if (deathRule(x)) { const r = deathRule(x); dies = r.dies; why = r.why; }
       else if (at.by === k && x.role !== "imp") why = `${roleName(x.role)} hat sich selbst gewählt und stirbt (nur der Imp kann einen Sternenwechsel machen)`;
@@ -3155,11 +3199,52 @@
     return true;
   }
 
+  function gameTransfer() {
+    const json = JSON.stringify({ app: "botc-grimoire", v: 1, at: new Date().toISOString(), game });
+    openModal(`<h2>💾 Spielstand</h2>
+      <p class="small">Sichern, um später weiterzumachen – oder auf ein anderes Handy übertragen (z. B. wenn dein Akku leer ist).</p>
+      <div class="row wrap"><button class="btn primary" id="gsdl">💾 Als Datei sichern</button><button class="btn" id="gscopy">📋 Kopieren</button></div>
+      <h4>📂 Spielstand laden</h4>
+      <input type="file" id="gsfile" accept=".json,application/json,text/plain">
+      <textarea id="gstext" rows="3" placeholder="…oder hier einfügen"></textarea>
+      <div class="row end"><button class="btn" id="gsload">Laden</button></div>
+      <p class="small">Online-Räume lassen sich nicht auf ein anderes Handy mitnehmen: Dort geht das Spiel offline weiter – starte einen neuen Raum, die Spieler treten bei und du ordnest sie unter „3 · Verteilen“ wieder ihren Plätzen zu.</p>`);
+    $("#gsdl").addEventListener("click", () => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      a.download = `clocktower-spielstand-nacht${game.nightNo}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+    $("#gscopy").addEventListener("click", () => { (navigator.clipboard ? navigator.clipboard.writeText(json) : Promise.reject()).then(() => toast("📋 Spielstand kopiert"), () => toast("Kopieren nicht möglich – nimm „Als Datei sichern“")); });
+    $("#gsfile").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { $("#gstext").value = rd.result; }; rd.readAsText(f); });
+    $("#gsload").addEventListener("click", () => {
+      let d; try { d = JSON.parse($("#gstext").value); } catch (e) { toast("Das ist kein gültiger Spielstand."); return; }
+      const g = d && d.game;
+      if (!g || !Array.isArray(g.seats)) { toast("Das ist kein gültiger Spielstand."); return; }
+      if (!confirm("Aktuelles Spiel durch diesen Spielstand ersetzen? (Mit ↩️ Rückgängig kommst du zurück.)")) return;
+      save();
+      if (g.online && !(game.online && game.online.code === g.online.code)) { g.online = null; g.seats.forEach(x => { x.pid = null; }); g.pids = []; }
+      game = g; registerHomebrew(game.homebrew);
+      save(); closeModal(); renderSL();
+      toast(`📂 Spielstand geladen – Nacht ${game.nightNo}, ${game.seats.length} Spieler`);
+    });
+  }
+  function nightSummaryHtml() {
+    const n = game.nightNo;
+    const ev = (game.history || []).filter(h => h.n === n && h.ph === "night" && !/^🌙 Nacht \d+ beginnt/.test(h.t));
+    const waiting = Object.entries(game.asks || {}).filter(([, a]) => a.night === n && !a.done && !a.sleep).map(([i, a]) => `${game.seats[i].name} (${roleName(a.step)})`);
+    const marks = game.seats.filter(x => (x.marks || []).some(m => ["poison", "drunk", "protect", "target"].includes(m))).map(x => `${esc(x.name)} ${(x.marks || []).filter(m => ["poison", "drunk", "protect", "target"].includes(m)).map(m => (markerByKey(m) || {}).i).join("")}`);
+    return `<div class="box nightsum">
+      ${ev.length ? `<ul>${ev.map(h => `<li>${esc(h.t)}</li>`).join("")}</ul>` : `<p class="small">Noch nichts passiert.</p>`}
+      ${marks.length ? `<p class="small"><b>Marker jetzt:</b> ${marks.join(" · ")}</p>` : ""}
+      ${waiting.length ? `<p class="warnmsg">⏳ Wartet noch: ${waiting.map(esc).join(", ")}</p>` : ""}</div>`;
+  }
   function dawnDialog() {
     const kills = nightKills();
     if (!kills.length) return startDay();
     const missed = kills.filter(x => x.dies && game.seats[x.k].role === "ravenkeeper" && !lastAct(x.k, "ravenkeeper") && !((game.done[game.nightNo] || []).includes("ravenkeeper")));
     openModal(`<h2>☀️ Wer stirbt heute Nacht?</h2>
+      <details class="nightsumwrap"><summary>📋 Was heute Nacht passiert ist</summary>${nightSummaryHtml()}</details>
       ${missed.map(x => `<p class="warnmsg">🪶 ${esc(game.seats[x.k].name)} ist der Rabenhüter und stirbt – er wurde noch nicht geweckt! Tippe „Zurück“ und wecke ihn zuerst (Schritt Rabenhüter).</p>`).join("")}
       <p class="small">So sieht es nach den Regeln aus. Ändere den Haken nur, wenn die App etwas nicht weiß: ein fehlender Marker (z. B. Mönch-Schutz vergessen), eine Rolle wie Narr oder Seemann, die den Tod verhindert, oder wenn du beim Bürgermeister den Tod umlenkst.</p>
       <div class="dawnlist">${kills.map(x => `<label class="switch"><input type="checkbox" data-kill="${x.k}" ${x.dies ? "checked" : ""}>
@@ -3462,6 +3547,7 @@
       if (r.step === "widow") t.widowPoison = true;
       // Hat das Opfer heute Nacht schon gewählt (z. B. Mönch antwortet vor dem Giftmischer)? Dann wirkt das nachträglich nicht.
       if (["poison", "drunk"].includes(def.mark)) undoPoisonedActs(k);
+      if (def.mark2 && !(t.marks || []).includes(def.mark2)) { t.marks = [...t.marks, def.mark2]; markHist(t, def.mark2, true, roleName(r.step)); if (["poison", "drunk"].includes(def.mark2)) undoPoisonedActs(k); }
     });
     if (!r.skip && r.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [r.step]: r.role });
     // Einmal-Fähigkeit benutzt -> ab der nächsten Nacht grau
@@ -3472,7 +3558,7 @@
     const text = `🌙 ${x.name} (${roleName(r.step)}): ${r.skip ? "nichts" : describePick(r)}`;
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
     hist(text, "night");
-    if (!r.skip && !r.fake && r.role && r.picks.length && (["cerenovus", "pithag"].includes(r.step) || ["mad", "change"].includes((ROLE_BY_ID[r.step] || {}).hbEffect))) applyRolePick(x, r);
+    if (!r.skip && !r.fake && r.role && r.picks.length && (["cerenovus", "pithag"].includes(r.step) || hbHas(r.step, "mad", "change"))) applyRolePick(x, r);
     if (!r.skip && !r.fake && ["sailor", "innkeeper", "courtier"].includes(r.step)) applyDrunkMaker(i, r);
     if (!r.skip && !r.fake && r.step === "snakecharmer" && r.picks.length) snakeCharm(i, r.picks[0]);
     if (!r.skip && KILL_STEPS.includes(r.step)) setTimeout(wakeDeathTriggered, 50);
@@ -3594,7 +3680,7 @@
       toast(`${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung (du kannst trotzdem so tun als ob)`);
       return;
     }
-    const hbE = (ROLE_BY_ID[r.step] || {}).hbEffect;
+    const hbE = hbFind(r.step, ["mad", "change"]);
     if (r.step === "cerenovus" || hbE === "mad") {
       t.madness = { role: r.role, night: game.nightNo };
       hist(`😵 ${t.name} muss morgen ${roleName(r.role)} behaupten`, "night");
@@ -3951,8 +4037,9 @@
       }
       default: {
         const hr = ROLE_BY_ID[stepId];
-        if (!hr || !hr.hbEffect) return null;
-        const fx = hr.hbEffect, T = k => ROLE_BY_ID[S[k].role].t;
+        const fx = hr && hbFind(stepId, Object.keys(HB_EFFECTS).filter(k => HB_EFFECTS[k].info));
+        if (!fx) return null;
+        const T = k => ROLE_BY_ID[S[k].role].t;
         const need = (HB_EFFECTS[fx] || {}).pick;
         if (need && (!picks || !picks.length)) return { text: `Tippe ${need === 1 ? "den gewählten Spieler" : "die gewählten Spieler"} an.` };
         if (fx === "align") { const g = seatGood(S[picks[0]]); return { t: g ? "gut" : "böse", text: `${name(picks[0])} ist ${g ? "gut" : "böse"}` }; }
