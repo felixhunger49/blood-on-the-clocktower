@@ -2282,39 +2282,110 @@
   const normId = x => String(x || "").toLowerCase().replace(/[^a-z]/g, "");
   function scriptImport() {
     openModal(`<h2>📥 Skript importieren</h2>
-      <p class="small">Füge den Inhalt einer Skript-Datei ein (JSON aus dem offiziellen Script-Tool, z. B. „…json“-Download) oder wähle die Datei aus.</p>
+      ${scriptSearchHtml()}
+      <h4>📄 Oder aus Datei / Text</h4>
+      <p class="small">Skript-Datei (JSON, z. B. vom offiziellen Script-Tool) auswählen oder ihren Inhalt einfügen.</p>
       <input type="file" id="impfile" accept=".json,application/json,text/plain">
       <textarea id="imptext" rows="6" placeholder='[{"id":"_meta","name":"Mein Skript"},"washerwoman","empath", …]'></textarea>
       <div id="impmsg"></div>
-      <div class="row end"><button class="btn" id="impcancel">Abbrechen</button><button class="btn primary" id="impgo">Übernehmen</button></div>`);
+      <div class="row end"><button class="btn" id="impcancel">Abbrechen</button><button class="btn primary" id="impgo">Übernehmen</button></div>`, "full");
     $("#impcancel").addEventListener("click", closeModal);
     $("#impfile").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { $("#imptext").value = rd.result; }; rd.readAsText(f); });
     $("#impgo").addEventListener("click", () => {
       let data;
       try { data = JSON.parse($("#imptext").value); } catch (e) { $("#impmsg").innerHTML = `<p class="error">Das ist kein gültiges Skript (JSON). Bitte den kompletten Inhalt einfügen.</p>`; return; }
-      if (!Array.isArray(data)) data = data && Array.isArray(data.roles) ? data.roles : [];
-      const lookup = new Map();
-      ROLES.forEach(r => { lookup.set(normId(r.id.replace(/^[fl]_/, "")), r.id); lookup.set(normId(r.en), r.id); });
-      let name = "", author = "";
-      const ids = [], unknown = [];
-      data.forEach(x => {
-        const id = typeof x === "string" ? x : x && x.id;
-        if (!id) return;
-        if (id === "_meta") { name = x.name || ""; author = x.author || ""; return; }
-        const hit = lookup.get(normId(id)) || (x && x.name && lookup.get(normId(x.name)));
-        if (hit) ids.push(hit); else unknown.push((x && x.name) || id);
-      });
-      if (!ids.length) { $("#impmsg").innerHTML = `<p class="error">Keine bekannte Rolle gefunden.</p>`; return; }
-      const uniq = [...new Set(ids)];
-      game.edition = "custom";
-      game.script = ROLES.filter(r => uniq.includes(r.id) && r.t !== "fabled").map(r => r.id);
-      const fab = uniq.filter(id => ROLE_BY_ID[id].t === "fabled");
-      if (fab.length) game.fabled = [...new Set([...(game.fabled || []), ...fab])];
-      game.scriptName = name ? name + (author ? ` (von ${author})` : "") : "";
-      game.selected = []; game.bluffs = [];
-      save(); closeModal(); renderSL();
-      toast(`📥 ${game.script.length} Rollen übernommen${fab.length ? ` + ${fab.length} Fabelwesen/Lorics` : ""}${unknown.length ? ` – unbekannt: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? " …" : ""}` : ""}`);
+      const err = applyScript(data);
+      if (err) $("#impmsg").innerHTML = `<p class="error">${esc(err)}</p>`;
     });
+    bindScriptSearch();
+  }
+  // Rollen eines Skripts (Liste aus Strings/Objekten) in die App übernehmen. Gibt eine Fehlermeldung zurück oder null.
+  function scriptRoles(data) {
+    if (!Array.isArray(data)) data = data && Array.isArray(data.roles) ? data.roles : [];
+    const lookup = new Map();
+    ROLES.forEach(r => { lookup.set(normId(r.id.replace(/^[fl]_/, "")), r.id); lookup.set(normId(r.en), r.id); });
+    let name = "", author = "";
+    const ids = [], unknown = [];
+    data.forEach(x => {
+      const id = typeof x === "string" ? x : x && x.id;
+      if (!id) return;
+      if (id === "_meta") { name = x.name || ""; author = x.author || ""; return; }
+      const hit = lookup.get(normId(id)) || (x && x.name && lookup.get(normId(x.name)));
+      if (hit) ids.push(hit); else unknown.push((x && x.name) || id);
+    });
+    return { ids: [...new Set(ids)], unknown, name, author };
+  }
+  function applyScript(data) {
+    const { ids, unknown, name, author } = scriptRoles(data);
+    if (!ids.length) return "Keine bekannte Rolle gefunden.";
+    game.edition = "custom";
+    game.script = ROLES.filter(r => ids.includes(r.id) && r.t !== "fabled").map(r => r.id);
+    const fab = ids.filter(id => ROLE_BY_ID[id].t === "fabled");
+    if (fab.length) game.fabled = [...new Set([...(game.fabled || []), ...fab])];
+    game.scriptName = name ? name + (author ? ` (von ${author})` : "") : "";
+    game.selected = []; game.bluffs = [];
+    save(); closeModal(); renderSL();
+    toast(`📥 ${game.script.length} Rollen übernommen${fab.length ? ` + ${fab.length} Fabelwesen/Lorics` : ""}${unknown.length ? ` – unbekannt: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? " …" : ""}` : ""}`);
+    return null;
+  }
+
+  // ---------- Online-Suche auf botcscripts.com ----------
+  const BOTC_API = "https://www.botcscripts.com/api/scripts/";
+  let scriptSearchState = { q: "", type: "", next: null, results: [] };
+  function scriptSearchHtml() {
+    return `<details class="box scriptsearch" open><summary><h4>🌐 Skripte online suchen <span class="small">(botcscripts.com)</span></h4></summary>
+      <div class="row wrap">
+        <input id="ssq" placeholder="Name, z. B. Teensyville" value="${esc(scriptSearchState.q)}">
+        <select id="sstype"><option value="">Alle Größen</option><option value="Teensyville" ${scriptSearchState.type === "Teensyville" ? "selected" : ""}>Teensyville (5–6 Spieler)</option><option value="Full" ${scriptSearchState.type === "Full" ? "selected" : ""}>Volle Skripte</option></select>
+        <button class="btn primary" id="ssgo">🔍 Suchen</button>
+      </div>
+      <p class="small">Sortiert nach Beliebtheit. Antippen übernimmt das Skript als deine Rollenliste.</p>
+      <div id="ssres"></div>
+      <p class="small">Mehr stöbern: <a href="https://www.botcscripts.com/" target="_blank" rel="noopener">botcscripts.com</a> · eigenes Skript bauen: <a href="https://script.bloodontheclocktower.com/" target="_blank" rel="noopener">offizielles Script-Tool</a></p>
+    </details>`;
+  }
+  function drawScriptResults(append) {
+    const box = $("#ssres");
+    if (!box) return;
+    const rows = scriptSearchState.results.map((r, k) => {
+      const info = scriptRoles(r.content || []);
+      return `<button class="ssitem" data-ss="${k}"><b>${esc(r.name)}</b> <span class="small">von ${esc(r.author || "?")}</span><br>
+        <span class="small">${esc(r.script_type || "")} · ⭐ ${r.score || 0} · ${info.ids.length} Rollen${info.unknown.length ? ` · ⚠️ ${info.unknown.length} unbekannt` : ""}</span></button>`;
+    }).join("");
+    box.innerHTML = (rows || `<p class="small">Nichts gefunden.</p>`) + (scriptSearchState.next ? `<div class="row center"><button class="btn" id="ssmore">Mehr laden</button></div>` : "");
+    $$("[data-ss]").forEach(b => b.addEventListener("click", () => {
+      const r = scriptSearchState.results[+b.dataset.ss];
+      const err = applyScript(r.content || []);
+      if (err) toast(err);
+    }));
+    $("#ssmore") && $("#ssmore").addEventListener("click", () => loadScripts(scriptSearchState.next, true));
+  }
+  async function loadScripts(url, append) {
+    const box = $("#ssres");
+    if (box && !append) box.innerHTML = `<p class="small">⏳ Suche …</p>`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.status);
+      const j = await res.json();
+      scriptSearchState.results = append ? [...scriptSearchState.results, ...(j.results || [])] : (j.results || []);
+      scriptSearchState.next = j.next ? j.next.replace(/^http:/, "https:") : null;
+      drawScriptResults(append);
+    } catch (e) {
+      if (box) box.innerHTML = `<p class="error">Keine Verbindung zu botcscripts.com. Bist du online? Du kannst ein Skript auch auf der Seite herunterladen und oben als Datei auswählen.</p>`;
+    }
+  }
+  function bindScriptSearch() {
+    const go = () => {
+      scriptSearchState.q = $("#ssq").value.trim(); scriptSearchState.type = $("#sstype").value;
+      const u = new URL(BOTC_API);
+      u.searchParams.set("format", "json"); u.searchParams.set("ordering", "-score");
+      if (scriptSearchState.q) u.searchParams.set("search", scriptSearchState.q);
+      if (scriptSearchState.type) u.searchParams.set("script_type", scriptSearchState.type);
+      loadScripts(u.toString(), false);
+    };
+    $("#ssgo") && $("#ssgo").addEventListener("click", go);
+    $("#ssq") && $("#ssq").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    if ($("#ssres")) { if (scriptSearchState.results.length) drawScriptResults(); else go(); }
   }
 
   function scriptEditor() {
