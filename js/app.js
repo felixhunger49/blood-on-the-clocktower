@@ -455,14 +455,21 @@
   }
   let game = store.get("botc.game", null) || newGame();
   if (!game.nightNo) { game.nightNo = 1; game.done = {}; delete game.night; } // ältere Spielstände
-  // Rückgängig: frühere Spielstände (nur im Speicher, schnell hintereinander gespeicherte Änderungen zählen als ein Schritt)
-  const undoStack = [];
+  // Rückgängig: frühere Spielstände – bleiben auch nach Neustart der App erhalten (die letzten 20 Schritte)
+  const UNDO_MAX = 20;
+  const undoStack = (() => { try { const u = JSON.parse(localStorage.getItem("botc.undo") || "[]"); return Array.isArray(u) ? u.filter(x => typeof x === "string").slice(-UNDO_MAX) : []; } catch (e) { return []; } })();
+  const persistUndo = () => {
+    // Bei vollem Speicher ältere Schritte weglassen
+    for (let n = undoStack.length; n >= 0; n -= 5) {
+      try { localStorage.setItem("botc.undo", JSON.stringify(undoStack.slice(-n))); return; } catch (e) { /* zu groß */ }
+    }
+  };
   let lastSavedJson = JSON.stringify(game), lastUndoPush = 0;
   const save = () => {
     const cur = JSON.stringify(game);
     if (cur !== lastSavedJson) {
       // alle Speicherungen einer einzelnen Aktion (gleicher Klick) zählen als ein Schritt
-      if (!lastUndoPush) { undoStack.push(lastSavedJson); if (undoStack.length > 30) undoStack.shift(); lastUndoPush = 1; setTimeout(() => { lastUndoPush = 0; }, 0); }
+      if (!lastUndoPush) { undoStack.push(lastSavedJson); if (undoStack.length > UNDO_MAX) undoStack.shift(); persistUndo(); lastUndoPush = 1; setTimeout(() => { lastUndoPush = 0; }, 0); }
       lastSavedJson = cur;
     }
     store.set("botc.game", game); if (game.online) scheduleSync();
@@ -470,6 +477,7 @@
   function undo() {
     if (!undoStack.length) return;
     const prev = undoStack.pop();
+    persistUndo();
     game = JSON.parse(prev);
     lastSavedJson = prev; lastUndoPush = 0;
     store.set("botc.game", game);
@@ -1029,7 +1037,7 @@
     }).join("");
     const head = `<section class="panel ghead">
         <div class="ghead-row"><h2>${isDay ? `☀️ Tag ${game.nightNo}` : first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`}</h2>
-          <div class="row wrap">${undoStack.length ? `<button class="btn sm" id="undobtn">↩️ Rückgängig</button>` : ""}<button class="btn sm" id="savegame">💾 Spielstand</button><button class="btn sm" id="settingsbtn">⚙️ Einstellungen</button></div></div>
+          <div class="row wrap"><button class="btn sm" id="undobtn" ${undoStack.length ? "" : `disabled title="Noch nichts zum Zurücknehmen"`}>↩️ Rückgängig${undoStack.length ? ` <small>(${undoStack.length})</small>` : ""}</button><button class="btn sm" id="savegame">💾 Spielstand</button><button class="btn sm" id="settingsbtn">⚙️ Einstellungen</button></div></div>
         <p class="small">${game.online ? `${netDot()} Online-Spiel ${esc(game.online.code)} · ` : ""}${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${needed}</b> Stimmen</p>
         ${pro ? "" : `<p class="beginner">👉 ${isDay
           ? "Tag: Lass die Spieler reden (Timer unten). Danach nominieren und abstimmen – zum Schluss „Nacht beginnen“."
