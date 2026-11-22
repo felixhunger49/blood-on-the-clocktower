@@ -610,3 +610,6 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .hbform textarea, .hbform select, .hbform input { width: 100%; }
 .hbform .row input { width: auto; }
 #expjson { width: 100%; font-family: monospace; font-size: .75rem; }
+.pvote { border-left: 4px solid var(--accent); }
+.pvote select { flex: 1; min-width: 8rem; }
+.box.nomreq { border-left: 4px solid var(--accent); }

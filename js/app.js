@@ -315,6 +315,48 @@
   // =====================================================================
   //  MEINE ROLLE (Spieler)
   // =====================================================================
+  // Abstimmen & Nominieren am Handy (wenn der Spielleiter es eingeschaltet hat)
+  function phoneVoteHtml(mine) {
+    const ps = pubState;
+    if (!ps || !ps.pv || !mine || mine.s === undefined || !(ps.seats || [])[mine.s]) return "";
+    const me = ps.seats[mine.s], S = ps.seats;
+    if (ps.vote) {
+      const up = (ps.vote.hands || []).includes(mine.s);
+      const can = me.a || me.g;
+      const zealot = mine.r === "zealot" && me.a && S.filter(x => x.a).length >= 5;
+      return `<section class="panel pvote"><h2>🗳️ Abstimmung</h2>
+        <p><b>${esc(S[ps.vote.by].n)}</b> nominiert <b>${esc(S[ps.vote.on].n)}</b>.</p>
+        <p class="small">${(ps.vote.hands || []).length} Hand/Hände oben${me.a ? "" : me.g ? " · du bist tot: das ist deine eine Geisterstimme" : " · du hast keine Stimme mehr"}</p>
+        ${zealot ? `<p class="warnmsg">📢 Zelot: Du musst für jede Nominierung stimmen.</p>` : ""}
+        ${can ? `<div class="row center wrap"><button class="btn big ${up ? "primary" : ""}" data-pv="1">✋ Hand heben${up ? " ✔" : ""}</button>${zealot ? "" : `<button class="btn big ${up ? "" : "primary"}" data-pv="0">✊ Hand unten${up ? "" : " ✔"}</button>`}</div>` : ""}
+      </section>`;
+    }
+    if (!me.a || (ps.nomd || []).includes(mine.s)) return `<section class="panel pvote muted"><p class="small center">🗳️ ${me.a ? "Du hast heute schon nominiert." : "Tote dürfen nicht nominieren."}</p></section>`;
+    return `<section class="panel pvote"><h2>🗳️ Nominieren</h2>
+      <div class="row wrap"><select id="pvon">${S.map((x, k) => k === mine.s ? "" : `<option value="${k}">${esc(x.n)}${x.a ? "" : " 💀"}</option>`).join("")}</select>
+      <button class="btn primary" id="pvnom">Nominieren</button></div>
+      <p class="small">Sag es laut und tippe dann hier – der Spielleiter bestätigt die Nominierung.</p></section>`;
+  }
+  function bindPhoneVote(mine) {
+    $$("[data-pv]").forEach(b => b.addEventListener("click", async () => {
+      const up = b.dataset.pv === "1";
+      const ok = await sendToHost({ type: "vote", on: pubState.vote.on, up });
+      toast(ok ? (up ? "✋ Hand ist oben" : "✊ Hand ist unten") : "Keine Verbindung – heb die Hand am Tisch.");
+    }));
+    $("#pvnom") && $("#pvnom").addEventListener("click", async () => {
+      const on = +$("#pvon").value;
+      const ok = await sendToHost({ type: "nominate", on });
+      toast(ok ? "📨 Nominierung gesendet – der Spielleiter bestätigt" : "Keine Verbindung – sag es am Tisch.");
+    });
+  }
+  function updateVoteBox() {
+    const box = $("#pvbox");
+    if (!box) return;
+    const mine = store.get("botc.myrole", null);
+    box.innerHTML = phoneVoteHtml(mine);
+    bindPhoneVote(mine);
+  }
+
   function renderPlayer() {
     const mine = store.get("botc.myrole", null);
     if (mine && mine.hbd) registerHomebrew(mine.hbd);
@@ -380,6 +422,7 @@
           <div class="row center"><button id="hide" class="btn">🙈 Wieder verdecken</button></div>
         </div>
       </section>
+      <div id="pvbox">${phoneVoteHtml(mine)}</div>
       ${notesHtml()}
       ${(() => { const si = scriptInfo(); return si ? nightOrderHtml(si.ids, si.name) : ""; })()}
       <section class="panel muted">
@@ -393,6 +436,7 @@
     $("#cover").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") show(); });
     bindPicker(mine);
     bindNotes();
+    bindPhoneVote(mine);
     if (modal.classList.contains("hidden")) nightOverlay();
     $("#hide").addEventListener("click", () => { $("#card").classList.add("hidden"); $("#cover").classList.remove("hidden"); window.scrollTo(0, 0); });
     $("#forget") && $("#forget").addEventListener("click", () => {
@@ -1544,6 +1588,21 @@
     });
   }
 
+  // Nominierung beginnen – mit allen Prüfungen (doppelt, Jungfrau, Hexe)
+  function beginVote(by, on, quiet) {
+    const day = today();
+    const warn = [];
+    if (day.noms.some(n => n.by === by)) warn.push(`${game.seats[by].name} hat heute schon nominiert.`);
+    if (day.noms.some(n => n.on === on)) warn.push(`${game.seats[on].name} war heute schon nominiert.`);
+    if (!quiet && warn.length && !confirm(warn.join("\n") + "\n\nTrotzdem abstimmen?")) return;
+    game.vote = { by, on, hands: [] };
+    game.voteOpen = true;
+    const virgin = virginCheck(by, on);
+    const cursed = virgin && virgin.stop ? null : witchCurse(by);
+    save(); renderSL();
+    if (virgin) toast(virgin.msg); else if (cursed) toast(cursed);
+  }
+
   function dayPanel() {
     const day = today();
     const ps = game.seats;
@@ -1563,7 +1622,7 @@
       const count = validHands(order.filter(i => v.hands.includes(i))).length;
       body += `<div class="vote">
         <p><b>${esc(ps[v.by].name)}</b> nominiert <b>${esc(ps[v.on].name)}</b></p>
-        <p class="small">Gehe im Uhrzeigersinn herum und tippe alle an, die die Hand heben. Tote haben nur ihre eine Geisterstimme.</p>
+        <p class="small">${game.phoneVote && (game.online || game.test) ? "📱 Die Spieler heben die Hand auf dem Handy – du siehst es hier live und kannst trotzdem selbst antippen." : "Gehe im Uhrzeigersinn herum und tippe alle an, die die Hand heben."} Tote haben nur ihre eine Geisterstimme.</p>
         <div class="votelist">${order.map(i => {
           const s = ps[i];
           const canVote = s.alive || s.ghost;
@@ -1617,6 +1676,9 @@
       <details class="daypanel" ${game.voteOpen ? "open" : ""}>
         <summary><h2>☀️ Tag ${game.nightNo} – Abstimmung <span class="small">(optional)</span></h2></summary>
         <p class="small">Nötig für die Hinrichtung: <b>${votesNeeded()}</b> Stimmen (Hälfte der Lebenden). ${blockLine}</p>
+        ${game.online || game.test ? `<label class="switch"><input type="checkbox" id="pvtoggle" ${game.phoneVote ? "checked" : ""}><span><b>📱 Nominieren &amp; Abstimmen am Handy</b> – Spieler nominieren und heben die Hand per Knopf, du bestätigst nur.</span></label>` : ""}
+        ${game.nomReq && !game.vote ? `<div class="box nomreq">📨 <b>${esc(game.seats[game.nomReq.by].name)}</b> möchte <b>${esc(game.seats[game.nomReq.on].name)}</b> nominieren.
+          <div class="row wrap"><button class="btn primary" id="nomok">✅ Zulassen</button><button class="btn" id="nomno">Ablehnen</button></div></div>` : ""}
         ${body}
         ${noms ? `<h3>Nominierungen heute</h3><ul class="nomlist">${noms}</ul>` : ""}
         ${exileHtml(day)}
@@ -1633,16 +1695,11 @@
     $("#startvote") && $("#startvote").addEventListener("click", () => {
       const by = +$("#nomby").value, on = +$("#nomon").value;
       if (Number.isNaN(by) || Number.isNaN(on)) return;
-      const warn = [];
-      if (day.noms.some(n => n.by === by)) warn.push(`${game.seats[by].name} hat heute schon nominiert.`);
-      if (day.noms.some(n => n.on === on)) warn.push(`${game.seats[on].name} war heute schon nominiert.`);
-      if (warn.length && !confirm(warn.join("\n") + "\n\nTrotzdem abstimmen?")) return;
-      game.vote = { by, on, hands: [] };
-      const virgin = virginCheck(by, on);
-      const cursed = virgin && virgin.stop ? null : witchCurse(by);
-      save(); renderSL();
-      if (virgin) toast(virgin.msg); else if (cursed) toast(cursed);
+      beginVote(by, on);
     });
+    $("#nomok") && $("#nomok").addEventListener("click", () => { const r = game.nomReq; game.nomReq = null; if (r) beginVote(r.by, r.on); });
+    $("#nomno") && $("#nomno").addEventListener("click", () => { const r = game.nomReq; game.nomReq = null; if (r) hist(`🚫 Nominierung ${game.seats[r.by].name} → ${game.seats[r.on].name} abgelehnt`, "day"); save(); renderSL(); });
+    $("#pvtoggle") && $("#pvtoggle").addEventListener("change", e => { game.phoneVote = e.target.checked; save(); renderSL(); toast(game.phoneVote ? "📱 Spieler nominieren und stimmen jetzt am Handy ab" : "Abstimmen am Handy ist aus"); });
     $$("[data-hand]").forEach(btn => btn.addEventListener("click", () => {
       const i = +btn.dataset.hand, h = game.vote.hands;
       game.vote.hands = h.includes(i) ? h.filter(x => x !== i) : [...h, i];
@@ -4639,6 +4696,9 @@
       timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0 } : null,
       started: game.seats.length > 0 && game.step !== "setup",
       seats: game.seats.map(s => ({ n: s.name, a: !!s.alive, g: !!s.ghost, t: !!s.trav })),
+      pv: !!game.phoneVote && game.phase === "day",
+      vote: game.phoneVote && game.vote ? { by: game.vote.by, on: game.vote.on, hands: game.vote.hands } : null,
+      nomd: game.phoneVote ? (today().noms || []).map(n => n.by) : [],
       winner: w ? {
         team: w.team, reason: w.reason, nights: game.nightNo,
         reveal: game.seats.map(s => ({ n: s.name, r: s.role, s: shownRole(s.role), good: seatGood(s), a: !!s.alive })),
@@ -4700,9 +4760,27 @@
     }
   }
 
+  function onPhoneVote(uid, msg) {
+    if (!game.phoneVote || game.phase !== "day") return;
+    const i = game.seats.findIndex(s => s.pid === uid);
+    if (i < 0) return;
+    const x = game.seats[i];
+    if (msg.type === "nominate") {
+      if (!x.alive || game.vote || !game.seats[msg.on]) return;
+      game.nomReq = { by: i, on: +msg.on };
+      save(); refreshHostView();
+      notice(`📨 ${x.name} möchte ${game.seats[msg.on].name} nominieren`);
+      return;
+    }
+    const v = game.vote;
+    if (!v || v.on !== +msg.on || !(x.alive || x.ghost)) return;
+    v.hands = msg.up ? [...new Set([...v.hands, i])] : v.hands.filter(k => k !== i);
+    save(); refreshHostView();
+  }
   function onPlayerMessage(uid, msg) {
     if (!game.online && !game.test) return;
     if (msg.type === "action") return onPlayerAction(uid, msg);
+    if (msg.type === "nominate" || msg.type === "vote") return onPhoneVote(uid, msg);
     if (msg.type !== "pick" || !ROLE_BY_ID[msg.pick]) return;
     const i = game.seats.findIndex(s => s.pid === uid);
     const name = i >= 0 ? game.seats[i].name : (lobby[uid] && lobby[uid].name) || "?";
@@ -4844,6 +4922,8 @@
       }
       if (v && v.winner && !(before && before.winner)) showPublicEnd(v);
       else {
+        updateVoteBox();
+        if (v && v.vote && !(before && before.vote && before.vote.on === v.vote.on) && navigator.vibrate) navigator.vibrate([120, 60, 120]);
         nightOverlay();
         if (v && v.dawn && before && (!before.dawn || before.dawn.n !== v.dawn.n)) {
           if ($(".sleepshow")) closeModal();
