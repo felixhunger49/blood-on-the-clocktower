@@ -1682,6 +1682,7 @@
   }
 
   // Nominierung beginnen – mit allen Prüfungen (doppelt, Jungfrau, Hexe)
+  let voteEndedAt = 0;
   function beginVote(by, on, quiet) {
     const day = today();
     const warn = [];
@@ -1817,7 +1818,10 @@
       day.noms.push({ by: v.by, on: v.on, count: cnt, needed: votesNeeded(), hands });
       hist(`🗳️ ${game.seats[v.by].name} nominiert ${game.seats[v.on].name}: ${cnt} Stimme(n)`, "day");
       game.vote = null;
+      voteEndedAt = Date.now();
       save(); renderSL();
+      // Doppeltipp-Schutz: alle Knöpfe, die jetzt unter dem Finger liegen, kurz sperren
+      $$('.daypanel button:not([disabled])').forEach(x => { x.disabled = true; setTimeout(() => { x.disabled = false; }, 1000); });
     });
     $$("[data-delnom]").forEach(btn => btn.addEventListener("click", () => {
       if (!confirm("Diese Nominierung löschen? (Verbrauchte Geisterstimmen bitte selbst zurücksetzen.)")) return;
@@ -1825,6 +1829,8 @@
       save(); renderSL();
     }));
     $("#execute") && $("#execute").addEventListener("click", () => {
+      // Schutz vor Doppeltipp: Direkt nach „Abstimmung beenden“ liegt dieser Knopf unter dem Finger
+      if (Date.now() - voteEndedAt < 1200) return;
       const b = block(day);
       const s = game.seats[b.on];
       const role = ROLE_BY_ID[s.role];
@@ -1836,7 +1842,13 @@
       if (rule) msg += `\n\n${rule.why}.`;
       else if (["pacifist", "tealady", "devilsadvocate"].some(id => game.seats.some(x => x.role === id)) || (s.marks || []).includes("survives"))
         msg += "\n\nHinweis: Eine Rolle im Spiel kann die Hinrichtung verhindern (z. B. Pazifist, Teedame, Advocatus Diaboli). Prüfe das, bevor du bestätigst.";
-      if (!confirm(msg)) return;
+      // Eigenes Bestätigungsfenster (die Handy-Rückfrage wird in installierten Apps manchmal übersprungen)
+      openModal(`<h2>⚔️ Hinrichten?</h2><p>${esc(msg).replace(/\n/g, "<br>")}</p>
+        <div class="row end"><button class="btn" id="exno">Abbrechen</button><button class="btn danger" id="exyes">⚔️ Ja, ${esc(s.name)} hinrichten</button></div>`);
+      $("#exno").addEventListener("click", closeModal);
+      $("#exyes").addEventListener("click", () => { closeModal(); doExecute(b, s, role, rule); });
+    });
+    const doExecute = (b, s, role, rule) => {
       day.exec = { seat: b.on, name: s.name };
       hist(`⚔️ ${s.name} wurde hingerichtet (${role.ic} ${role.de})`, "day");
       swMsg = null;
@@ -1862,7 +1874,7 @@
       else if (swMsg) toast(swMsg);
       else if (rule && !rule.dies) toast(`${s.name} wurde hingerichtet, stirbt aber nicht (${role.de})`);
       else toast(`${s.name} wurde hingerichtet (${role.de})`);
-    });
+    };
     $("#noexec") && $("#noexec").addEventListener("click", () => {
       day.exec = "none";
       hist("🕊️ Heute wurde niemand hingerichtet", "day");
