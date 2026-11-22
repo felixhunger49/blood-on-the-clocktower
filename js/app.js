@@ -494,6 +494,20 @@
 
   // Prüft die automatisch erkennbaren Siegbedingungen. Gibt null zurück, solange das Spiel läuft.
   function detectEnd() {
+    const e = detectEndRaw();
+    if (!e) return e;
+    const ps = playerSeats(), warn = [...(e.warn || [])];
+    let winner = e.winner, reason = e.reason;
+    // Ketzer: Wer gewinnt, verliert – und umgekehrt (auch wenn er tot ist)
+    const her = ps.find(x => x.role === "heretic");
+    if (her && !impaired(her)) { winner = winner === "good" ? "evil" : "good"; reason += " 🔄 Ketzer im Spiel: Sieg und Niederlage sind getauscht!"; }
+    else if (her) warn.push("Der Ketzer ist vergiftet/betrunken – Sieg und Niederlage werden nicht getauscht.");
+    // Politiker: entscheidet der Spielleiter
+    const pol = ps.find(x => x.role === "politician");
+    if (pol && !impaired(pol)) warn.push(`${ROLE_BY_ID.politician.ic} Politiker ${pol.name}: War er am meisten schuld, dass sein Team verliert, wechselt er die Seite und gewinnt mit (dann bei der Auflösung erwähnen).`);
+    return { ...e, winner, reason, warn };
+  }
+  function detectEndRaw() {
     const ps = playerSeats();
     if (!ps.length) return null;
     if (game.saintLoss) return { winner: "evil", reason: `${game.saintLossRole && game.saintLossRole !== "Heiliger" ? `${game.saintLossRole}` : "Der Heilige"} ${game.saintLoss} wurde hingerichtet.`, warn: [] };
@@ -670,6 +684,19 @@
   // „Nur 1 der beiden Rollen darf im Spiel sein“
   const ONLY_ONE = JINXES.filter(j => /^Only 1 jinxed/.test(j[3])).map(j => [j[0], j[1]]);
   const onlyOneClash = sel => ONLY_ONE.filter(([a, b]) => sel.includes(a) && sel.includes(b));
+  // Petze: Jeder Scherge bekommt 3 Bluffs (wir geben allen dieselben drei, möglichst andere als der Dämon)
+  function snitchBluffs() {
+    const sn = game.seats.find(x => x.role === "snitch");
+    if (!sn || impaired(sn)) return null;
+    const inPlay = new Set(game.seats.map(x => x.role));
+    const bad = id => inPlay.has(id) || id === "drunk" || id === "lunatic" || id === game.drunkShown || id === game.marionetteShown;
+    if (!(game.snitchBluffs || []).length || game.snitchBluffs.some(bad)) {
+      const pool = ROLES.filter(r => inEd(r, game.edition) && (r.t === "townsfolk" || r.t === "outsider") && !bad(r.id));
+      const fresh = pool.filter(r => !(game.bluffs || []).includes(r.id));
+      game.snitchBluffs = pick(fresh.length >= 3 ? fresh : pool, 3).map(r => r.id);
+    }
+    return game.snitchBluffs;
+  }
   const poppyBlocks = () => game.seats.some(y => y.role === "poppygrower" && y.alive && !impaired(y));
   function evilInfoFor(seat) {
     // Böse-Infos stehen auf der Karte, wenn der Schalter an ist oder der Spielleiter sie in der Nacht gesendet hat.
@@ -691,7 +718,7 @@
     const lunatic = ps.find(s => s.role === "lunatic");
     const mario = ps.find(s => s.role === "marionette");
     if (seat.role === "marionette") return undefined;
-    if (t === "minion") return { d: demon && demon.name, m: minions.filter(s => s !== seat).map(s => s.name) };
+    if (t === "minion") { const sb = snitchBluffs(); return { d: demon && demon.name, m: minions.filter(s => s !== seat).map(s => s.name), ...(sb ? { b: sb } : {}) }; }
     if (t === "demon") return { m: minions.map(s => s.name), b: game.bluffs, l: lunatic && lunatic.name, mo: mario && mario.name };
     if (seat.role === "lunatic") {
       // Der Wahnsinnige bekommt plausible, aber falsche Schergen.
@@ -1006,7 +1033,7 @@
         if ((id === "minioninfo" || id === "demoninfo") && poppyBlocks()) { steps.push({ id, name: NIGHT_STEPS[id].de, text: "", who: "", inactive: true, mark: "🌺", why: "🌺 Der Mohnbauer lebt – Schergen und Dämon erfahren nichts voneinander (auch keine Bluffs)." }); return; }
         const ev = evilTeam();
         let who = "";
-        if (id === "minioninfo") who = `Dämon: ${esc(ev.demon ? ev.demon.name : "–")}`;
+        if (id === "minioninfo") who = `Dämon: ${esc(ev.demon ? ev.demon.name : "–")}${snitchBluffs() ? ` · 🤫 Petze – Bluffs der Schergen: ${snitchBluffs().map(b => esc(roleName(b))).join(", ")}` : ""}`;
         if (id === "demoninfo") who = `Schergen: ${ev.minions.map(m => esc(m.name)).join(", ") || "–"} · Bluffs: ${game.bluffs.map(b => esc(roleName(b))).join(", ")}`;
         steps.push({ id, name: NIGHT_STEPS[id].de, text: NIGHT_STEPS[id][key], who, show: id === "minioninfo" || id === "demoninfo" });
         return;
@@ -1766,6 +1793,19 @@
     });
   }
 
+  // Oger: wird die Gesinnung des gewählten Spielers (wirkt auch betrunken/vergiftet, er erfährt es nicht)
+  function ogreBond(i, k) {
+    const x = game.seats[i], t = game.seats[k];
+    if (!t) return;
+    let evil = !seatGood(t);
+    if (t.role === "spy") evil = true; // Jinx: Der Spion gilt für den Oger als böse
+    if (t.role === "recluse") toast("🛖 Einsiedler gewählt: Er darf für den Oger auch als böse gelten – ändere die Gesinnung des Ogers bei Bedarf (🔁)");
+    if (x.stayEvil && !evil) evil = true;
+    const before = seatGood(x);
+    x.align = evil ? "e" : "g";
+    hist(`🤝 ${x.name} (Oger) hat ${t.name} gewählt – der Oger ist jetzt ${evil ? "böse" : "gut"} (er erfährt es nicht)`, "night");
+    if (before !== !evil) { game.ignoreEnd = null; toast(`🤝 Der Oger ist jetzt ${evil ? "böse" : "gut"} – er erfährt es nicht${evil && t.role !== "spy" ? "" : ""}`); }
+  }
   function huntsmanCheck(i, k) {
     const x = game.seats[i], t = game.seats[k];
     if (!t || t.role !== "damsel") { hist(`🏹 ${x.name} (Jäger) wählt ${t ? t.name : "?"} – nicht die Jungfer`, "night"); return; }
@@ -4374,6 +4414,7 @@
     if (!r.skip && !r.fake && r.step === "snakecharmer" && r.picks.length) snakeCharm(i, r.picks[0]);
     if (!r.skip && !r.fake && r.step === "professor" && r.picks.length) professorRevive(i, r.picks[0]);
     if (!r.skip && !r.fake && r.step === "huntsman" && r.picks.length) huntsmanCheck(i, r.picks[0]);
+    if (!r.skip && r.step === "ogre" && x.role === "ogre" && r.picks.length) ogreBond(i, r.picks[0]);
     if (!r.skip && !r.fake && r.step === "shabaloth" && x.role === "shabaloth" && !impaired(x)) r.picks.forEach(k => { const t = game.seats[k]; if (t) t.shabNight = game.nightNo; });
     if (!r.skip && !r.fake && r.step === "fearmonger" && r.picks.length && !impaired(x)) {
       const k = r.picks[0], was = game.seats.findIndex((y, j) => j !== k && (y.marks || []).includes("fear"));
