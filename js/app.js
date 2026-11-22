@@ -1616,6 +1616,17 @@
         }
         c.gained = x.role; c.gainedUsed = false; c.canniFake = false;
         hist(`🍖 ${c.name} (Kannibale) hat jetzt die Fähigkeit von ${x.name}: ${roleName(x.role)}`, "day");
+        // Jinx Butler / Zelot: Der Kannibale erfährt, dass er diese Fähigkeit hat
+        if (["butler", "zealot"].includes(x.role)) {
+          const rule = x.role === "butler" ? "Wähle jede Nacht einen Spieler (nicht dich) als Meister. Morgen darfst du nur abstimmen, wenn dein Meister auch abstimmt."
+            : "Solange 5 oder mehr Spieler leben, musst du für jede Nominierung stimmen.";
+          c.infos = [...(c.infos || []), { n: game.nightNo, t: `🍖 Du hast jetzt die Fähigkeit des ${roleName(x.role)}s: ${rule}` }].slice(-10);
+          hist(`🔗 Jinx: ${c.name} (Kannibale) erfährt, dass er die Fähigkeit des ${roleName(x.role)}s hat`, "day");
+          setTimeout(() => toast(game.online || game.test ? `🔗 Jinx: ${c.name} sieht auf dem Handy, dass er die ${roleName(x.role)}-Fähigkeit hat` : `🔗 Jinx: Sag ${c.name}, dass er jetzt die Fähigkeit des ${roleName(x.role)}s hat`), 900);
+        }
+        // Jinx Jongleur: Hat der Jongleur am ersten Tag geraten, erfährt der Kannibale heute Nacht die Anzahl richtiger Vermutungen
+        if (x.role === "juggler" && game.juggle && game.juggle.day === 1 && game.nightNo === 1)
+          hist(`🔗 Jinx: ${c.name} (Kannibale) erfährt heute Nacht beim Jongleur-Schritt, wie viele Vermutungen des Jongleurs richtig waren`, "day");
       } else {
         // Schein-Fähigkeit: eine gute Rolle aus dem Skript, die nicht im Spiel ist (der Spielleiter kann sie ändern)
         const inPlay = new Set(game.seats.map(y => y.role));
@@ -1686,7 +1697,7 @@
   // alle am Tisch merken, wer der Butler ist. Der Spielleiter sieht nur einen Hinweis.
   function butlerCheck(i, hands) {
     const s = game.seats[i];
-    if (!s || s.role !== "butler") return null;
+    if (!s || actingRole(s) !== "butler") return null;
     const m = s.marks || [];
     if (m.includes("poison") || m.includes("drunk")) return { ok: true, note: "Butler – betrunken/vergiftet: darf frei stimmen" };
     const master = game.seats.findIndex(y => (y.marks || []).includes("master"));
@@ -1802,7 +1813,7 @@
           const canVote = s.alive || s.ghost;
           const up = v.hands.includes(i);
           const bc = butlerCheck(i, v.hands);
-          const isMaster = (s.marks || []).includes("master") && ps.some(y => y.role === "butler");
+          const isMaster = (s.marks || []).includes("master") && ps.some(y => actingRole(y) === "butler");
           return `<button class="voter ${up ? "up" : ""} ${bc && bc.warn ? "warn" : ""} ${v.clock === i ? "clock" : ""}" data-hand="${i}" ${canVote ? "" : "disabled"}>
             <span>${up ? "✋" : "·"}</span><b>${esc(s.name)}</b>${s.alive ? "" : `<small>${s.ghost ? "👻 Geisterstimme" : "keine Stimme mehr"}</small>`}${bc ? `<small>${esc(bc.note)}</small>` : ""}${s.role === "zealot" && s.alive && ps.filter(y => y.alive).length >= 5 ? `<small>📢 Zelot – muss abstimmen</small>` : ""}${s.banshee ? `<small>😱 Banshee – zählt doppelt</small>` : ""}${isMaster ? `<small>👔 Meister des Butlers</small>` : ""}</button>`;
         }).join("")}</div>
@@ -1941,6 +1952,11 @@
       if (pr && pr.role === "princess" && pr.alive && !impaired(pr) && game.nightNo === 1 && !game.princessUsed) {
         game.princessUsed = true; game.princessBlock = game.nightNo + 1;
         hist(`👸 ${pr.name} (Prinzessin) hat nominiert und hinrichten lassen – der Dämon tötet heute Nacht nicht`, "day");
+      }
+      // Jinx Kannibale + Prinzessin: Hat der Kannibale die Prinzessin nominiert und ist sie durch die Hinrichtung gestorben
+      if (pr && pr.role === "cannibal" && pr.alive && !impaired(pr) && s.role === "princess" && !s.alive) {
+        game.princessBlock = game.nightNo + 1;
+        hist(`🔗 Jinx: ${pr.name} (Kannibale) hat die Prinzessin nominiert, hingerichtet und getötet – der Dämon tötet heute Nacht nicht`, "day");
       }
       // Drahtzieher: Dämon hingerichtet -> noch ein Tag; danach verliert das Team des Hingerichteten
       if (game.mastermind && !game.mmResult && game.mastermind.day < game.nightNo) {
@@ -3783,7 +3799,7 @@
   function botWantsVote(k, on) {
     const S = game.seats, x = S[k];
     if (k === on) return false;
-    if (x.role === "zealot" && x.alive && !impaired(x) && S.filter(y => y.alive).length >= 5) return true;
+    if (actingRole(x) === "zealot" && x.alive && !impaired(x) && S.filter(y => y.alive).length >= 5) return true;
     const r = Math.random();
     if (!seatGood(x)) return seatGood(S[on]) ? r < 0.85 : r < 0.1;
     return x.alive ? r < 0.5 : r < 0.25;
@@ -3798,7 +3814,7 @@
     order.forEach(k => { if (isBot(S[k]) && (S[k].alive || S[k].ghost)) want[k] = botWantsVote(k, v.on); });
     // Der Butler hält sich an seine Regel
     order.forEach(k => {
-      if (S[k].role !== "butler" || !want[k]) return;
+      if (actingRole(S[k]) !== "butler" || !want[k]) return;
       const m = S[k].marks || [];
       if (m.includes("poison") || m.includes("drunk")) return;
       const master = S.findIndex(y => (y.marks || []).includes("master"));
