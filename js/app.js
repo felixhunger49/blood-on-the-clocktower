@@ -1301,11 +1301,10 @@
       if (healed.length) hist(`💧 Gift/Trunkenheit vorbei: ${healed.join(", ")}`, "night");
       game.done[game.nightNo] = [];
       save(); renderSL();
-      const nl = $(".nightlist");
-      if (nl) nl.closest(".panel").scrollIntoView({ behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: "smooth" });
       toast(`Nacht ${game.nightNo} beginnt`);
     });
-    $("#prevnight") && $("#prevnight").addEventListener("click", () => { game.nightNo--; save(); renderSL(); });
+    $("#prevnight") && $("#prevnight").addEventListener("click", () => { game.nightNo--; save(); renderSL(); window.scrollTo({ top: 0, behavior: "smooth" }); });
     bindDay();
     $$("[data-change]").forEach(b => b.addEventListener("click", () => changeRole(+b.dataset.change)));
     $$("[data-seatmodal]").forEach(b => b.addEventListener("click", () => seatModal(+b.dataset.seatmodal)));
@@ -3511,6 +3510,7 @@
     game.dawn = { n, died };
     hist(`☀️ Tag ${n} beginnt – ${died.length ? "gestorben: " + died.join(", ") : "niemand ist gestorben"}`, "day");
     save(); renderSL();
+    window.scrollTo({ top: 0, behavior: "smooth" });
     toast(died.length ? `Morgen: ${died.join(", ")} ist gestorben` : "Morgen: Niemand ist gestorben");
   }
 
