@@ -421,7 +421,7 @@
   function detectEnd() {
     const ps = playerSeats();
     if (!ps.length) return null;
-    if (game.saintLoss) return { winner: "evil", reason: `Der Heilige ${game.saintLoss} wurde hingerichtet.`, warn: [] };
+    if (game.saintLoss) return { winner: "evil", reason: `${game.saintLossRole && game.saintLossRole !== "Heiliger" ? `${game.saintLossRole}` : "Der Heilige"} ${game.saintLoss} wurde hingerichtet.`, warn: [] };
     if (game.klutzLoss) return { winner: "evil", reason: `Der Tollpatsch ${game.klutzLoss.by} hat ${game.klutzLoss.pick} gewählt – einen bösen Spieler.`, warn: [] };
     const alive = ps.filter(s => s.alive);
     const demons = ps.filter(s => ROLE_BY_ID[s.role].t === "demon");
@@ -1423,9 +1423,9 @@
 
   // Heiliger: Wird er (gesund) hingerichtet, verliert Gut.
   function saintCheck(x) {
-    if (!x || x.role !== "saint" || x.alive) return;
+    if (!x || (x.role !== "saint" && (ROLE_BY_ID[x.role] || {}).hbEffect !== "saint") || x.alive) return;
     if (impaired(x)) { hist(`😇 ${x.name} (Heiliger) wurde hingerichtet, war aber vergiftet/betrunken – nichts passiert`, "day"); abn(x, "Heiliger hingerichtet, aber vergiftet – keine Folgen"); return; }
-    game.saintLoss = x.name; game.ignoreEnd = null; game.endPopped = null;
+    game.saintLoss = x.name; game.saintLossRole = roleName(x.role); game.ignoreEnd = null; game.endPopped = null;
   }
 
   // Jungfrau: Wird sie das erste Mal nominiert und ist der Nominierende ein Dorfbewohner,
@@ -2358,8 +2358,31 @@
     outsider: { l: "ℹ️ Info: Ist der gewählte Spieler ein Außenseiter? (Ja/Nein)", pick: 1, info: true },
     role: { l: "ℹ️ Info: Rolle des gewählten Spielers", pick: 1, info: true },
     neighbours: { l: "ℹ️ Info: Wie viele lebende Nachbarn sind böse? (Zahl, ohne Wahl)", pick: 0, info: true },
-    evilcount: { l: "ℹ️ Info: Wie viele böse Spieler leben noch? (Zahl, ohne Wahl)", pick: 0, info: true }
+    evilcount: { l: "ℹ️ Info: Wie viele böse Spieler leben noch? (Zahl, ohne Wahl)", pick: 0, info: true },
+    // weitere Tode
+    kill_evil: { l: "💀 Gewählter Spieler stirbt – nur wenn er böse ist", pick: 1 },
+    kill_minion: { l: "💀 Gewählter Spieler stirbt – nur wenn er ein Scherge ist", pick: 1 },
+    // passiv (ohne Wahl)
+    immune: { l: "🛡️ Passiv: Der Dämon kann dich nicht töten (wie Soldat)", pick: 0, passive: true },
+    unkillable: { l: "🛡️ Passiv: Du kannst nicht sterben, solange du nüchtern bist (wie Seemann)", pick: 0, passive: true },
+    fool: { l: "🃏 Passiv: Dein erster Tod wird verhindert (wie Narr)", pick: 0, passive: true },
+    saint: { l: "😇 Passiv: Wirst du hingerichtet, gewinnt Böse (wie Heiliger)", pick: 0, passive: true },
+    // weitere Infos
+    same: { l: "ℹ️ Info: Haben die 2 Gewählten die gleiche Gesinnung?", pick: 2, info: true },
+    townsfolk: { l: "ℹ️ Info: Ist der gewählte Spieler ein Dorfbewohner? (Ja/Nein)", pick: 1, info: true },
+    evil3: { l: "ℹ️ Info: Wie viele der 3 Gewählten sind böse? (Zahl)", pick: 3, info: true },
+    nominated: { l: "ℹ️ Info: Hat der gewählte Spieler heute nominiert? (Ja/Nein)", pick: 1, info: true },
+    voted: { l: "ℹ️ Info: Hat der gewählte Spieler heute abgestimmt? (Ja/Nein)", pick: 1, info: true },
+    executee: { l: "ℹ️ Info: Rolle des heute Hingerichteten (ohne Wahl, wie Totengräber)", pick: 0, info: true },
+    deadevil: { l: "ℹ️ Info: Wie viele Tote sind böse? (Zahl, ohne Wahl, wie Orakel)", pick: 0, info: true },
+    demondist: { l: "ℹ️ Info: Wie viele Plätze sitzt du vom Dämon entfernt? (Zahl, ohne Wahl)", pick: 0, info: true },
+    // Rollen verändern
+    mad: { l: "😵 Gewählter Spieler muss morgen eine Rolle deiner Wahl behaupten (wie Cerenovus)", pick: 1, rolePick: true },
+    change: { l: "🧙 Gewählter Spieler wird zu einer Rolle deiner Wahl (wie Grubenhexe)", pick: 1, rolePick: true }
   };
+  const HB_GROUPS = [["", "Ohne"], ["Wirkung auf Gewählte", ["protect", "poison", "drunk", "mad", "change"]], ["Tod", ["kill", "kill_evil", "kill_minion"]],
+    ["Passiv (eigene Rolle)", ["immune", "unkillable", "fool", "saint"]],
+    ["Info", ["align", "demon", "minion", "outsider", "townsfolk", "same", "evil3", "role", "nominated", "voted", "executee", "neighbours", "evilcount", "deadevil", "demondist"]]];
   // Definition: { id: "hb_…", de, t, a, e, ic, n1, pos1, n, pos, pick, rolePick, info, act, marks: [{i,l}], setup }
   function registerHomebrew(defs) {
     (defs || []).forEach(d => {
@@ -2438,7 +2461,7 @@
         <div id="hbw1box" ${d.n1 ? "" : "hidden"}><textarea id="hbn1" rows="2" placeholder="Was machst du als Spielleiter?">${esc(d.n1)}</textarea><select id="hbpos1">${posOpts(NIGHT_FIRST, d.pos1)}</select></div>
         <label class="switch"><input type="checkbox" id="hbw" ${d.n ? "checked" : ""}><span>Wacht in den <b>anderen Nächten</b></span></label>
         <div id="hbwbox" ${d.n ? "" : "hidden"}><textarea id="hbn" rows="2" placeholder="Was machst du als Spielleiter?">${esc(d.n)}</textarea><select id="hbpos">${posOpts(NIGHT_OTHER, d.pos)}</select></div>
-        <label class="field">⚙️ Automatische Wirkung (Baustein): <select id="hbfx">${Object.entries(HB_EFFECTS).map(([k, v]) => `<option value="${k}" ${(d.effect || "") === k ? "selected" : ""}>${esc(v.l)}</option>`).join("")}</select></label>
+        <label class="field">⚙️ Automatische Wirkung (Baustein): <select id="hbfx">${HB_GROUPS.map(([g, ks]) => g === "" ? `<option value="">${esc(HB_EFFECTS[""].l)}</option>` : `<optgroup label="${esc(g)}">${ks.map(k => `<option value="${k}" ${(d.effect || "") === k ? "selected" : ""}>${esc(HB_EFFECTS[k].l)}</option>`).join("")}</optgroup>`).join("")}</select></label>
         <label class="field">Wählt nachts am Handy: <select id="hbpick"><option value="0" ${!+d.pick ? "selected" : ""}>keine Spieler</option><option value="1" ${+d.pick === 1 ? "selected" : ""}>1 Spieler</option><option value="2" ${+d.pick === 2 ? "selected" : ""}>2 Spieler</option></select></label>
         <label class="switch"><input type="checkbox" id="hbrole" ${d.rolePick ? "checked" : ""}><span>… und eine <b>Rolle</b></span></label>
         <label class="switch"><input type="checkbox" id="hbinfo" ${d.info ? "checked" : ""}><span>Bekommt <b>Infos</b> vom Spielleiter (📱-Info-Knopf)</span></label>
@@ -2453,7 +2476,10 @@
       const fx = HB_EFFECTS[e.target.value] || {};
       if (fx.pick !== undefined) $("#hbpick").value = String(fx.pick);
       if (fx.info) $("#hbinfo").checked = true;
+      $("#hbrole").checked = !!fx.rolePick;
+      if (fx.passive) { $("#hbw").checked = false; $("#hbwbox").hidden = true; $("#hbw1").checked = false; $("#hbw1box").hidden = true; return; }
       if (e.target.value && !$("#hbw").checked && !$("#hbw1").checked) { $("#hbw").checked = true; $("#hbwbox").hidden = false; }
+      if (e.target.value && !$("#hbn").value.trim()) $("#hbn").value = `Wecke ${$("#hbname").value.trim() || "die Rolle"}. ${fx.pick ? `Sie wählt ${fx.pick === 1 ? "einen Spieler" : fx.pick + " Spieler"}${fx.rolePick ? " und eine Rolle" : ""}.` : ""}${fx.info ? " Gib ihr die Info." : ""}`.trim();
     });
     $("#hbcancel").addEventListener("click", () => { closeModal(); scriptEditor(); });
     $("#hbdel") && $("#hbdel").addEventListener("click", () => {
@@ -2836,6 +2862,9 @@
   function deathRule(x) {
     if (impaired(x)) return null;
     if (x.role === "sailor") return { dies: false, why: "⚓ Seemann – kann nicht sterben, solange er nüchtern ist" };
+    const hfx = (ROLE_BY_ID[x.role] || {}).hbEffect;
+    if (hfx === "unkillable") return { dies: false, why: `🛡️ ${roleName(x.role)} – kann nicht sterben, solange nüchtern` };
+    if (hfx === "fool" && !x.used) return { dies: false, fool: true, why: `🃏 ${roleName(x.role)} – erster Tod wird verhindert` };
     if (x.role === "fool" && !x.used) return { dies: false, fool: true, why: "🃏 Narr – sein erster Tod wird verhindert (Fähigkeit danach verbraucht)" };
     if (x.role === "zombuul" && !x.zfake) return { dies: true, zombuul: true, why: "🧟 Zombuul – erster Tod: gilt als tot, lebt aber heimlich weiter" };
     return null;
@@ -2949,8 +2978,12 @@
     const pukka = S.findIndex(y => y.role === "pukka" && (y.alive || y.zfake));
     S.forEach((x, k) => { if (x.pukkaNight && x.pukkaNight < n && x.alive && !attacks.has(k)) attacks.set(k, { step: "pukka", by: pukka >= 0 ? pukka : null }); });
     // Homebrew-Rollen mit dem Baustein „stirbt“
-    (game.acts || []).filter(a => a.night === n && !a.skip && !a.undone && !a.fake && ROLE_BY_ID[a.step] && ROLE_BY_ID[a.step].hbEffect === "kill")
-      .forEach(a => (a.picks || []).forEach(k => { if (!attacks.has(k)) attacks.set(k, { step: a.step, by: a.i, hbkill: true }); }));
+    (game.acts || []).filter(a => a.night === n && !a.skip && !a.undone && !a.fake && ROLE_BY_ID[a.step] && ["kill", "kill_evil", "kill_minion"].includes(ROLE_BY_ID[a.step].hbEffect))
+      .forEach(a => (a.picks || []).forEach(k => {
+        const fx = ROLE_BY_ID[a.step].hbEffect, t = S[k];
+        if (!t || (fx === "kill_evil" && seatGood(t)) || (fx === "kill_minion" && ROLE_BY_ID[t.role].t !== "minion")) return;
+        if (!attacks.has(k)) attacks.set(k, { step: a.step, by: a.i, hbkill: true });
+      }));
     const out = [];
     attacks.forEach((at, k) => {
       const x = S[k];
@@ -2963,6 +2996,7 @@
       if (attacker && impaired(attacker)) { dies = false; why = `${attacker.name} ist vergiftet/betrunken – der Angriff wirkt nicht`; }
       else if (!strong && m.includes("protect")) { dies = false; why = "🛡️ geschützt – überlebt"; }
       else if (!strong && x.role === "soldier" && !impaired(x)) { dies = false; why = "🛡️ Soldat – der Dämon kann ihn nicht töten"; }
+      else if (!strong && ROLE_BY_ID[x.role].hbEffect === "immune" && !impaired(x)) { dies = false; why = `🛡️ ${roleName(x.role)} – der Dämon kann ihn nicht töten`; }
       else if (!strong && m.includes("cantdie")) { dies = false; why = "🫖 Teedame – kann nicht sterben"; }
       else if (deathRule(x)) { const r = deathRule(x); dies = r.dies; why = r.why; }
       else if (at.by === k && x.role !== "imp") why = `${roleName(x.role)} hat sich selbst gewählt und stirbt (nur der Imp kann einen Sternenwechsel machen)`;
@@ -3327,7 +3361,7 @@
     const text = `🌙 ${x.name} (${roleName(r.step)}): ${r.skip ? "nichts" : describePick(r)}`;
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
     hist(text, "night");
-    if (!r.skip && !r.fake && r.role && r.picks.length && ["cerenovus", "pithag"].includes(r.step)) applyRolePick(x, r);
+    if (!r.skip && !r.fake && r.role && r.picks.length && (["cerenovus", "pithag"].includes(r.step) || ["mad", "change"].includes((ROLE_BY_ID[r.step] || {}).hbEffect))) applyRolePick(x, r);
     if (!r.skip && !r.fake && ["sailor", "innkeeper", "courtier"].includes(r.step)) applyDrunkMaker(i, r);
     if (!r.skip && !r.fake && r.step === "snakecharmer" && r.picks.length) snakeCharm(i, r.picks[0]);
     if (!r.skip && KILL_STEPS.includes(r.step)) setTimeout(wakeDeathTriggered, 50);
@@ -3449,11 +3483,12 @@
       toast(`${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung (du kannst trotzdem so tun als ob)`);
       return;
     }
-    if (r.step === "cerenovus") {
+    const hbE = (ROLE_BY_ID[r.step] || {}).hbEffect;
+    if (r.step === "cerenovus" || hbE === "mad") {
       t.madness = { role: r.role, night: game.nightNo };
       hist(`😵 ${t.name} muss morgen ${roleName(r.role)} behaupten`, "night");
       toast(`😵 ${t.name}: Wahnsinn „${roleName(r.role)}“ gesetzt${reachable(t) ? " – steht auf dem Handy" : " – zeig es ihm (😵-Knopf)"}`);
-    } else if (r.step === "pithag") {
+    } else if (r.step === "pithag" || hbE === "change") {
       if (game.seats.some(y => y.role === r.role)) {
         hist(`🧙 ${roleName(r.role)} ist schon im Spiel – die Grubenhexe bewirkt nichts`, "night");
         toast(`${roleName(r.role)} ist schon im Spiel – nichts passiert`);
@@ -3815,6 +3850,17 @@
         if (fx === "outsider") { const y = T(picks[0]) === "outsider"; return { t: y ? "Ja" : "Nein", text: `${name(picks[0])} ist ${y ? "" : "kein "}Außenseiter` }; }
         if (fx === "role") return { r: [S[picks[0]].role], p: [], text: `${name(picks[0])} ist ${roleName(S[picks[0]].role)}` };
         if (fx === "neighbours") { const nb = aliveNeighbours(me), c = nb.filter(k => isEvil(S[k])).length; return { t: String(c), text: `${c} – Nachbarn: ${nb.map(name).join(", ")}` }; }
+        if (fx === "same") { const y = seatGood(S[picks[0]]) === seatGood(S[picks[1]]); return { t: y ? "gleich" : "verschieden", text: `${picks.map(name).join(" & ")}: ${y ? "gleiche" : "verschiedene"} Gesinnung` }; }
+        if (fx === "townsfolk") { const y = T(picks[0]) === "townsfolk"; return { t: y ? "Ja" : "Nein", text: `${name(picks[0])} ist ${y ? "" : "kein "}Dorfbewohner` }; }
+        if (fx === "evil3") { const c = picks.filter(k => isEvil(S[k])).length; return { t: String(c), text: `${c} böse unter ${picks.map(name).join(", ")}` }; }
+        if (fx === "nominated" || fx === "voted") {
+          const day = (game.days || {})[game.nightNo - 1] || { noms: [] };
+          const y = fx === "nominated" ? day.noms.some(nm => nm.by === picks[0]) : day.noms.some(nm => (nm.hands || []).includes(picks[0]));
+          return { t: y ? "Ja" : "Nein", text: `${name(picks[0])} hat heute ${y ? "" : "nicht "}${fx === "nominated" ? "nominiert" : "abgestimmt"} (laut Abstimmungs-Helfer)` };
+        }
+        if (fx === "executee") { const day = (game.days || {})[game.nightNo - 1]; if (!day || !day.exec || day.exec === "none" || !S[day.exec.seat]) return { text: "Heute wurde niemand hingerichtet – keine Info." }; return { r: [S[day.exec.seat].role], text: `${S[day.exec.seat].name} war ${roleName(S[day.exec.seat].role)}` }; }
+        if (fx === "deadevil") { const c = S.filter((x, k) => !aliveNow(k) && isEvil(x)).length; return { t: String(c), text: `${c} tote(r) böse(r) Spieler` }; }
+        if (fx === "demondist") { const n = S.length, ds = S.map((x, k) => k).filter(k => T(k) === "demon"); if (!ds.length) return null; const d = Math.min(...ds.map(k => Math.min((k - me + n) % n, (me - k + n) % n))); return { t: String(d), text: `${d} Platz/Plätze bis zum Dämon` }; }
         if (fx === "evilcount") { const c = S.filter((x, k) => aliveNow(k) && isEvil(x)).length; return { t: String(c), text: `${c} böse Spieler leben noch` }; }
         return null;
       }
