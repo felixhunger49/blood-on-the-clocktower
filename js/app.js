@@ -1096,6 +1096,7 @@
             <div class="ns-head">${s.inactive ? `<span class="dead-mark">${s.mark}</span>` : `<input type="checkbox" ${done.includes(s.id) ? "checked" : ""}>`}<b>${esc(s.name)}</b>${s.who ? `<span class="who">${s.who}</span>` : ""}</div>
             <p>${s.inactive ? s.why : esc(s.text)}</p>
             ${s.inactive || !ROLE_BY_ID[s.id] ? "" : jinxNotesHtml(s.id)}
+            ${s.id === "yaggababble" && !s.inactive ? yaggaStepHtml() : ""}
             ${s.id === "amnesiac" ? game.seats.filter(x => x.role === "amnesiac").map(x => `<p class="small">❓ ${esc(x.name)}: <b>${x.amn ? esc(x.amn.text) : "noch keine Fähigkeit festgelegt"}</b></p>`).join("") : ""}
             ${["sailor", "innkeeper"].includes(s.id) && game.drunkPick && game.drunkPick.night === game.nightNo && game.drunkPick.step === s.id ? (() => {
               const d = game.drunkPick, other = d.opts.find(k => k !== d.on);
@@ -1364,6 +1365,7 @@
       save(); renderSL();
       toast(game.online || game.test ? `${x.name} sieht jetzt ihre neue Rolle auf dem Handy` : `Zeig ${x.name} jetzt „Du bist“ + ${roleName(x.role)}`);
     }));
+    bindYagga();
     $("#nextnight") && $("#nextnight").addEventListener("click", () => {
       const end = !game.winner && detectEnd();
       if (end && game.ignoreEnd !== aliveKey() && !confirm(`Das Spiel ist eigentlich vorbei: ${end.winner === "good" ? "Gut" : "Böse"} gewinnt.\n${end.reason}\n\nTrotzdem weiterspielen?`)) return;
@@ -1650,6 +1652,86 @@
 
   // Kannibale: bekommt die Fähigkeit des zuletzt durch Hinrichtung Gestorbenen.
   // War der böse, ist er vergiftet, bis ein Guter durch Hinrichtung stirbt – und glaubt, eine gute Fähigkeit zu haben.
+  // =====================================================================
+  //  YAGGABABBLE: geheimer Satz, Zähler am Tag, Opfer in der Nacht
+  // =====================================================================
+  const YAGGA_PHRASES = ["ehrlich gesagt", "Hand aufs Herz", "ich schwöre", "das ist verdächtig", "glaubt mir", "um ehrlich zu sein",
+    "ganz ehrlich", "auf jeden Fall", "wie gesagt", "Moment mal", "unter uns", "meiner Meinung nach", "das passt nicht zusammen",
+    "ich bin mir sicher", "das ergibt keinen Sinn", "ich frage mich", "interessant", "ganz klar", "ich vertraue dir", "Augen auf",
+    "lasst uns mal", "ich hab ein gutes Gefühl", "das ist logisch", "Zufall?", "das sagt alles", "na gut", "mal ehrlich", "ich wette"];
+  const yaggaSeat = () => game.seats.findIndex(y => y.role === "yaggababble");
+  function yagga() {
+    game.yagga = game.yagga || { phrase: "", days: {} };
+    if (!game.yagga.phrase) game.yagga.phrase = YAGGA_PHRASES[randInt(YAGGA_PHRASES.length)];
+    return game.yagga;
+  }
+  // Wie oft wurde der Satz an Tag d gesagt?
+  const yaggaCount = d => ((game.yagga || {}).days || {})[d] || 0;
+  function yaggaStepHtml() {
+    const y = yagga(), i = yaggaSeat(), x = game.seats[i];
+    if (!x) return "";
+    if (game.nightNo === 1) {
+      const sent = (x.infos || []).some(f => f.yg === y.phrase);
+      return `<div class="yagga"><p>🗣️ Geheimer Satz: <b>„${esc(y.phrase)}“</b></p>
+        <div class="row wrap"><button class="btn sm" data-ygnew="1">🎲 Anderer Satz</button><button class="btn sm" data-ygown="1">✏️ Eigener</button>
+        <button class="btn sm ${sent ? "used" : "primary"}" data-ygsend="1">${sent ? "✔ Gesendet" : game.online || game.test ? "📱 Aufs Handy senden" : "✔ Gezeigt"}</button></div>
+        <p class="small">Gut: natürlich klingend, aber nicht so alltäglich, dass er aus Versehen fällt. Am Tag zählst du im Abstimmungsbereich mit.</p></div>`;
+    }
+    const n = yaggaCount(game.nightNo - 1);
+    const a = (game.acts || []).find(q => q.night === game.nightNo && q.step === "yaggababble" && !q.undone);
+    return `<div class="yagga"><p>🗣️ Satz „${esc(y.phrase)}“ wurde an Tag ${game.nightNo - 1} <b>${n}×</b> gesagt → bis zu <b>${n}</b> Spieler dürfen sterben (du entscheidest, wie viele).</p>
+      ${a ? `<p class="okmsg">💀 Gewählt: ${a.picks.length ? a.picks.map(k => esc(game.seats[k].name)).join(", ") : "niemand"}</p>` : ""}
+      ${n ? `<button class="btn sm primary" data-ygkill="1">💀 ${a ? "Opfer ändern" : "Opfer wählen"}</button>` : `<p class="small">Heute stirbt durch den Yaggababble niemand.</p>`}
+      <p class="small">Schutz (Mönch, Soldat …), Vergiftung und der Exorzist werden beim Morgen automatisch beachtet.</p></div>`;
+  }
+  function yaggaDayHtml() {
+    const i = yaggaSeat();
+    if (i < 0 || !(game.seats[i].alive || game.seats[i].zfake)) return "";
+    const y = yagga(), n = yaggaCount(game.nightNo);
+    return `<div class="box yagga">🗣️ <b>Yaggababble</b> – Satz „${esc(y.phrase)}“ heute öffentlich gesagt:
+      <div class="row center"><button class="btn" data-ygc="-1">−</button><b class="yg-count">${n}×</b><button class="btn primary" data-ygc="1">+1</button></div>
+      <p class="small">Nur zählen, was laut in der Runde gesagt wird (nicht beim Flüstern). Nur du siehst das.</p></div>`;
+  }
+  function bindYagga() {
+    $$("[data-ygnew]").forEach(b => b.addEventListener("click", () => { const y = yagga(); let p; do { p = YAGGA_PHRASES[randInt(YAGGA_PHRASES.length)]; } while (p === y.phrase); y.phrase = p; save(); renderSL(); }));
+    $$("[data-ygown]").forEach(b => b.addEventListener("click", () => { const v = prompt("Eigener geheimer Satz:", yagga().phrase); if (v && v.trim()) { yagga().phrase = v.trim(); save(); renderSL(); } }));
+    $$("[data-ygsend]").forEach(b => b.addEventListener("click", () => {
+      const y = yagga(), x = game.seats[yaggaSeat()];
+      if (!x) return;
+      x.infos = [...(x.infos || []), { n: game.nightNo, t: `🗣️ Dein geheimer Satz: „${y.phrase}“ – jedes Mal, wenn du ihn tagsüber öffentlich sagst, kann nachts ein Spieler sterben.`, yg: y.phrase }].slice(-10);
+      hist(`🗣️ ${x.name} (Yaggababble) kennt seinen Satz: „${y.phrase}“`, "night");
+      const d = game.done[game.nightNo] || []; if (!d.includes("yaggababble")) game.done[game.nightNo] = [...d, "yaggababble"];
+      save(); renderSL(); toast(game.online || game.test ? `📱 ${x.name} sieht den Satz auf dem Handy` : `Zeig ${x.name} den Satz „${y.phrase}“`);
+    }));
+    $$("[data-ygc]").forEach(b => b.addEventListener("click", () => {
+      const y = yagga(); y.days = y.days || {};
+      y.days[game.nightNo] = Math.max(0, (y.days[game.nightNo] || 0) + +b.dataset.ygc);
+      save(); const el = $(".yg-count"); if (el) el.textContent = y.days[game.nightNo] + "×";
+    }));
+    $$("[data-ygkill]").forEach(b => b.addEventListener("click", yaggaKillDialog));
+  }
+  function yaggaKillDialog() {
+    const i = yaggaSeat(), max = yaggaCount(game.nightNo - 1);
+    const a = (game.acts || []).find(q => q.night === game.nightNo && q.step === "yaggababble" && !q.undone);
+    const cur = new Set(a ? a.picks : []);
+    openModal(`<h2>🗣️ Yaggababble: Opfer wählen</h2>
+      <p>Der Satz wurde gestern <b>${max}×</b> gesagt – wähle <b>bis zu ${max}</b> Spieler (oder niemanden).</p>
+      <div class="yglist">${game.seats.map((x, k) => x.alive && !x.trav && k !== i ? `<label class="switch"><input type="checkbox" data-ygk="${k}" ${cur.has(k) ? "checked" : ""}><span>${esc(x.name)} <small>(${esc(roleName(x.role))})</small></span></label>` : "").join("")}</div>
+      <p class="small" id="yginfo"></p>
+      <div class="row end"><button class="btn" id="ygcancel">Abbrechen</button><button class="btn primary" id="ygok">Speichern</button></div>`);
+    const upd = () => { const c = $$("[data-ygk]:checked").length; $("#yginfo").textContent = `${c} von höchstens ${max} gewählt`; $$("[data-ygk]").forEach(e => { e.disabled = !e.checked && c >= max; }); };
+    $$("[data-ygk]").forEach(e => e.addEventListener("change", upd)); upd();
+    $("#ygcancel").addEventListener("click", closeModal);
+    $("#ygok").addEventListener("click", () => {
+      const picks = $$("[data-ygk]:checked").map(e => +e.dataset.ygk);
+      game.acts = (game.acts || []).filter(q => !(q.night === game.nightNo && q.step === "yaggababble"));
+      game.acts.push({ night: game.nightNo, i, step: "yaggababble", picks, skip: !picks.length });
+      const d = game.done[game.nightNo] || []; if (!d.includes("yaggababble")) game.done[game.nightNo] = [...d, "yaggababble"];
+      hist(`🗣️ Yaggababble: ${picks.length ? picks.map(k => game.seats[k].name).join(", ") + " sollen sterben" : "heute niemand"}`, "night");
+      save(); closeModal(); renderSL();
+    });
+  }
+
   // Jinxes bei Hinrichtungen (Leviathan/Riot)
   function jinxExecCheck(nom, s) {
     if (!s) return;
@@ -1926,6 +2008,7 @@
         ${game.online || game.test ? `<p class="small">📱 Abstimmen am Handy: <b>${game.phoneVote ? "an" : "aus"}</b> (⚙️ Einstellungen)</p>` : ""}
         ${game.nomReq && !game.vote ? `<div class="box nomreq">📨 <b>${esc(game.seats[game.nomReq.by].name)}</b> möchte <b>${esc(game.seats[game.nomReq.on].name)}</b> nominieren.
           <div class="row wrap"><button class="btn primary" id="nomok">✅ Zulassen</button><button class="btn" id="nomno">Ablehnen</button></div></div>` : ""}
+        ${yaggaDayHtml()}
         ${body}
         ${noms ? `<h3>Nominierungen heute</h3><ul class="nomlist">${noms}</ul>` : ""}
         ${exileHtml(day)}
@@ -3470,7 +3553,7 @@
 
   // Morgen: Nacht beenden, Tag beginnen, Tote der Nacht verkünden
   // ---------- Morgen: Wer stirbt durch den Dämon? ----------
-  const KILL_STEPS = ["imp", "fanggu", "vigormortis", "nodashii", "vortox", "zombuul", "shabaloth", "po", "assassin", "godfather", "lleech"];
+  const KILL_STEPS = ["imp", "fanggu", "vigormortis", "nodashii", "vortox", "zombuul", "shabaloth", "po", "assassin", "godfather", "lleech", "yaggababble"];
   // Philosoph und Kannibale können die Fähigkeit einer anderen Rolle haben (x.gained)
   const gainer = x => !!x && (x.role === "philosopher" || x.role === "cannibal");
   const impaired = x => { const m = x.marks || []; return m.includes("poison") || m.includes("drunk") || x.role === "drunk"; };
@@ -3623,7 +3706,9 @@
       const demonAtt = !at.hbkill && at.step !== "assassin" && (!at.step || (ROLE_BY_ID[at.step] && ROLE_BY_ID[at.step].t === "demon"));
       let dies = true, why = at.step === "pukka" && x.pukkaNight && x.pukkaNight < n ? `stirbt durch die Pukka (vergiftet seit Nacht ${x.pukkaNight}) – danach wieder gesund` : `angegriffen${at.step ? ` (${roleName(at.step)})` : ""}`;
       if (at.acro) why = `🤸 Akrobat: Sein gewählter Spieler ${at.acro} ist betrunken/vergiftet – der Akrobat stirbt`;
+      const exoAct = (game.acts || []).find(a => a.night === n && a.step === "exorcist" && !a.skip && !a.undone && S[a.i] && S[a.i].role === "exorcist" && !impaired(S[a.i]));
       if (demonAtt && game.princessBlock === n) { dies = false; why = "👸 Prinzessin: Der Dämon tötet heute Nacht nicht"; }
+      else if (demonAtt && attacker && exoAct && S[(exoAct.picks || [])[0]] === attacker) { dies = false; why = `✝️ Der Exorzist hat den Dämon gewählt – ${roleName(attacker.role)} tötet heute Nacht nicht`; }
       else if (demonAtt && lycHit) { dies = false; why = "🐺 Der Lykanthrop hat einen Guten getötet – der Dämon tötet heute Nacht nicht"; }
       else if (at.acro) { /* Akrobat stirbt, kein Schutz */ }
       else if (attacker && impaired(attacker)) { dies = false; why = `${attacker.name} ist vergiftet/betrunken – der Angriff wirkt nicht`; }
