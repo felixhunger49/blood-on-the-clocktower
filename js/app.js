@@ -2769,7 +2769,7 @@
   function nightKills() {
     const S = game.seats, n = game.nightNo;
     const attacks = new Map(); // Ziel -> Angreifer
-    (game.acts || []).filter(a => a.night === n && !a.skip && !a.undone && KILL_STEPS.includes(a.step) && !(a.step === "lleech" && n === 1))
+    (game.acts || []).filter(a => a.night === n && !a.skip && !a.undone && !a.fake && !(S[a.i] && S[a.i].role === "lunatic") && KILL_STEPS.includes(a.step) && !(a.step === "lleech" && n === 1))
       .forEach(a => (a.picks || []).forEach(k => { if (!attacks.has(k)) attacks.set(k, { step: a.step, by: a.i }); }));
     S.forEach((x, k) => { if ((x.marks || []).includes("target") && !attacks.has(k)) attacks.set(k, { step: null, by: null }); });
     // Pukka: Wer seit einer früheren Nacht vergiftet ist, stirbt jetzt
@@ -3115,14 +3115,24 @@
     // Marker automatisch setzen
     // Vergiftete/betrunkene Spieler wählen trotzdem (sie wissen es nicht) – ihre Fähigkeit wirkt aber nicht.
     // Ausnahmen: Ziel des Dämons (wird am Morgen geprüft) und Meister des Butlers (nur eine Wahl, keine Wirkung).
-    if (!r.skip) goonCheck(i, r);
-    const noEffect = !r.skip && def.mark && impaired(x) && !["target", "master"].includes(def.mark);
+    // Wahnsinniger (glaubt Dämon zu sein) und Marionette (glaubt gut zu sein) haben die Fähigkeit gar nicht:
+    // ihre Wahl bewirkt nichts. Beim Wahnsinnigen merkt sich die App das Ziel (der echte Dämon erfährt es).
+    if (["lunatic", "marionette"].includes(x.role) && r.step !== x.role) {
+      r.fake = true;
+      if (!r.skip && x.role === "lunatic" && ROLE_BY_ID[r.step] && ROLE_BY_ID[r.step].t === "demon") {
+        r.picks.forEach(k => { const t = game.seats[k]; t.marks = [...new Set([...(t.marks || []), "lun_attack"])]; });
+        hist(`🗡️ ${x.name} (Wahnsinniger) „greift“ ${r.picks.map(k => game.seats[k].name).join(", ")} an – stirbt nicht, aber der echte Dämon erfährt es`, "night");
+        toast(`🗡️ Wahnsinniger hat ${r.picks.map(k => game.seats[k].name).join(", ")} gewählt – kein echter Angriff`);
+      }
+    }
+    if (!r.skip && !r.fake) goonCheck(i, r);
+    const noEffect = !r.skip && !r.fake && def.mark && impaired(x) && !["target", "master"].includes(def.mark);
     if (noEffect) {
       hist(`⚠️ ${x.name} (${roleName(r.step)}) ist vergiftet/betrunken – die Wahl (${r.picks.map(k => game.seats[k].name).join(", ")}) wirkt nicht`, "night");
       abn(x, `${roleName(r.step)}: Wahl ohne Wirkung`);
       toast(`⚠️ ${roleName(r.step)} ist vergiftet/betrunken – keine Wirkung`);
     }
-    if (!r.skip && def.mark && !noEffect) r.picks.forEach(k => {
+    if (!r.skip && !r.fake && def.mark && !noEffect) r.picks.forEach(k => {
       const t = game.seats[k], had = (t.marks || []).includes(def.mark);
       t.marks = [...new Set([...(t.marks || []), def.mark])];
       if (def.keep) t.keep = [...new Set([...(t.keep || []), def.mark])];
@@ -3141,9 +3151,9 @@
     const text = `🌙 ${x.name} (${roleName(r.step)}): ${r.skip ? "nichts" : describePick(r)}`;
     game.log = [...(game.log || []), { t: Date.now(), text }].slice(-20);
     hist(text, "night");
-    if (!r.skip && r.role && r.picks.length && ["cerenovus", "pithag"].includes(r.step)) applyRolePick(x, r);
-    if (!r.skip && ["sailor", "innkeeper", "courtier"].includes(r.step)) applyDrunkMaker(i, r);
-    if (!r.skip && r.step === "snakecharmer" && r.picks.length) snakeCharm(i, r.picks[0]);
+    if (!r.skip && !r.fake && r.role && r.picks.length && ["cerenovus", "pithag"].includes(r.step)) applyRolePick(x, r);
+    if (!r.skip && !r.fake && ["sailor", "innkeeper", "courtier"].includes(r.step)) applyDrunkMaker(i, r);
+    if (!r.skip && !r.fake && r.step === "snakecharmer" && r.picks.length) snakeCharm(i, r.picks[0]);
     if (!r.skip && KILL_STEPS.includes(r.step)) setTimeout(wakeDeathTriggered, 50);
     if (!r.skip && r.step === "philosopher" && r.role && x.role === "philosopher") setPhilo(i, r.role);
     else { save(); refreshHostView(); }
