@@ -331,7 +331,7 @@
         ${can ? `<div class="row center wrap"><button class="btn big ${up ? "primary" : ""}" data-pv="1">✋ Hand heben${up ? " ✔" : ""}</button>${zealot ? "" : `<button class="btn big ${up ? "" : "primary"}" data-pv="0">✊ Hand unten${up ? "" : " ✔"}</button>`}</div>` : ""}
       </section>`;
     }
-    if (!me.a || (ps.nomd || []).includes(mine.s)) return `<section class="panel pvote muted"><p class="small center">🗳️ ${me.a ? "Du hast heute schon nominiert." : "Tote dürfen nicht nominieren."}</p></section>`;
+    if ((!me.a && !me.bs) || (ps.nomd || []).filter(k => k === mine.s).length >= (me.bs ? 2 : 1)) return `<section class="panel pvote muted"><p class="small center">🗳️ ${me.a || me.bs ? "Du hast heute schon nominiert." : "Tote dürfen nicht nominieren."}</p></section>`;
     return `<section class="panel pvote"><h2>🗳️ Nominieren</h2>
       <div class="row wrap"><select id="pvon">${S.map((x, k) => k === mine.s ? "" : `<option value="${k}">${esc(x.n)}${x.a ? "" : " 💀"}</option>`).join("")}</select>
       <button class="btn primary" id="pvnom">Nominieren</button></div>
@@ -470,10 +470,16 @@
     const alive = ps.filter(s => s.alive);
     const demons = ps.filter(s => ROLE_BY_ID[s.role].t === "demon");
     const aliveDemons = demons.filter(s => s.alive || s.zfake);
+    if (game.mmResult) return { winner: game.mmResult, reason: game.mmResult === "good" ? "Drahtzieher-Tag: Gut hat ihn überstanden." : "Drahtzieher-Tag: Ein Guter wurde hingerichtet – Böse gewinnt.", warn: [] };
+    const lev = ps.find(s => s.role === "leviathan" && (s.alive || s.zfake));
+    if (lev) {
+      const goodExec = Object.values(game.days || {}).filter(d => d.exec && d.exec !== "none" && game.seats[d.exec.seat] && !d.exec.survived && seatGood(game.seats[d.exec.seat])).length;
+      if (goodExec > 1) return { winner: "evil", reason: "Leviathan: Mehr als ein guter Spieler wurde hingerichtet.", warn: [] };
+      if (game.nightNo >= 6) return { winner: "evil", reason: "Leviathan: Tag 5 ist vorbei.", warn: [] };
+    }
     if (demons.length && !aliveDemons.length) {
       const warn = [];
-      if (ps.some(s => s.role === "mastermind" && s.alive))
-        warn.push("Der Drahtzieher lebt – wurde der Dämon hingerichtet, wird noch ein Tag gespielt.");
+      if (game.mastermind && !game.mmResult) return null;
       if (demons.some(s => s.role === "imp") && ps.some(s => s.alive && ROLE_BY_ID[s.role].t === "minion"))
         warn.push("Hat sich der Imp selbst getötet, wird ein Scherge zum Imp – dann dessen Rolle ändern (🔁).");
       return { winner: "good", reason: "Der Dämon ist tot.", warn };
@@ -592,7 +598,7 @@
     game.nightNo = 1;
     game.days = {};
     game.vote = null;
-    game.winner = null; game.klutzLoss = null; game.klutzPending = null; game.saintLoss = null; game.juggle = null; game.fgJumped = false; game.exile = null;
+    game.winner = null; game.klutzLoss = null; game.klutzPending = null; game.saintLoss = null; game.juggle = null; game.fgJumped = false; game.princessBlock = null; game.princessUsed = false; game.mastermind = null; game.mmResult = null; game.nomReq = null; game.exile = null;
     game.ignoreEnd = null;
     game.evilSent = {};
     game.phase = "night";
@@ -600,6 +606,7 @@
     game.statsId = null;
   }
 
+  const poppyBlocks = () => game.seats.some(y => y.role === "poppygrower" && y.alive && !impaired(y));
   function evilInfoFor(seat) {
     // Böse-Infos stehen auf der Karte, wenn der Schalter an ist oder der Spielleiter sie in der Nacht gesendet hat.
     const sent = game.evilSent || {};
@@ -609,6 +616,7 @@
       const ds = playerSeats().filter(s => ROLE_BY_ID[s.role].t === "demon" && (s.alive || s.zfake));
       return ds.length ? { d: ds.map(s => s.name).join(", "), tr: true } : undefined;
     }
+    if (poppyBlocks()) return undefined;
     const tt = ROLE_BY_ID[seat.role].t;
     const allowed = (game.evilInfo && playerSeats().length >= 7) || (tt === "minion" ? sent.minion : sent.demon);
     if (!allowed) return undefined;
@@ -929,6 +937,7 @@
       if (NIGHT_STEPS[id]) {
         if ((id === "minioninfo" || id === "demoninfo") && playerSeats().length < 7) return;
         if (!NIGHT_STEPS[id][key]) return;
+        if ((id === "minioninfo" || id === "demoninfo") && poppyBlocks()) { steps.push({ id, name: NIGHT_STEPS[id].de, text: "", who: "", inactive: true, mark: "🌺", why: "🌺 Der Mohnbauer lebt – Schergen und Dämon erfahren nichts voneinander (auch keine Bluffs)." }); return; }
         const ev = evilTeam();
         let who = "";
         if (id === "minioninfo") who = `Dämon: ${esc(ev.demon ? ev.demon.name : "–")}`;
@@ -1592,7 +1601,7 @@
   function beginVote(by, on, quiet) {
     const day = today();
     const warn = [];
-    if (day.noms.some(n => n.by === by)) warn.push(`${game.seats[by].name} hat heute schon nominiert.`);
+    if (day.noms.filter(n => n.by === by).length >= (game.seats[by].banshee ? 2 : 1)) warn.push(`${game.seats[by].name} hat heute schon ${game.seats[by].banshee ? "2×" : ""} nominiert.`);
     if (day.noms.some(n => n.on === on)) warn.push(`${game.seats[on].name} war heute schon nominiert.`);
     if (!quiet && warn.length && !confirm(warn.join("\n") + "\n\nTrotzdem abstimmen?")) return;
     game.vote = { by, on, hands: [] };
@@ -1619,7 +1628,7 @@
       // Laufende Abstimmung: im Uhrzeigersinn ab dem Platz nach dem Nominierten.
       const order = [];
       for (let k = 1; k <= ps.length; k++) order.push((v.on + k) % ps.length);
-      const count = validHands(order.filter(i => v.hands.includes(i))).length;
+      const count = validHands(order.filter(i => v.hands.includes(i))).reduce((c, i) => c + (ps[i].banshee ? 2 : 1), 0);
       body += `<div class="vote">
         <p><b>${esc(ps[v.by].name)}</b> nominiert <b>${esc(ps[v.on].name)}</b></p>
         <p class="small">${game.phoneVote && (game.online || game.test) ? "📱 Die Spieler heben die Hand auf dem Handy – du siehst es hier live und kannst trotzdem selbst antippen." : "Gehe im Uhrzeigersinn herum und tippe alle an, die die Hand heben."} Tote haben nur ihre eine Geisterstimme.</p>
@@ -1630,7 +1639,7 @@
           const bc = butlerCheck(i, v.hands);
           const isMaster = (s.marks || []).includes("master") && ps.some(y => y.role === "butler");
           return `<button class="voter ${up ? "up" : ""} ${bc && bc.warn ? "warn" : ""} ${v.clock === i ? "clock" : ""}" data-hand="${i}" ${canVote ? "" : "disabled"}>
-            <span>${up ? "✋" : "·"}</span><b>${esc(s.name)}</b>${s.alive ? "" : `<small>${s.ghost ? "👻 Geisterstimme" : "keine Stimme mehr"}</small>`}${bc ? `<small>${esc(bc.note)}</small>` : ""}${isMaster ? `<small>🎩 Meister des Butlers</small>` : ""}</button>`;
+            <span>${up ? "✋" : "·"}</span><b>${esc(s.name)}</b>${s.alive ? "" : `<small>${s.ghost ? "👻 Geisterstimme" : "keine Stimme mehr"}</small>`}${bc ? `<small>${esc(bc.note)}</small>` : ""}${s.role === "zealot" && s.alive && ps.filter(y => y.alive).length >= 5 ? `<small>📢 Zelot – muss abstimmen</small>` : ""}${s.banshee ? `<small>😱 Banshee – zählt doppelt</small>` : ""}${isMaster ? `<small>🎩 Meister des Butlers</small>` : ""}</button>`;
         }).join("")}</div>
         <div class="votecount ${count >= votesNeeded() ? "ok" : ""}">${count} Stimmen · nötig ${votesNeeded()}${b && !b.tie ? ` · auf dem Block mit ${b.count}` : ""}</div>
         ${game.test && !v.botDone ? `<div class="row wrap"><button class="btn" id="botvote">🤖 Bots stimmen ab</button></div>` : ""}
@@ -1640,7 +1649,7 @@
       const opt = (list, sel) => list.map(i => `<option value="${i}">${esc(ps[i].name)}${sel(i)}</option>`).join("");
       const all = ps.map((_, i) => i);
       body += `<div class="nomform">
-        <label>Wer nominiert?<select id="nomby">${opt(all.filter(i => ps[i].alive), i => nominatedBy.has(i) ? " (hat schon nominiert)" : "")}</select></label>
+        <label>Wer nominiert?<select id="nomby">${opt(all.filter(i => ps[i].alive || ps[i].banshee), i => nominatedBy.has(i) ? " (hat schon nominiert)" : "")}</select></label>
         <label>Wer wird nominiert?<select id="nomon">${opt(all, i => nominated.has(i) ? " (war schon nominiert)" : "")}</select></label>
         <button class="btn primary" id="startvote">🗳️ Abstimmung starten</button>
       </div>
@@ -1676,6 +1685,7 @@
       <details class="daypanel" ${game.voteOpen ? "open" : ""}>
         <summary><h2>☀️ Tag ${game.nightNo} – Abstimmung <span class="small">(optional)</span></h2></summary>
         <p class="small">Nötig für die Hinrichtung: <b>${votesNeeded()}</b> Stimmen (Hälfte der Lebenden). ${blockLine}</p>
+        ${ps.some(y => y.role === "vizier") ? `<p class="small">👳 Alle wissen: <b>${esc(ps.find(y => y.role === "vizier").name)}</b> ist der Wesir (kann tagsüber nicht sterben).</p>` : ""}
         ${game.online || game.test ? `<label class="switch"><input type="checkbox" id="pvtoggle" ${game.phoneVote ? "checked" : ""}><span><b>📱 Nominieren &amp; Abstimmen am Handy</b> – Spieler nominieren und heben die Hand per Knopf, du bestätigst nur.</span></label>` : ""}
         ${game.nomReq && !game.vote ? `<div class="box nomreq">📨 <b>${esc(game.seats[game.nomReq.by].name)}</b> möchte <b>${esc(game.seats[game.nomReq.on].name)}</b> nominieren.
           <div class="row wrap"><button class="btn primary" id="nomok">✅ Zulassen</button><button class="btn" id="nomno">Ablehnen</button></div></div>` : ""}
@@ -1717,10 +1727,11 @@
       const v = game.vote;
       botVoteRun++;
       const hands = validHands(v.hands);
-      // Tote, die abgestimmt haben, verbrauchen ihre Geisterstimme.
-      hands.forEach(i => { const s = game.seats[i]; if (!s.alive) s.ghost = false; });
-      day.noms.push({ by: v.by, on: v.on, count: hands.length, needed: votesNeeded(), hands });
-      hist(`🗳️ ${game.seats[v.by].name} nominiert ${game.seats[v.on].name}: ${hands.length} Stimme(n)`, "day");
+      const cnt = hands.reduce((c, i) => c + (game.seats[i].banshee ? 2 : 1), 0);
+      // Tote, die abgestimmt haben, verbrauchen ihre Geisterstimme (die Banshee nicht).
+      hands.forEach(i => { const s = game.seats[i]; if (!s.alive && !s.banshee) s.ghost = false; });
+      day.noms.push({ by: v.by, on: v.on, count: cnt, needed: votesNeeded(), hands });
+      hist(`🗳️ ${game.seats[v.by].name} nominiert ${game.seats[v.on].name}: ${cnt} Stimme(n)`, "day");
       game.vote = null;
       save(); renderSL();
     });
@@ -1748,6 +1759,20 @@
       applyDeath(s, rule);
       if (game.seats[b.on].alive) day.exec.survived = true;
       saintCheck(s);
+      // Prinzessin: hat sie am 1. Tag nominiert und wurde hingerichtet -> heute Nacht kein Dämonen-Tod
+      const pr = game.seats[b.by];
+      if (pr && pr.role === "princess" && pr.alive && !impaired(pr) && game.nightNo === 1 && !game.princessUsed) {
+        game.princessUsed = true; game.princessBlock = game.nightNo + 1;
+        hist(`👸 ${pr.name} (Prinzessin) hat nominiert und hinrichten lassen – der Dämon tötet heute Nacht nicht`, "day");
+      }
+      // Drahtzieher: Dämon hingerichtet -> noch ein Tag; danach verliert das Team des Hingerichteten
+      if (game.mastermind && !game.mmResult && game.mastermind.day < game.nightNo) {
+        game.mmResult = seatGood(s) ? "evil" : "good";
+        hist(`🎭 Drahtzieher-Tag: ${s.name} wurde hingerichtet – ${seatGood(s) ? "Gut" : "Böse"} verliert`, "day");
+      } else if (ROLE_BY_ID[s.role].t === "demon" && !s.alive && !game.seats.some(y => (y.alive || y.zfake) && ROLE_BY_ID[y.role].t === "demon")) {
+        const mm = game.seats.find(y => y.role === "mastermind" && y.alive && !impaired(y));
+        if (mm) { game.mastermind = { day: game.nightNo }; hist(`🎭 Der Dämon wurde hingerichtet, aber der Drahtzieher lebt – es wird noch ein Tag gespielt`, "day"); swMsg = "🎭 Drahtzieher! Das Spiel geht noch einen Tag weiter – verrate es nicht."; }
+      }
       save(); renderSL();
       if (s.role === "saint") toast(game.saintLoss ? "Der Heilige wurde hingerichtet – Böse gewinnt!" : "Der Heilige ist vergiftet/betrunken – nichts passiert");
       else if (swMsg) toast(swMsg);
@@ -1757,6 +1782,7 @@
     $("#noexec") && $("#noexec").addEventListener("click", () => {
       day.exec = "none";
       hist("🕊️ Heute wurde niemand hingerichtet", "day");
+      if (game.mastermind && !game.mmResult && game.mastermind.day < game.nightNo) { game.mmResult = "good"; hist("🎭 Drahtzieher-Tag ohne Hinrichtung – Gut gewinnt", "day"); }
       save(); renderSL();
       if (game.seats.some(s => s.role === "vortox" && s.alive)) toast("Achtung: Vortox im Spiel – ohne Hinrichtung gewinnt Böse!");
       else { const mc = mayorWinCheck(); if (mc && !mc.ok) toast(mc.why); }
@@ -2844,6 +2870,8 @@
     thief: { n: 1, text: "Wähle einen Spieler: Seine Stimme zählt morgen negativ." },
     harlot: { n: 1, text: "Wähle einen Spieler, den du besuchst." },
     bonecollector: { n: 1, dead: true, onlyDead: true, optional: true, text: "Willst du einem Toten seine Fähigkeit zurückgeben? (einmal pro Spiel)" },
+    lycanthrope: { n: 1, text: "Wähle einen lebenden Spieler." },
+    acrobat: { n: 1, text: "Wähle einen Spieler." },
     amnesiac: { n: 2, min: 1, self: true, text: "Deine unbekannte Fähigkeit verlangt eine Wahl: Wähle einen oder zwei Spieler." }
   };
   const nightOn = () => !!((game.online || game.test) && game.nightActions);
@@ -2919,6 +2947,7 @@
   function deathRule(x) {
     if (impaired(x)) return null;
     if (x.role === "sailor") return { dies: false, why: "⚓ Seemann – kann nicht sterben, solange er nüchtern ist" };
+    if (x.role === "vizier" && game.phase === "day") return { dies: false, why: "👳 Wesir – kann tagsüber nicht sterben" };
     const hfx = (ROLE_BY_ID[x.role] || {}).hbEffect;
     if (hfx === "unkillable") return { dies: false, why: `🛡️ ${roleName(x.role)} – kann nicht sterben, solange nüchtern` };
     if (hfx === "fool" && !x.used) return { dies: false, fool: true, why: `🃏 ${roleName(x.role)} – erster Tod wird verhindert` };
@@ -3034,6 +3063,17 @@
     // Pukka: Wer seit einer früheren Nacht vergiftet ist, stirbt jetzt
     const pukka = S.findIndex(y => y.role === "pukka" && (y.alive || y.zfake));
     S.forEach((x, k) => { if (x.pukkaNight && x.pukkaNight < n && x.alive && !attacks.has(k)) attacks.set(k, { step: "pukka", by: pukka >= 0 ? pukka : null }); });
+    // Lykanthrop: tötet einen Guten – dann tötet der Dämon heute nicht
+    let lycHit = false;
+    (game.acts || []).filter(a => a.night === n && a.step === "lycanthrope" && !a.skip && !a.undone && S[a.i] && S[a.i].role === "lycanthrope" && !impaired(S[a.i])).forEach(a => {
+      const k = a.picks[0], t = S[k];
+      if (t && t.alive && seatGood(t)) { lycHit = true; attacks.set(k, { step: "lycanthrope", by: a.i, hbkill: true, front: true }); }
+    });
+    // Akrobat: Ist sein gewählter Spieler heute betrunken/vergiftet, stirbt der Akrobat
+    (game.acts || []).filter(a => a.night === n && a.step === "acrobat" && !a.skip && !a.undone && S[a.i] && S[a.i].role === "acrobat" && S[a.i].alive && !impaired(S[a.i])).forEach(a => {
+      const t = S[a.picks[0]];
+      if (t && impaired(t) && !attacks.has(a.i)) attacks.set(a.i, { step: "acrobat", by: a.i, hbkill: true, acro: t.name });
+    });
     // Homebrew-Rollen mit dem Baustein „stirbt“
     (game.acts || []).filter(a => a.night === n && !a.skip && !a.undone && !a.fake && ROLE_BY_ID[a.step] && ["kill", "kill_evil", "kill_minion"].includes(ROLE_BY_ID[a.step].hbEffect))
       .forEach(a => (a.picks || []).forEach(k => {
@@ -3049,8 +3089,13 @@
       const m = x.marks || [];
       const strong = at.step === "assassin" || !!at.hbkill;
       let jump = null;
+      const demonAtt = !at.hbkill && at.step !== "assassin" && (!at.step || (ROLE_BY_ID[at.step] && ROLE_BY_ID[at.step].t === "demon"));
       let dies = true, why = at.step === "pukka" && x.pukkaNight && x.pukkaNight < n ? `stirbt durch die Pukka (vergiftet seit Nacht ${x.pukkaNight}) – danach wieder gesund` : `angegriffen${at.step ? ` (${roleName(at.step)})` : ""}`;
-      if (attacker && impaired(attacker)) { dies = false; why = `${attacker.name} ist vergiftet/betrunken – der Angriff wirkt nicht`; }
+      if (at.acro) why = `🤸 Akrobat: Sein gewählter Spieler ${at.acro} ist betrunken/vergiftet – der Akrobat stirbt`;
+      if (demonAtt && game.princessBlock === n) { dies = false; why = "👸 Prinzessin: Der Dämon tötet heute Nacht nicht"; }
+      else if (demonAtt && lycHit) { dies = false; why = "🐺 Der Lykanthrop hat einen Guten getötet – der Dämon tötet heute Nacht nicht"; }
+      else if (at.acro) { /* Akrobat stirbt, kein Schutz */ }
+      else if (attacker && impaired(attacker)) { dies = false; why = `${attacker.name} ist vergiftet/betrunken – der Angriff wirkt nicht`; }
       else if (!strong && m.includes("protect")) { dies = false; why = "🛡️ geschützt – überlebt"; }
       else if (!strong && x.role === "soldier" && !impaired(x)) { dies = false; why = "🛡️ Soldat – der Dämon kann ihn nicht töten"; }
       else if (!strong && ROLE_BY_ID[x.role].hbEffect === "immune" && !impaired(x)) { dies = false; why = `🛡️ ${roleName(x.role)} – der Dämon kann ihn nicht töten`; }
@@ -3125,7 +3170,15 @@
       $$("[data-kill]").forEach(c => {
         const x = game.seats[+c.dataset.kill], rule = deathRule(x);
         if (rule && rule.fool) { if (!c.checked) applyDeath(x, rule); else { x.alive = false; histDeath(x); swCheck(x); } return; }
-        if (c.checked && x.alive) applyDeath(x, rule && rule.zombuul ? rule : null);
+        if (c.checked && x.alive) {
+          applyDeath(x, rule && rule.zombuul ? rule : null);
+          const kk = kills.find(e => e.k === +c.dataset.kill);
+          if (!x.alive && x.role === "banshee" && !impaired(x) && kk && kk.step && ROLE_BY_ID[kk.step] && ROLE_BY_ID[kk.step].t === "demon") {
+            x.banshee = true;
+            hist(`😱 ${x.name} war die Banshee und wurde vom Dämon getötet – verkünde es allen! Sie darf ab jetzt 2× nominieren und 2× abstimmen.`, "night");
+            setTimeout(() => toast(`😱 Verkünde: ${x.name} war die Banshee und wurde vom Dämon getötet!`), 600);
+          }
+        }
       });
       // Pukka-Opfer sind danach wieder gesund (ob gestorben oder geschützt)
       kills.filter(x => x.step === "pukka").forEach(x => {
@@ -3241,6 +3294,7 @@
   function botWantsVote(k, on) {
     const S = game.seats, x = S[k];
     if (k === on) return false;
+    if (x.role === "zealot" && x.alive && !impaired(x) && S.filter(y => y.alive).length >= 5) return true;
     const r = Math.random();
     if (!seatGood(x)) return seatGood(S[on]) ? r < 0.85 : r < 0.1;
     return x.alive ? r < 0.5 : r < 0.25;
@@ -4244,7 +4298,7 @@
   }
 
   // Rollen, deren Nacht-Schritt gerade durch den Tod ausgelöst wird.
-  const ACTS_WHEN_DEAD = ["ravenkeeper", "sage", "moonchild", "sweetheart", "barber"];
+  const ACTS_WHEN_DEAD = ["ravenkeeper", "sage", "moonchild", "sweetheart", "barber", "poppygrower"];
   // Wird die Fähigkeit durch den Tod gerade ausgelöst? Rabenhüter/Weiser: nur bei Tod in DIESER Nacht.
   // Mondkind/Liebling/Barbier: auch, wenn er heute tagsüber gestorben ist (z. B. hingerichtet).
   function deathTriggered(x, id) {
@@ -4695,7 +4749,7 @@
       fabled: game.fabled || [],
       timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0 } : null,
       started: game.seats.length > 0 && game.step !== "setup",
-      seats: game.seats.map(s => ({ n: s.name, a: !!s.alive, g: !!s.ghost, t: !!s.trav })),
+      seats: game.seats.map(s => ({ n: s.name, a: !!s.alive, g: !!s.ghost || !!s.banshee, t: !!s.trav, bs: !!s.banshee })),
       pv: !!game.phoneVote && game.phase === "day",
       vote: game.phoneVote && game.vote ? { by: game.vote.by, on: game.vote.on, hands: game.vote.hands } : null,
       nomd: game.phoneVote ? (today().noms || []).map(n => n.by) : [],
@@ -4766,7 +4820,7 @@
     if (i < 0) return;
     const x = game.seats[i];
     if (msg.type === "nominate") {
-      if (!x.alive || game.vote || !game.seats[msg.on]) return;
+      if ((!x.alive && !x.banshee) || game.vote || !game.seats[msg.on]) return;
       game.nomReq = { by: i, on: +msg.on };
       save(); refreshHostView();
       notice(`📨 ${x.name} möchte ${game.seats[msg.on].name} nominieren`);
