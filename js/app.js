@@ -2893,8 +2893,10 @@
       ...(x.app && typeof x.app === "object" ? { effect: String(x.app.effect || ""), effect2: String(x.app.effect2 || ""), cond: String(x.app.cond || ""), pick: +x.app.pick || pick, rolePick: !!x.app.rolePick, info: !!x.app.info } : {}) };
   }
   const fxOpts = cur => HB_GROUPS.map(([g, ks]) => g === "" ? `<option value="">${esc(HB_EFFECTS[""].l)}</option>` : `<optgroup label="${esc(g)}">${ks.map(k => `<option value="${k}" ${(cur || "") === k ? "selected" : ""}>${esc(HB_EFFECTS[k].l)}</option>`).join("")}</optgroup>`).join("");
-  function homebrewEditor(id) {
-    const d = hbDef(id) || { id: "", de: "", t: "townsfolk", a: "", e: "", ic: "✳️", n1: "", pos1: "", n: "", pos: "", pick: 0, rolePick: false, info: false, marks: [], setup: "" };
+  // preset: Vorbelegung für eine neue Rolle (z. B. aus einem Import); done: wohin es danach geht
+  function homebrewEditor(id, preset, done) {
+    const d = hbDef(id) || { id: "", de: "", t: "townsfolk", a: "", e: "", ic: "✳️", n1: "", pos1: "", n: "", pos: "", pick: 0, rolePick: false, info: false, marks: [], setup: "", ...(preset || {}) };
+    const back = nd => { closeModal(); if (done) done(nd); else scriptEditor(); };
     const stepName = x => NIGHT_STEPS[x] ? NIGHT_STEPS[x].de : roleName(x);
     const posOpts = (arr, cur) => {
       const ids = arr.filter(x => x !== d.id && (NIGHT_STEPS[x] || (game.script || []).includes(x)));
@@ -2938,7 +2940,7 @@
       if (e.target.value && !$("#hbw").checked && !$("#hbw1").checked) { $("#hbw").checked = true; $("#hbwbox").hidden = false; }
       if (e.target.value && !$("#hbn").value.trim()) $("#hbn").value = `Wecke ${$("#hbname").value.trim() || "die Rolle"}. ${fx.pick ? `Sie wählt ${fx.pick === 1 ? "einen Spieler" : fx.pick + " Spieler"}${fx.rolePick ? " und eine Rolle" : ""}.` : ""}${fx.info ? " Gib ihr die Info." : ""}`.trim();
     });
-    $("#hbcancel").addEventListener("click", () => { closeModal(); scriptEditor(); });
+    $("#hbcancel").addEventListener("click", () => back(null));
     $("#hbdel") && $("#hbdel").addEventListener("click", () => {
       if (!confirm(`„${d.de}“ wirklich löschen?`)) return;
       game.homebrew = (game.homebrew || []).filter(x => x.id !== d.id);
@@ -2955,7 +2957,7 @@
         pick: +$("#hbpick").value, rolePick: $("#hbrole").checked, info: $("#hbinfo").checked, marks, setup: $("#hbsetup").value.trim(), effect: $("#hbfx").value, effect2: $("#hbfx2").value, cond: $("#hbcond").value };
       saveHomebrew(nd);
       hist(`✳️ Homebrew-Rolle „${nd.de}“ ${d.id ? "geändert" : "erstellt"}`);
-      closeModal(); scriptEditor();
+      back(nd);
       toast(`✳️ „${nd.de}“ gespeichert und zur Rollenliste hinzugefügt`);
     });
   }
@@ -3007,6 +3009,7 @@
     bindScriptSearch();
   }
   // Rollen eines Skripts (Liste aus Strings/Objekten) in die App übernehmen. Gibt eine Fehlermeldung zurück oder null.
+  const prettyId = id => String(id).replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase()).trim();
   function scriptRoles(data) {
     if (!Array.isArray(data)) data = data && Array.isArray(data.roles) ? data.roles : [];
     const lookup = new Map();
@@ -3023,9 +3026,28 @@
       const hit = !hb1 && (lookup.get(normId(id)) || (x && x.name && lookup.get(normId(x.name))));
       if (hit) ids.push(hit);
       else if (hb1) { hb.push(hb1); ids.push(hb1.id); }
-      else unknown.push((x && x.name) || id);
+      else unknown.push({ name: (x && x.name) || prettyId(id), team: x && typeof x === "object" ? x.team : "" });
     });
     return { ids: [...new Set(ids)], unknown, name, author, hb };
+  }
+  // Nicht erkannte Rollen: direkt als eigene Rolle anlegen
+  function unknownRolesModal(list) {
+    const TEAM = { townsfolk: "townsfolk", outsider: "outsider", minion: "minion", demon: "demon", traveler: "traveller", traveller: "traveller" };
+    const c = t => (game.script || []).filter(id => ROLE_BY_ID[id] && ROLE_BY_ID[id].t === t).length;
+    const open = list.filter(u => !u.done).length;
+    openModal(`<h2>${open ? `⚠️ ${open} Rolle(n) fehlen noch` : "✅ Alle Rollen angelegt"}</h2>
+      <p>${open ? "Diese Rollen aus dem Skript kennt die App nicht. Tippe auf „✳️ Anlegen“, gib die Fähigkeit ein – dann ist die Rolle in deiner Rollenliste." : "Alle fehlenden Rollen sind jetzt in deiner Rollenliste."}</p>
+      <ul class="unklist">${list.map((u, k) => `<li><b>${esc(String(u.name))}</b>${u.team && TEAM[String(u.team).toLowerCase()] ? ` <span class="small">(${TEAMS[TEAM[String(u.team).toLowerCase()]].name})</span>` : ""}
+        ${u.done ? `<span class="okmsg">✔ als ${esc(u.done)} angelegt</span>` : `<button class="btn sm primary" data-unk="${k}">✳️ Anlegen</button>`}</li>`).join("")}</ul>
+      <p class="small">Jetzt in der Liste: ${c("townsfolk")} Dorfbewohner · ${c("outsider")} Außenseiter · ${c("minion")} Schergen · ${c("demon")} Dämonen${c("traveller") ? ` · ${c("traveller")} Reisende` : ""}</p>
+      <p class="small">Die Fähigkeit findest du auf der Skript-Seite oder im Wiki. Oder schick mir den Namen, dann baue ich die Rolle fest ein.</p>
+      <div class="row end"><button class="btn primary" id="unkok">${open ? "Später" : "Fertig"}</button></div>`);
+    $("#unkok").addEventListener("click", () => { closeModal(); renderSL(); });
+    $$("[data-unk]").forEach(b => b.addEventListener("click", () => {
+      const u = list[+b.dataset.unk];
+      const t = TEAM[String(u.team || "").toLowerCase()] || "townsfolk";
+      homebrewEditor(null, { de: String(u.name), t }, nd => { if (nd) u.done = nd.de; renderSL(); unknownRolesModal(list); });
+    }));
   }
   function applyScript(data) {
     const { ids, unknown, name, author, hb } = scriptRoles(data);
@@ -3042,17 +3064,8 @@
     game.scriptName = name ? name + (author ? ` (von ${author})` : "") : "";
     game.selected = []; game.bluffs = [];
     save(); closeModal(); renderSL();
-    if (unknown.length) {
-      const c = t => game.script.filter(id => ROLE_BY_ID[id].t === t).length;
-      openModal(`<h2>⚠️ ${unknown.length} Rolle(n) nicht erkannt</h2>
-        <p>Diese Rollen aus dem Skript kennt die App nicht – sie fehlen in deiner Rollenliste:</p>
-        <ul>${unknown.map(u => `<li><b>${esc(String(u))}</b></li>`).join("")}</ul>
-        <p class="small">Übernommen: ${c("townsfolk")} Dorfbewohner · ${c("outsider")} Außenseiter · ${c("minion")} Schergen · ${c("demon")} Dämonen${c("traveller") ? ` · ${c("traveller")} Reisende` : ""}</p>
-        <p class="small">Tipp: Lege fehlende Rollen unter „✏️ Rollenliste bearbeiten → ✳️ Eigene Rolle erstellen“ an – oder schick mir den Namen, dann baue ich sie ein.</p>
-        <div class="row end"><button class="btn primary" id="unkok">OK</button></div>`);
-      $("#unkok").addEventListener("click", closeModal);
-    }
-    toast(`📥 ${game.script.length} Rollen übernommen${hb.length ? ` (davon ${hb.length} Homebrew ✳️)` : ""}${fab.length ? ` + ${fab.length} Fabelwesen/Lorics` : ""}${unknown.length ? ` – unbekannt: ${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? " …" : ""}` : ""}`);
+    if (unknown.length) unknownRolesModal(unknown.map(u => ({ ...u, done: null })));
+    if (!unknown.length) toast(`📥 ${game.script.length} Rollen übernommen${hb.length ? ` (davon ${hb.length} Homebrew ✳️)` : ""}${fab.length ? ` + ${fab.length} Fabelwesen/Lorics` : ""}${unknown.length ? ` – unbekannt: ${unknown.slice(0, 5).map(u => u.name).join(", ")}${unknown.length > 5 ? " …" : ""}` : ""}`);
     return null;
   }
 

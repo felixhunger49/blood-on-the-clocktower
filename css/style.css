@@ -658,3 +658,5 @@ section.panel > details > summary h2 { display: inline; margin: 0; } section.pan
 .rc-hands .g { color: var(--good); } .rc-hands .e { color: var(--evil); font-weight: 600; }
 .rc-al { font-size: .85rem; }
 #bugtext { width: 100%; }
+.unklist { list-style: none; padding: 0; display: grid; gap: .4rem; }
+.unklist li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; justify-content: space-between; background: var(--panel2); border-radius: 8px; padding: .4rem .6rem; }
