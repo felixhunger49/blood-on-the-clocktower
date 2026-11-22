@@ -1013,31 +1013,43 @@
         </section>`;
       }
     }
-    return banner + `
-      <section class="panel">
-        <div class="row" style="justify-content:space-between;align-items:center"><h2>Grimoire</h2>
-          <div class="row">${undoStack.length ? `<button class="btn sm" id="undobtn" title="Letzte Änderung zurücknehmen">↩️ Rückgängig</button>` : ""}<button class="btn sm" id="savegame" title="Spielstand sichern / übertragen">💾</button></div></div>
-        ${game.online ? `<p class="small">${netDot()} Online-Spiel ${esc(game.online.code)}</p>` : ""}
+    const pro = proMode();
+    const isDay = game.phase === "day";
+    const view = game.circle ? "circle" : pro && game.fullList ? "full" : "compact";
+    // Kompakte Zeilen: nur das Wichtigste – Antippen öffnet das Spieler-Fenster mit allen Knöpfen
+    const lines = ps.map((s, i) => {
+      const r = ROLE_BY_ID[s.role], shown = shownRole(s.role);
+      return `<button class="gline ${s.alive ? "" : "dead"} t-${r.t}-border" data-seatmodal="${i}">
+        <span class="seatno">${i + 1}</span>
+        <span class="gl-main"><b>${esc(s.name)}</b>
+          <span class="gl-role t-${r.t}-text">${r.ic} ${esc(r.de)}${s.trav || s.align ? (seatGood(s) ? " · gut" : " · böse") : ""}${shown !== s.role ? ` <small>(glaubt: ${esc(roleName(shown))})</small>` : ""}</span>
+          ${s.note ? `<small class="gl-note">📝 ${esc(s.note)}</small>` : ""}</span>
+        <span class="gl-st">${s.zfake ? "🧟" : ""}${(s.marks || []).map(m => (markerByKey(m) || {}).i || "").join("")}${ONCE_PER_GAME.includes(s.role) && s.used ? "✔️" : ""}${s.alive ? "" : s.ghost ? "💀👻" : "💀"}</span>
+      </button>`;
+    }).join("");
+    const head = `<section class="panel ghead">
+        <div class="ghead-row"><h2>${isDay ? `☀️ Tag ${game.nightNo}` : first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`}</h2>
+          <div class="row wrap">${undoStack.length ? `<button class="btn sm" id="undobtn">↩️ Rückgängig</button>` : ""}<button class="btn sm" id="savegame">💾 Spielstand</button><button class="btn sm" id="settingsbtn">⚙️ Einstellungen</button></div></div>
+        <p class="small">${game.online ? `${netDot()} Online-Spiel ${esc(game.online.code)} · ` : ""}${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${needed}</b> Stimmen</p>
+        ${pro ? "" : `<p class="beginner">👉 ${isDay
+          ? "Tag: Lass die Spieler reden (Timer unten). Danach nominieren und abstimmen – zum Schluss „Nacht beginnen“."
+          : "Nacht: Alle schließen die Augen. Gehe die Liste von oben nach unten durch und hake ab. Am Ende „Morgen – Tag beginnt“."}</p>`}
         ${(game.log || []).length ? `<div class="box msglog"><h4>📨 Meldungen von Spielern</h4><ul>${game.log.slice(-5).reverse().map(l => `<li>${esc(l.text)}</li>`).join("")}</ul></div>` : ""}
-        <div class="daycount">🌙 Nacht ${game.nightNo} <span>·</span> ☀️ ${game.nightNo > 1 ? `Tag ${game.nightNo - 1} vorbei` : "noch kein Tag"}</div>
-        <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${needed}</b> Stimmen</p>
-        ${timerBox()}
-        ${balanceNowHtml()}
-        <label class="switch"><input type="checkbox" id="musictoggle" ${Mood.on ? "checked" : ""}>
-          <span><b>🎵 Stimmungsmusik</b> – leise Klänge für Nacht und Tag, nur auf diesem Handy.</span></label>
+      </section>`;
+    const grimSec = `<section class="panel">
+        <h2>📖 Grimoire</h2>
         <div class="chips viewtoggle">
-          <button class="chip ${game.circle ? "" : "on"}" data-gview="list">☰ Liste</button>
-          <button class="chip ${game.circle ? "on" : ""}" data-gview="circle">◯ Sitzkreis</button>
+          <button class="chip ${view === "compact" ? "on" : ""}" data-gview="list">☰ Liste</button>
+          <button class="chip ${view === "circle" ? "on" : ""}" data-gview="circle">◯ Sitzkreis</button>
+          ${pro ? `<button class="chip ${view === "full" ? "on" : ""}" data-gview="full">▤ Ausführlich</button>` : ""}
         </div>
-        ${game.circle ? circleHtml() : `<div class="gseats">${seats}</div>`}
+        ${view === "circle" ? circleHtml() : view === "full" ? `<div class="gseats">${seats}</div>` : `<div class="glines">${lines}</div>`}
+        ${view === "full" ? "" : `<p class="small center">Spieler antippen: lebt/tot, Marker, Notiz, Rolle ändern …</p>`}
         <div class="box"><h4>Bluffs</h4><p>${game.bluffs.map(id => roleChip(id)).join(" ")}</p></div>
         ${(game.fabled || []).length ? `<div class="box"><h4>Fabelwesen (öffentlich ansagen)</h4>${game.fabled.map(id => `<p>${roleChip(id)} ${esc(ROLE_BY_ID[id].a)}</p>`).join("")}</div>` : ""}
-      </section>
-      <section class="panel">
-        <h2>${first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`}</h2>
-        <p class="small">${steps.filter(st => !st.inactive && done.includes(st.id)).length} von ${steps.filter(st => !st.inactive).length} Schritten erledigt${steps.some(st => st.inactive) ? " · grau = tot oder benutzt, entfällt" : ""}</p>
-        <label class="switch sugswitch"><input type="checkbox" id="sugtoggle" ${game.suggest === false ? "" : "checked"}>
-          <span><b>💡 Info-Vorschläge</b> – beim Info-Fenster trägt die App die <i>wahre</i> Info schon ein (du kannst sie ändern).</span></label>
+        ${pro ? balanceNowHtml() : ""}
+      </section>`;
+    const nightBody = `<p class="small">${steps.filter(st => !st.inactive && done.includes(st.id)).length} von ${steps.filter(st => !st.inactive).length} Schritten erledigt${steps.some(st => st.inactive) ? " · grau = tot oder benutzt, entfällt" : ""}</p>
         ${nightActionsBar(steps)}
         <ol class="nightlist">${steps.map(s => `
           <li class="${s.inactive ? "inactive" : done.includes(s.id) ? "done" : ""} ${s.t ? "t-" + s.t + "-border" : ""}" data-step-id="${s.id}">
@@ -1059,24 +1071,60 @@
             ${INFO_ROLES.includes(s.id) && !s.inactive ? `<button class="btn sm primary showinfo" data-info-step="${s.id}">📱 ${SHOW_ROLE.includes(s.id) ? "Rolle zeigen" : "Info"}${game.online || game.test ? " / senden" : ""}</button>` : ""}
             ${s.show ? `<button class="btn sm primary showevil" data-show="${s.id}">📱 ${s.id === "demoninfo" ? "Dem Dämon zeigen" : "Den Schergen zeigen"} <small>(hier)</small></button>` : ""}
             ${s.show && (game.online || game.test) ? `<button class="btn sm ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "used" : "primary"} sendevil" data-sendevil="${s.id}">🌐 ${(game.evilSent || {})[s.id === "demoninfo" ? "demon" : "minion"] ? "✔ Gesendet" : "Aufs Handy senden"}</button>` : ""}
-          </li>`).join("")}</ol>
+          </li>`).join("")}</ol>`;
+    const nightSec = isDay
+      ? `<section class="panel">
+        <details class="nightwrap"><summary><h2>${first ? "🌙 Erste Nacht" : `🌑 Nacht ${game.nightNo}`} – Rückblick</h2></summary>${nightBody}</details>
+        <div class="row wrap"><button class="btn primary" id="nextnight">🌙 Tag ${game.nightNo} vorbei → Nacht ${game.nightNo + 1} beginnen</button></div>
+      </section>`
+      : `<section class="panel">
+        <h2>📋 Ablauf der Nacht</h2>
+        ${nightBody}
         <div class="row wrap">
-          ${game.phase === "day" ? "" : `<button class="btn" id="nightsum">📋 Nachtübersicht</button><button class="btn primary" id="daystart">☀️ Morgen – Tag ${game.nightNo} beginnt</button>`}
-          <button class="btn ${game.phase === "day" ? "primary" : ""}" id="nextnight">🌙 Tag ${game.nightNo} vorbei → Nacht ${game.nightNo + 1} beginnen</button>
+          <button class="btn" id="nightsum">📋 Nachtübersicht</button><button class="btn primary" id="daystart">☀️ Morgen – Tag ${game.nightNo} beginnt</button>
+          ${pro ? `<button class="btn" id="nextnight">⏭️ Tag überspringen → Nacht ${game.nightNo + 1}</button>` : ""}
           ${game.nightNo > 1 ? `<button class="btn sm" id="prevnight">↩︎ Zurück zu Nacht ${game.nightNo - 1}</button>` : ""}
         </div>
-      </section>
-      ${dayPanel()}
-      ${travLatePanel()}
-      <section class="panel">
-        <h2>Spiel beenden</h2>
+      </section>`;
+    const endSec = `<section class="panel"><details class="endwrap"><summary><h2>🏁 Spiel von Hand beenden</h2></summary>
         <p class="small">Für Siege, die die App nicht selbst erkennt – z. B. Heiliger hingerichtet, Bürgermeister-Sieg, Vortox ohne Hinrichtung, Tollpatsch, Böser Zwilling.</p>
         <label class="field">Grund (optional): <input id="winreason" placeholder="z. B. Der Heilige wurde hingerichtet"></label>
         <div class="row wrap">
           <button class="btn wingood" data-win="good">😇 Gut hat gewonnen</button>
           <button class="btn winevil" data-win="evil">😈 Böse hat gewonnen</button>
-        </div>
+        </div></details>
       </section>`;
+    return banner + head + (isDay
+      ? `<section class="panel">${timerBox()}</section>${dayPanel()}${grimSec}${nightSec}`
+      : `${nightSec}${grimSec}`) + travLatePanel() + endSec;
+  }
+
+  // Einsteiger- oder Profi-Ansicht (gilt für dieses Handy)
+  const proMode = () => !!store.get("botc.pro", false);
+  function settingsModal() {
+    const on = game.online || game.test;
+    const sw = (id, chk, title, text) => `<label class="switch"><input type="checkbox" id="${id}" ${chk ? "checked" : ""}><span><b>${title}</b> – ${text}</span></label>`;
+    openModal(`<h2>⚙️ Einstellungen</h2>
+      <h4>Ansicht</h4>
+      <div class="chips modepick">
+        <button class="chip ${proMode() ? "" : "on"}" data-pro="0">🌱 Einsteiger</button>
+        <button class="chip ${proMode() ? "on" : ""}" data-pro="1">🎩 Profi</button>
+      </div>
+      <p class="small">${proMode() ? "Profi: alles sichtbar – ausführliche Spielerliste, „Wer liegt vorne?“, Tag überspringen." : "Einsteiger: nur das Nötigste, mit kurzen Hinweisen, was gerade zu tun ist."}</p>
+      <h4>Spiel</h4>
+      ${sw("st-sug", game.suggest !== false, "💡 Info-Vorschläge", "beim Info-Fenster trägt die App die wahre Info schon ein (du kannst sie ändern).")}
+      ${on ? sw("st-na", !!game.nightActions, "📲 Nachtaktionen am Handy", "Spieler wählen ihre Ziele auf dem eigenen Handy, statt zu zeigen.") : ""}
+      ${on ? sw("st-pv", !!game.phoneVote, "📱 Nominieren &amp; Abstimmen am Handy", "Spieler nominieren und heben die Hand per Knopf, du bestätigst nur.") : ""}
+      ${on ? "" : `<p class="small">Handy-Funktionen (Nachtaktionen, Abstimmen) gibt es im Online-Spiel oder in der Testrunde.</p>`}
+      <h4>Dieses Handy</h4>
+      ${sw("st-music", Mood.on, "🎵 Stimmungsmusik", "leise Klänge für Nacht und Tag.")}
+      <div class="row end"><button class="btn primary" id="st-close">Fertig</button></div>`);
+    $$("[data-pro]").forEach(b => b.addEventListener("click", () => { store.set("botc.pro", b.dataset.pro === "1"); renderSL(); settingsModal(); }));
+    $("#st-sug").addEventListener("change", e => { game.suggest = e.target.checked; save(); });
+    $("#st-na") && $("#st-na").addEventListener("change", e => { game.nightActions = e.target.checked; game.asks = {}; game.seq = null; save(); renderSL(); });
+    $("#st-pv") && $("#st-pv").addEventListener("change", e => { game.phoneVote = e.target.checked; save(); renderSL(); });
+    $("#st-music").addEventListener("change", e => Mood.toggle(e.target.checked));
+    $("#st-close").addEventListener("click", closeModal);
   }
 
   function bindSL() {
@@ -1163,7 +1211,7 @@
       save(); renderSL();
     });
     $("#next3") && $("#next3").addEventListener("click", () => goStep("grim"));
-    $(".travlate") && $(".travlate").addEventListener("toggle", e => { game.travOpen = e.target.open; save(); });
+    $(".travlate") && $(".travlate").addEventListener("toggle", e => { if (!!game.travOpen === e.target.open) return; game.travOpen = e.target.open; save(); });
 
     // Schritt 4
     $$("[data-alive]").forEach(b => b.addEventListener("click", () => { const s = game.seats[+b.dataset.alive]; s.alive = !s.alive; if (s.alive) s.ghost = true; histDeath(s); save(); renderSL(); }));
@@ -1261,7 +1309,8 @@
     bindDay();
     $$("[data-change]").forEach(b => b.addEventListener("click", () => changeRole(+b.dataset.change)));
     $$("[data-seatmodal]").forEach(b => b.addEventListener("click", () => seatModal(+b.dataset.seatmodal)));
-    $$("[data-gview]").forEach(b => b.addEventListener("click", () => { game.circle = b.dataset.gview === "circle"; save(); renderSL(); }));
+    $$("[data-gview]").forEach(b => b.addEventListener("click", () => { game.circle = b.dataset.gview === "circle"; game.fullList = b.dataset.gview === "full"; save(); renderSL(); }));
+    $("#settingsbtn") && $("#settingsbtn").addEventListener("click", settingsModal);
     bindTimer();
     $("#musictoggle") && $("#musictoggle").addEventListener("change", e => { Mood.toggle(e.target.checked); });
     $$("[data-mad]").forEach(b => b.addEventListener("click", () => madnessDialog(+b.dataset.mad)));
@@ -1710,11 +1759,11 @@
       </div>`;
 
     return `<section class="panel">
-      <details class="daypanel" ${game.voteOpen ? "open" : ""}>
-        <summary><h2>☀️ Tag ${game.nightNo} – Abstimmung <span class="small">(optional)</span></h2></summary>
+      <details class="daypanel" ${game.voteOpen !== false ? "open" : ""}>
+        <summary><h2>⚖️ Nominieren &amp; Abstimmen</h2></summary>
         <p class="small">Nötig für die Hinrichtung: <b>${votesNeeded()}</b> Stimmen (Hälfte der Lebenden). ${blockLine}</p>
         ${ps.some(y => y.role === "vizier") ? `<p class="small">👳 Alle wissen: <b>${esc(ps.find(y => y.role === "vizier").name)}</b> ist der Wesir (kann tagsüber nicht sterben).</p>` : ""}
-        ${game.online || game.test ? `<label class="switch"><input type="checkbox" id="pvtoggle" ${game.phoneVote ? "checked" : ""}><span><b>📱 Nominieren &amp; Abstimmen am Handy</b> – Spieler nominieren und heben die Hand per Knopf, du bestätigst nur.</span></label>` : ""}
+        ${game.online || game.test ? `<p class="small">📱 Abstimmen am Handy: <b>${game.phoneVote ? "an" : "aus"}</b> (⚙️ Einstellungen)</p>` : ""}
         ${game.nomReq && !game.vote ? `<div class="box nomreq">📨 <b>${esc(game.seats[game.nomReq.by].name)}</b> möchte <b>${esc(game.seats[game.nomReq.on].name)}</b> nominieren.
           <div class="row wrap"><button class="btn primary" id="nomok">✅ Zulassen</button><button class="btn" id="nomno">Ablehnen</button></div></div>` : ""}
         ${body}
@@ -1728,7 +1777,7 @@
   function bindDay() {
     const dp = $(".daypanel");
     if (!dp) return;
-    dp.addEventListener("toggle", () => { game.voteOpen = dp.open; save(); });
+    dp.addEventListener("toggle", () => { if ((game.voteOpen !== false) === dp.open) return; game.voteOpen = dp.open; save(); });
     const day = today();
     $("#startvote") && $("#startvote").addEventListener("click", () => {
       const by = +$("#nomby").value, on = +$("#nomon").value;
@@ -3084,8 +3133,7 @@
 
   function nightActionsBar(steps) {
     if (!game.online && !game.test) return "";
-    if (!game.nightActions) return `<div class="box nabar"><label class="switch"><input type="checkbox" id="natoggle">
-      <span><b>📲 Nachtaktionen am Handy</b> – Spieler wählen ihre Ziele auf dem eigenen Handy, statt zu zeigen.</span></label></div>`;
+    if (!game.nightActions) return `<p class="small">📲 Nachtaktionen am Handy sind aus – einschalten unter ⚙️ Einstellungen.</p>`;
     const seq = game.seq && game.seq.night === game.nightNo ? game.seq : null;
     const asks = Object.values(game.asks || {}).filter(a => a.night === game.nightNo);
     let body;
@@ -3107,9 +3155,9 @@
         <button class="btn" id="natable">🪑 Wie am Tisch</button>
         ${asks.length && !seq ? `<span class="small">${real.filter(a => a.done).length} von ${real.length} Aktionen beantwortet</span>` : ""}
       </div>
-      <p class="small"><b>Alle auf einmal:</b> schnell – alle wählen gleichzeitig, du wertest danach in der Reihenfolge der Liste aus.<br>
+      <details class="small nahelp"><summary>ⓘ Was bedeuten die drei Varianten?</summary><p><b>Alle auf einmal:</b> schnell – alle wählen gleichzeitig, du wertest danach in der Reihenfolge der Liste aus.<br>
       <b>Schritt für Schritt:</b> regelgenau – bei jedem Schritt der Nachtreihenfolge sind alle Handys dran; nur wer wirklich dran ist, bekommt die echte Aufgabe.<br>
-      <b>Wie am Tisch:</b> alle Handys schlafen ein, du weckst jeden Spieler einzeln mit 👁️ und zeigst ihm seine Info groß auf seinem Handy.</p>`;
+      <b>Wie am Tisch:</b> alle Handys schlafen ein, du weckst jeden Spieler einzeln mit 👁️ und zeigst ihm seine Info groß auf seinem Handy.</p></details>`;
     }
     if (tableOn()) {
       const ps = game.seats.filter(x => reachable(x));

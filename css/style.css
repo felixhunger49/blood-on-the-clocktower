@@ -631,3 +631,19 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .ncircle .token.tr-unsure { box-shadow: 0 0 0 3px #a3a3a3; }
 .ncircle .token.me { border-style: dashed; }
 .notecard.flash { outline: 3px solid var(--accent); }
+/* Übersichtlicheres Grimoire */
+.ghead-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .4rem; }
+.ghead-row h2 { margin: 0; }
+.beginner { background: var(--panel2); border-left: 4px solid var(--accent); border-radius: 8px; padding: .5rem .7rem; font-size: .9rem; }
+.glines { display: grid; gap: .35rem; }
+.gline { display: flex; align-items: center; gap: .55rem; width: 100%; text-align: left; background: var(--panel2); border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: .45rem .6rem; color: inherit; font: inherit; cursor: pointer; }
+.gline.dead { opacity: .55; }
+.gline.dead b { text-decoration: line-through; }
+.gl-main { flex: 1; min-width: 0; display: grid; }
+.gl-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gl-role { font-size: .85rem; }
+.gl-note { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gl-st { font-size: 1.05rem; white-space: nowrap; }
+.nightwrap summary, .endwrap summary { cursor: pointer; }
+.modepick .chip { font-size: 1rem; }
+section.panel > details > summary h2 { display: inline; margin: 0; } section.panel > details > summary { padding: .2rem 0; }
