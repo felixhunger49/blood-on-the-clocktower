@@ -1058,6 +1058,8 @@ const ROLE_MARKERS = {
   washerwoman: [{ k: "ww_ok", i: "🧺", l: "Waschfrau: richtig", d: "Dieser Spieler hat die Rolle, die du der Waschfrau gezeigt hast." }, { k: "ww_no", i: "🧺✖", l: "Waschfrau: falsch", d: "Der zweite Spieler, den du der Waschfrau gezeigt hast (hat die Rolle nicht)." }],
   librarian: [{ k: "lib_ok", i: "📚", l: "Bibliothekar: richtig", d: "Dieser Spieler hat die Außenseiter-Rolle, die du dem Bibliothekar gezeigt hast." }, { k: "lib_no", i: "📚✖", l: "Bibliothekar: falsch", d: "Der zweite gezeigte Spieler (hat die Rolle nicht)." }],
   investigator: [{ k: "inv_ok", i: "🔎", l: "Ermittler: richtig", d: "Dieser Spieler hat die Schergen-Rolle, die du dem Ermittler gezeigt hast." }, { k: "inv_no", i: "🔎✖", l: "Ermittler: falsch", d: "Der zweite gezeigte Spieler (hat die Rolle nicht)." }],
+  bureaucrat: [{ k: "bureau", i: "3️⃣", l: "Stimme zählt dreifach", d: "Vom Bürokraten gewählt: Die Stimme dieses Spielers zählt morgen dreifach.", n: true }],
+  thief: [{ k: "stolen", i: "➖", l: "Stimme zählt negativ", d: "Vom Dieb gewählt: Die Stimme dieses Spielers zählt morgen negativ.", n: true }],
   butler: [{ k: "master", i: "👔", l: "Meister", d: "Der Butler darf morgen nur abstimmen, wenn dieser Spieler auch abstimmt." }],
   undertaker: [{ k: "executed", i: "⚰️", l: "Hingerichtet", d: "Wurde heute hingerichtet – seine Rolle zeigst du heute Nacht dem Totengräber.", n: true }],
   scarletwoman: [{ k: "isdemon", i: "💋", l: "Ist jetzt der Dämon", d: "Die Scharlachrote Frau hat übernommen. Die App setzt das automatisch, sobald der Dämon stirbt (bei 5+ Lebenden und wenn sie nicht vergiftet/betrunken ist)." }],
