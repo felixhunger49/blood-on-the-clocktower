@@ -965,25 +965,28 @@
       if (!role || !role[key]) return;
       const holders = ps.filter(s => (s.role === id && !(id === "amnesiac" && s.amn && s.amn.like)) || (id === "scarletwoman" && s.swPending) || (s.role === "amnesiac" && s.amn && s.amn.like === id));
       const drunks = ps.filter(s => (s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id);
-      const philos = ps.filter(s => s.role === "philosopher" && s.gained === id);
+      const philos = ps.filter(s => gainer(s) && s.gained === id);
       if (!holders.length && !drunks.length && !philos.length) return;
-      const who = [...holders.map(s => esc(s.name) + (s.role === "amnesiac" && id !== "amnesiac" ? " (Amnesiker ❓)" : "") + (s.alive ? "" : " †") + (philos.length ? " (betrunken durch Philosoph)" : "")),
+      const who = [...holders.map(s => esc(s.name) + (s.role === "amnesiac" && id !== "amnesiac" ? " (Amnesiker ❓)" : "") + (s.alive ? "" : " †") + (philos.some(q => q.role === "philosopher") && s.alive ? " (betrunken durch Philosoph)" : "")),
         ...drunks.map(s => esc(s.name) + (s.alive ? "" : " †") + (s.role === "drunk" ? " (Säufer – Info darf falsch sein)" : " (Marionette – Info darf falsch sein)")),
-        ...philos.map(s => esc(s.name) + (s.alive ? "" : " †") + " (Philosoph)")].join(", ");
+        ...philos.map(s => esc(s.name) + (s.alive ? "" : " †") + (s.role === "cannibal" ? (s.canniFake ? " (🍖 Kannibale – vergiftet, Schein-Fähigkeit: Info falsch geben)" : " (🍖 Kannibale)") : " (Philosoph)"))].join(", ");
       // Tote Spieler haben keine Fähigkeit mehr – außer Rollen, die gerade durch ihren Tod ausgelöst werden.
       const all = [...holders, ...drunks, ...philos];
       const notTriggered = ACTS_WHEN_DEAD.includes(id) && !all.some(s => deathTriggered(s, id));
       const allDead = !ACTS_WHEN_DEAD.includes(id) && all.every(s => !s.alive && !s.zfake);
       const allKilled = !allDead && !ACTS_WHEN_DEAD.includes(id) && all.every(s => (!s.alive && !s.zfake) || killedBefore(s, id));
-      const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => ((s.role === "philosopher" && id !== "philosopher" ? s.gainedUsed : s.used) && s.usedNight !== game.nightNo) || !s.alive);
+      const allUsed = ONCE_PER_GAME.includes(id) && all.every(s => ((gainer(s) && id !== s.role ? s.gainedUsed : s.used) && s.usedNight !== game.nightNo) || !s.alive);
       // Der Jongleur erfährt sein Ergebnis nur in der Nacht nach dem ersten Tag.
       const over = (id === "juggler" && game.nightNo > 2) || (ROLE_BY_ID[id] && ROLE_BY_ID[id].hbCond === "n2" && game.nightNo !== 2);
       const swIdle = id === "scarletwoman" && !holders.some(s => s.swPending);
-      const inactive = allDead || allKilled || allUsed || over || notTriggered || swIdle;
+      const canni = id === "cannibal" ? holders.find(s => s.role === "cannibal" && s.alive) : null;
+      const canniIdle = id === "cannibal" && !allDead;
+      const inactive = allDead || allKilled || allUsed || over || notTriggered || swIdle || canniIdle;
       const why = allDead ? "Tot – keine Fähigkeit mehr, nicht wecken."
         : allKilled ? "🎯 Wurde heute Nacht schon vom Dämon getötet (der Dämon ist vorher dran) – nicht mehr wecken, keine Info."
         : over ? "Nur in der zweiten Nacht – entfällt."
         : swIdle ? "Der Dämon ist nicht gestorben (oder sie hat nicht übernommen) – nicht wecken."
+        : canniIdle ? (canni && canni.gained ? `🍖 Hat gerade die Fähigkeit: ${roleName(canni.gained)}${canni.canniFake ? " (Schein-Fähigkeit – vergiftet)" : ""}. ${(ROLE_BY_ID[canni.gained] || {})[key] ? "Wird bei diesem Schritt geweckt." : "Diese Fähigkeit hat heute Nacht keine Aktion."}` : "🍖 Noch keine Fähigkeit – die bekommt er erst, wenn jemand durch Hinrichtung stirbt.")
         : notTriggered ? (["ravenkeeper", "sage"].includes(id) ? "Nur wenn er heute Nacht stirbt (z. B. durch den Dämon) – nicht wecken." : "Nur wenn er gerade gestorben ist – nicht wecken.")
         : "Fähigkeit schon benutzt – nicht mehr wecken.";
       steps.push({ id, name: `${role.ic} ${role.de}`, text: role[key], who, t: role.t, inactive, why, mark: allDead || allKilled ? "💀" : "✔", once: ONCE_PER_GAME.includes(id) });
@@ -1017,6 +1020,7 @@
         <span class="seatno">${i + 1}</span>
         <span class="gl-main"><b>${esc(s.name)}</b>
           <span class="gl-role t-${r.t}-text">${r.ic} ${esc(r.de)}${s.trav || s.align ? (seatGood(s) ? " · gut" : " · böse") : ""}${shown !== s.role ? ` <small>(glaubt: ${esc(roleName(shown))})</small>` : ""}</span>
+          ${s.role === "cannibal" && s.gained ? `<small class="gl-note">🍖 hat: ${esc(roleName(s.gained))}${s.canniFake ? " (Schein, vergiftet)" : ""}</small>` : ""}
           ${s.note ? `<small class="gl-note">📝 ${esc(s.note)}</small>` : ""}</span>
         <span class="gl-st">${s.zfake ? "🧟" : ""}${(s.marks || []).map(m => (markerByKey(m) || {}).i || "").join("")}${ONCE_PER_GAME.includes(s.role) && s.used ? "✔️" : ""}${s.alive ? "" : s.ghost ? "💀👻" : "💀"}</span>
       </button>`;
@@ -1283,7 +1287,7 @@
       game.seats.forEach(s => {
         if (!s.alive) return;
         if (s.role === id || (s.role === "drunk" && shownRole("drunk") === id)) s.used = true;
-        if (s.role === "philosopher" && s.gained === id) s.gainedUsed = true;
+        if (gainer(s) && s.gained === id) s.gainedUsed = true;
       });
       const d = game.done[game.nightNo] || [];
       if (!d.includes(id)) game.done[game.nightNo] = [...d, id];
@@ -1562,7 +1566,7 @@
   // Dämonenjäger: einmal pro Spiel öffentlich auf einen Spieler schießen – ist es der Dämon, stirbt er.
   function slayerDialog() {
     const S = game.seats;
-    const shooters = S.map((x, i) => i).filter(i => S[i].alive && actingRole(S[i]) === "slayer" && !(S[i].role === "philosopher" ? S[i].gainedUsed : S[i].used));
+    const shooters = S.map((x, i) => i).filter(i => S[i].alive && actingRole(S[i]) === "slayer" && !(gainer(S[i]) ? S[i].gainedUsed : S[i].used));
     if (!shooters.length) return;
     const opt = list => list.map(i => `<option value="${i}">${esc(S[i].name)}</option>`).join("");
     openModal(`<h2>🏹 Dämonenjäger schießt</h2>
@@ -1574,8 +1578,8 @@
     $("#slaygo").addEventListener("click", () => {
       const by = $("#slayby") ? +$("#slayby").value : shooters[0], on = +$("#slayon").value;
       const x = S[by], t = S[on];
-      if (x.role === "philosopher") x.gainedUsed = true; else x.used = true;
-      const real = (x.role === "slayer" || (x.role === "philosopher" && x.gained === "slayer")) && !impaired(x);
+      if (gainer(x)) x.gainedUsed = true; else x.used = true;
+      const real = (x.role === "slayer" || (gainer(x) && x.gained === "slayer")) && !impaired(x);
       let hit = real && ROLE_BY_ID[t.role].t === "demon";
       if (real && !hit && t.role === "recluse" && !impaired(t)) hit = confirm(`${t.name} ist der Einsiedler und darf als Dämon gelten.\n\nSoll er sterben?`);
       closeModal();
@@ -1599,6 +1603,47 @@
     game.saintLoss = x.name; game.saintLossRole = roleName(x.role); game.ignoreEnd = null; game.endPopped = null;
   }
 
+  // Kannibale: bekommt die Fähigkeit des zuletzt durch Hinrichtung Gestorbenen.
+  // War der böse, ist er vergiftet, bis ein Guter durch Hinrichtung stirbt – und glaubt, eine gute Fähigkeit zu haben.
+  function canniEat(x) {
+    if (!x || x.alive) return;
+    game.seats.filter(c => c.role === "cannibal" && c.alive && c !== x).forEach(c => {
+      const good = seatGood(x);
+      if (good) {
+        if (c.canniPoison) {
+          c.marks = (c.marks || []).filter(m => m !== "poison"); c.keep = (c.keep || []).filter(m => m !== "poison");
+          markHist(c, "poison", false); c.canniPoison = false;
+        }
+        c.gained = x.role; c.gainedUsed = false; c.canniFake = false;
+        hist(`🍖 ${c.name} (Kannibale) hat jetzt die Fähigkeit von ${x.name}: ${roleName(x.role)}`, "day");
+      } else {
+        // Schein-Fähigkeit: eine gute Rolle aus dem Skript, die nicht im Spiel ist (der Spielleiter kann sie ändern)
+        const inPlay = new Set(game.seats.map(y => y.role));
+        const pool = ROLES.filter(r => inEd(r, game.edition) && (r.t === "townsfolk" || r.t === "outsider") && !inPlay.has(r.id) && r.id !== "cannibal");
+        const night = pool.filter(r => r.n), list = night.length ? night : pool;
+        const fake = list[randInt(list.length)] || ROLE_BY_ID.monk;
+        c.gained = fake.id; c.gainedUsed = false; c.canniFake = true;
+        if (!(c.marks || []).includes("poison")) { c.marks = [...(c.marks || []), "poison"]; markHist(c, "poison", true, "Kannibale hat einen Bösen gegessen"); }
+        c.keep = [...new Set([...(c.keep || []), "poison"])];
+        c.canniPoison = true;
+        hist(`🍖 ${c.name} (Kannibale) hat einen Bösen gegessen – vergiftet, bis ein Guter durch Hinrichtung stirbt. Schein-Fähigkeit: ${roleName(fake.id)}`, "day");
+        setTimeout(() => canniFakeModal(game.seats.indexOf(c)), 400);
+      }
+    });
+  }
+  function canniFakeModal(i) {
+    const c = game.seats[i];
+    if (!c || !c.canniFake) return;
+    const opts = ROLES.filter(r => inEd(r, game.edition) && (r.t === "townsfolk" || r.t === "outsider") && r.id !== "cannibal");
+    openModal(`<h2>🍖 Kannibale hat einen Bösen gegessen</h2>
+      <p><b>${esc(c.name)}</b> ist jetzt <b>vergiftet</b> (🧪 📌), bis ein guter Spieler durch Hinrichtung stirbt.</p>
+      <p>Damit er es nicht merkt, behandelst du ihn so, als hätte er eine <b>gute Fähigkeit</b> – seine Infos sind falsch. Welche soll er glauben zu haben?</p>
+      <select id="canfake">${opts.map(r => `<option value="${r.id}" ${r.id === c.gained ? "selected" : ""}>${r.ic} ${esc(r.de)}${game.seats.some(y => y.role === r.id) ? " (im Spiel)" : ""}</option>`).join("")}</select>
+      <p class="small">Tipp: Eine Rolle, die nicht im Spiel ist, verrät am wenigsten.</p>
+      <div class="row end"><button class="btn primary" id="canok">OK</button></div>`);
+    $("#canok").addEventListener("click", () => { c.gained = $("#canfake").value; c.gainedUsed = false; save(); closeModal(); renderSL(); });
+  }
+
   // Jungfrau: Wird sie das erste Mal nominiert und ist der Nominierende ein Dorfbewohner,
   // wird dieser sofort hingerichtet. Danach (oder vergiftet) ist ihre Fähigkeit verbraucht.
   function virginCheck(by, on) {
@@ -1618,6 +1663,7 @@
     applyDeath(n, rule);
     if (n.alive) day.exec.survived = true;
     saintCheck(n);
+    canniEat(n);
     return { stop: true, msg: `👰 ${n.name} ist ein Dorfbewohner und wird sofort hingerichtet! Die Abstimmung entfällt.` };
   }
 
@@ -1787,7 +1833,7 @@
     if (b && b.tie) blockLine = `Gleichstand mit ${b.count} Stimmen – niemand ist auf dem Block.`;
     else if (b) blockLine = `Auf dem Block: <b>${esc(ps[b.on].name)}</b> mit ${b.count} Stimmen.`;
 
-    const slayers = ps.map((x, i) => i).filter(i => ps[i].alive && (actingRole(ps[i]) === "slayer") && !(ps[i].role === "philosopher" ? ps[i].gainedUsed : ps[i].used));
+    const slayers = ps.map((x, i) => i).filter(i => ps[i].alive && (actingRole(ps[i]) === "slayer") && !(gainer(ps[i]) ? ps[i].gainedUsed : ps[i].used));
     const amn = ps.map((x, i) => i).filter(i => ps[i].alive && ps[i].role === "amnesiac");
     const amnBtn = amn.length && !v ? `<div class="row wrap"><button class="btn" id="amngo">❓ Amnesiker rät${day.amn ? " <small>(heute schon ✔)</small>" : ""}</button></div>` : "";
     const jug = ps.map((x, i) => i).filter(i => ps[i].alive && actingRole(ps[i]) === "juggler");
@@ -1889,6 +1935,7 @@
       applyDeath(s, rule);
       if (game.seats[b.on].alive) day.exec.survived = true;
       saintCheck(s);
+      canniEat(s);
       // Prinzessin: hat sie am 1. Tag nominiert und wurde hingerichtet -> heute Nacht kein Dämonen-Tod
       const pr = game.seats[b.by];
       if (pr && pr.role === "princess" && pr.alive && !impaired(pr) && game.nightNo === 1 && !game.princessUsed) {
@@ -3279,7 +3326,7 @@
   const isBot = x => !!(x && x.pid && String(x.pid).startsWith("bot-"));
   const reachable = x => !!(x && x.pid && (isBot(x) || lobby[x.pid]));
   // Als welche Rolle handelt dieser Spieler? (Säufer/Marionette glauben an ihre Rolle, Philosoph an die gewählte)
-  const actingRole = x => x.role === "philosopher" && x.gained ? x.gained : x.role === "amnesiac" && x.amn && x.amn.like ? x.amn.like : shownRole(x.role);
+  const actingRole = x => gainer(x) && x.gained ? x.gained : x.role === "amnesiac" && x.amn && x.amn.like ? x.amn.like : shownRole(x.role);
 
   function nightActionsBar(steps) {
     if (!game.online && !game.test) return "";
@@ -3340,6 +3387,8 @@
   // Morgen: Nacht beenden, Tag beginnen, Tote der Nacht verkünden
   // ---------- Morgen: Wer stirbt durch den Dämon? ----------
   const KILL_STEPS = ["imp", "fanggu", "vigormortis", "nodashii", "vortox", "zombuul", "shabaloth", "po", "assassin", "godfather", "lleech"];
+  // Philosoph und Kannibale können die Fähigkeit einer anderen Rolle haben (x.gained)
+  const gainer = x => !!x && (x.role === "philosopher" || x.role === "cannibal");
   const impaired = x => { const m = x.marks || []; return m.includes("poison") || m.includes("drunk") || x.role === "drunk"; };
   // Rollen, die ihren eigenen Tod verhindern oder vortäuschen (für Nacht UND Hinrichtung).
   // Gibt null zurück, wenn nichts Besonderes passiert.
@@ -3800,8 +3849,8 @@
     return game.seats.map((x, i) => i).filter(i => {
       const x = game.seats[i];
       if (actingRole(x) !== stepId || !x.pid) return false;
-      if (ONCE_PER_GAME.includes(stepId) && x.used) return false;
-      if (stepId === "philosopher" && x.gained) return false;
+      if (ONCE_PER_GAME.includes(stepId) && (gainer(x) && x.gained === stepId ? x.gainedUsed : x.used)) return false;
+      if ((stepId === "philosopher" || stepId === "cannibal") && x.gained) return false;
       if (stepId === "amnesiac" && !(x.amn && x.amn.pick)) return false;
       return ACTS_WHEN_DEAD.includes(stepId) ? deathTriggered(x, stepId) : (x.alive || x.zfake) && !killedBefore(x, stepId);
     });
@@ -3834,7 +3883,7 @@
       game.seats.forEach((x, i) => {
         if (!x.alive || !reachable(x)) return;
         const r = actingRole(x), role = ROLE_BY_ID[r];
-        const acts = ACTIONS[r] && role && role[key] && !ACTS_WHEN_DEAD.includes(r) && !(ONCE_PER_GAME.includes(r) && x.used) && !(r === "philosopher" && x.gained);
+        const acts = ACTIONS[r] && role && role[key] && !ACTS_WHEN_DEAD.includes(r) && !(ONCE_PER_GAME.includes(r) && x.used) && !((r === "philosopher" || r === "cannibal") && x.gained);
         askSeat(i, !acts);
         if (acts) n++;
       });
@@ -3907,7 +3956,7 @@
     if (!r.skip && r.role) game.lastPicks = Object.assign(game.lastPicks || {}, { [r.step]: r.role });
     // Einmal-Fähigkeit benutzt -> ab der nächsten Nacht grau
     if (!r.skip && ONCE_PER_GAME.includes(r.step) && r.step !== "philosopher" && (r.picks.length || r.role)) {
-      if (x.role === "philosopher" && x.gained === r.step) x.gainedUsed = true; else x.used = true;
+      if (gainer(x) && x.gained === r.step) x.gainedUsed = true; else x.used = true;
       x.usedNight = game.nightNo;
     }
     const text = `🌙 ${x.name} (${roleName(r.step)}): ${r.skip ? "nichts" : describePick(r)}`;
@@ -4469,7 +4518,7 @@
 
   // Wer wacht bei diesem Nacht-Schritt auf? (inkl. Säufer, Marionette, Philosoph)
   const stepHolders = id => game.seats.map((s, i) => [s, i]).filter(([s]) =>
-    (s.role === id && !(id === "amnesiac" && s.amn && s.amn.like)) || (s.role === "amnesiac" && s.amn && s.amn.like === id) || ((s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id) || (s.role === "philosopher" && s.gained === id));
+    (s.role === id && !(id === "amnesiac" && s.amn && s.amn.like)) || (s.role === "amnesiac" && s.amn && s.amn.like === id) || ((s.role === "drunk" || s.role === "marionette") && shownRole(s.role) === id) || (gainer(s) && s.gained === id));
 
   function infoDialog(stepId) {
     const holders = stepHolders(stepId);
