@@ -1029,7 +1029,7 @@ const ROLE_ICONS = {
   f_duchess: "💎", f_fiddler: "🎼", f_fibbin: "🤥", f_doomsayer: "☄️", f_stormcatcher: "⛈️", f_bootlegger: "🥃",
   f_gardener: "🌱", f_ferryman: "⛵", f_deusexfiasco: "🎪",
   acrobat: "🤸", alchemist: "⚗️", alsaahir: "🧿", amnesiac: "❓", atheist: "🚫", banshee: "😱", cannibal: "🍖", cultleader: "🕯️",
-  engineer: "⚙️", fisherman: "🎣", lycanthrope: "🐺", magician: "✨", poppygrower: "🌺", princess: "👸", hatter: "🎩",
+  engineer: "⚙️", fisherman: "🎣", lycanthrope: "🐺", magician: "✨", poppygrower: "🌺", princess: "👸", hatter: "🧢",
   hermit: "🧙", plaguedoctor: "🦠", zealot: "📢", boffin: "🔬", organgrinder: "🪗", summoner: "🔯", vizier: "👳",
   wizard: "🪄", wraith: "👻", xaan: "🌀", kazali: "🦂", lordoftyphon: "🐉", riot: "🔥", yaggababble: "🗯️",
   cacklejack: "🃏", gangster: "🔫", l_bigwig: "🧑‍⚖️", l_pope: "⛪", l_hindu: "🕉️", l_zenomancer: "🎯", l_ventriloquist: "🎭", l_tor: "🌫️", l_godofug: "🪨", l_knaves: "👯", gnome: "🍄"
@@ -1058,7 +1058,7 @@ const ROLE_MARKERS = {
   washerwoman: [{ k: "ww_ok", i: "🧺", l: "Waschfrau: richtig", d: "Dieser Spieler hat die Rolle, die du der Waschfrau gezeigt hast." }, { k: "ww_no", i: "🧺✖", l: "Waschfrau: falsch", d: "Der zweite Spieler, den du der Waschfrau gezeigt hast (hat die Rolle nicht)." }],
   librarian: [{ k: "lib_ok", i: "📚", l: "Bibliothekar: richtig", d: "Dieser Spieler hat die Außenseiter-Rolle, die du dem Bibliothekar gezeigt hast." }, { k: "lib_no", i: "📚✖", l: "Bibliothekar: falsch", d: "Der zweite gezeigte Spieler (hat die Rolle nicht)." }],
   investigator: [{ k: "inv_ok", i: "🔎", l: "Ermittler: richtig", d: "Dieser Spieler hat die Schergen-Rolle, die du dem Ermittler gezeigt hast." }, { k: "inv_no", i: "🔎✖", l: "Ermittler: falsch", d: "Der zweite gezeigte Spieler (hat die Rolle nicht)." }],
-  butler: [{ k: "master", i: "🎩", l: "Meister", d: "Der Butler darf morgen nur abstimmen, wenn dieser Spieler auch abstimmt." }],
+  butler: [{ k: "master", i: "👔", l: "Meister", d: "Der Butler darf morgen nur abstimmen, wenn dieser Spieler auch abstimmt." }],
   undertaker: [{ k: "executed", i: "⚰️", l: "Hingerichtet", d: "Wurde heute hingerichtet – seine Rolle zeigst du heute Nacht dem Totengräber.", n: true }],
   scarletwoman: [{ k: "isdemon", i: "👑", l: "Ist jetzt der Dämon", d: "Die Scharlachrote Frau hat übernommen. Die App setzt das automatisch, sobald der Dämon stirbt (bei 5+ Lebenden und wenn sie nicht vergiftet/betrunken ist)." }],
   grandmother: [{ k: "grandchild", i: "👶", l: "Enkelkind", d: "Tötet der Dämon diesen Spieler, stirbt auch die Großmutter." }],

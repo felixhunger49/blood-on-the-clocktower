@@ -1163,7 +1163,7 @@
       <h4>Ansicht</h4>
       <div class="chips modepick">
         <button class="chip ${proMode() ? "" : "on"}" data-pro="0">🌱 Einsteiger</button>
-        <button class="chip ${proMode() ? "on" : ""}" data-pro="1">🎩 Profi</button>
+        <button class="chip ${proMode() ? "on" : ""}" data-pro="1">⭐ Profi</button>
       </div>
       <p class="small">${proMode() ? "Profi: alles sichtbar – ausführliche Spielerliste, „Wer liegt vorne?“, Tag überspringen." : "Einsteiger: nur das Nötigste, mit kurzen Hinweisen, was gerade zu tun ist."}</p>
       <h4>Spiel</h4>
@@ -1660,7 +1660,7 @@
     const m = s.marks || [];
     if (m.includes("poison") || m.includes("drunk")) return { ok: true, note: "Butler – betrunken/vergiftet: darf frei stimmen" };
     const master = game.seats.findIndex(y => (y.marks || []).includes("master"));
-    if (master < 0) return { ok: true, warn: !!hands.includes(i), note: "Butler – kein Meister markiert (Marker 🎩 setzen)" };
+    if (master < 0) return { ok: true, warn: !!hands.includes(i), note: "Butler – kein Meister markiert (Marker 👔 setzen)" };
     const mname = game.seats[master].name;
     if (!hands.includes(i)) return { ok: true, note: `Butler – darf nur stimmen, wenn ${mname} stimmt` };
     if (hands.includes(master)) return { ok: true, note: `Butler – ✅ Meister ${mname} stimmt mit` };
@@ -1774,7 +1774,7 @@
           const bc = butlerCheck(i, v.hands);
           const isMaster = (s.marks || []).includes("master") && ps.some(y => y.role === "butler");
           return `<button class="voter ${up ? "up" : ""} ${bc && bc.warn ? "warn" : ""} ${v.clock === i ? "clock" : ""}" data-hand="${i}" ${canVote ? "" : "disabled"}>
-            <span>${up ? "✋" : "·"}</span><b>${esc(s.name)}</b>${s.alive ? "" : `<small>${s.ghost ? "👻 Geisterstimme" : "keine Stimme mehr"}</small>`}${bc ? `<small>${esc(bc.note)}</small>` : ""}${s.role === "zealot" && s.alive && ps.filter(y => y.alive).length >= 5 ? `<small>📢 Zelot – muss abstimmen</small>` : ""}${s.banshee ? `<small>😱 Banshee – zählt doppelt</small>` : ""}${isMaster ? `<small>🎩 Meister des Butlers</small>` : ""}</button>`;
+            <span>${up ? "✋" : "·"}</span><b>${esc(s.name)}</b>${s.alive ? "" : `<small>${s.ghost ? "👻 Geisterstimme" : "keine Stimme mehr"}</small>`}${bc ? `<small>${esc(bc.note)}</small>` : ""}${s.role === "zealot" && s.alive && ps.filter(y => y.alive).length >= 5 ? `<small>📢 Zelot – muss abstimmen</small>` : ""}${s.banshee ? `<small>😱 Banshee – zählt doppelt</small>` : ""}${isMaster ? `<small>👔 Meister des Butlers</small>` : ""}</button>`;
         }).join("")}</div>
         <div class="votecount ${count >= votesNeeded() ? "ok" : ""}">${count} Stimmen · nötig ${votesNeeded()}${b && !b.tie ? ` · auf dem Block mit ${b.count}` : ""}</div>
         ${game.test && !v.botDone ? `<div class="row wrap"><button class="btn" id="botvote">🤖 Bots stimmen ab</button></div>` : ""}
