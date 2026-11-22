@@ -647,3 +647,14 @@ body[data-phase="night"] .daycount { box-shadow: 0 0 18px rgba(140, 110, 220, .1
 .nightwrap summary, .endwrap summary { cursor: pointer; }
 .modepick .chip { font-size: 1rem; }
 section.panel > details > summary h2 { display: inline; margin: 0; } section.panel > details > summary { padding: .2rem 0; }
+/* Rückblick */
+.rc-awards { display: grid; gap: .4rem; margin: .4rem 0 .8rem; }
+.rc-aw { display: flex; gap: .6rem; align-items: center; background: var(--panel2); border-radius: 10px; padding: .45rem .6rem; }
+.rc-ic { font-size: 1.6rem; }
+.rc-noms { list-style: none; padding: 0; display: grid; gap: .35rem; }
+.rc-noms li { background: var(--panel2); border-radius: 8px; padding: .35rem .5rem; font-size: .9rem; }
+.rc-noms li.rc-exec { border-left: 4px solid var(--evil); }
+.rc-hands { font-size: .82rem; margin-top: .15rem; display: flex; flex-wrap: wrap; gap: .25rem .5rem; }
+.rc-hands .g { color: var(--good); } .rc-hands .e { color: var(--evil); font-weight: 600; }
+.rc-al { font-size: .85rem; }
+#bugtext { width: 100%; }

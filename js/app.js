@@ -425,6 +425,7 @@
       <div id="pvbox">${phoneVoteHtml(mine)}</div>
       ${notesHtml()}
       ${(() => { const si = scriptInfo(); return si ? nightOrderHtml(si.ids, si.name) : ""; })()}
+      <div class="row center"><button class="btn sm" id="bugrep">🐞 Problem melden</button></div>
       <section class="panel muted">
         <div class="row center wrap">
           <a class="btn" href="#/rollen" onclick="this.dataset.go=1">${mine.sc ? "📜 Rollen in eurem Spiel" : "📖 Alle Rollen ansehen"}</a>
@@ -437,6 +438,7 @@
     bindPicker(mine);
     bindNotes();
     bindPhoneVote(mine);
+    $("#bugrep") && $("#bugrep").addEventListener("click", bugReport);
     if (modal.classList.contains("hidden")) nightOverlay();
     $("#hide").addEventListener("click", () => { $("#card").classList.add("hidden"); $("#cover").classList.remove("hidden"); window.scrollTo(0, 0); });
     $("#forget") && $("#forget").addEventListener("click", () => {
@@ -1107,6 +1109,51 @@
       : `${nightSec}${grimSec}`) + travLatePanel() + endSec;
   }
 
+  // ---------- Problem melden: alles Nötige in eine Datei ----------
+  const clickLog = [];
+  document.addEventListener("click", e => {
+    const b = e.target.closest && e.target.closest("button, a, input, select, label");
+    if (!b) return;
+    clickLog.push({ at: Date.now(), id: b.id || "", txt: (b.textContent || b.value || "").replace(/\s+/g, " ").trim().slice(0, 40), cls: String(b.className || "").slice(0, 40), hash: location.hash });
+    if (clickLog.length > 40) clickLog.shift();
+  }, true);
+  const logError = (msg, stack) => {
+    try {
+      const l = JSON.parse(localStorage.getItem("botc.errlog") || "[]");
+      l.push({ at: Date.now(), msg: String(msg).slice(0, 300), stack: String(stack || "").slice(0, 800) });
+      localStorage.setItem("botc.errlog", JSON.stringify(l.slice(-20)));
+    } catch (e) { /* egal */ }
+  };
+  window.addEventListener("error", e => logError(e.message, e.error && e.error.stack));
+  window.addEventListener("unhandledrejection", e => logError("Promise: " + (e.reason && e.reason.message || e.reason), e.reason && e.reason.stack));
+  function bugReport() {
+    openModal(`<h2>🐞 Problem melden</h2>
+      <p class="small">Beschreibe kurz, was passiert ist. Die App packt dazu den Spielstand, die letzten Schritte und Fehlermeldungen in eine Datei – die schickst du dann an den Entwickler (z. B. per WhatsApp oder E-Mail).</p>
+      <textarea id="bugtext" rows="4" placeholder="z. B. Nach der Abstimmung wurde Anna hingerichtet, obwohl ich nichts gedrückt habe."></textarea>
+      <p class="small">🔒 Enthält Namen und Rollen dieses Spiels – sonst nichts Persönliches.</p>
+      <div class="row end wrap"><button class="btn" id="bugcancel">Abbrechen</button><button class="btn" id="bugsave">💾 Als Datei sichern</button><button class="btn primary" id="bugshare">📤 Teilen</button></div>`);
+    const build = () => {
+      const src = (document.querySelector('script[src*="app.js"]') || {}).src || "";
+      let errs = []; try { errs = JSON.parse(localStorage.getItem("botc.errlog") || "[]"); } catch (e) { /* egal */ }
+      const rep = { app: "botc-report", version: (src.match(/v=(\d+)/) || [])[1] || "?", at: new Date().toISOString(), desc: $("#bugtext").value.trim(),
+        ua: navigator.userAgent, screen: `${innerWidth}x${innerHeight}`, standalone: matchMedia("(display-mode: standalone)").matches, hash: location.hash,
+        clicks: clickLog.slice(), errors: errs, game, undo: undoStack.slice(-10).map(x => { try { return JSON.parse(x); } catch (e) { return null; } }),
+        myrole: store.get("botc.myrole", null), pub: typeof pubState !== "undefined" ? pubState : null };
+      const name = `clocktower-problem-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.json`;
+      return new File([JSON.stringify(rep, null, 1)], name, { type: "application/json" });
+    };
+    const download = f => { const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); };
+    $("#bugcancel").addEventListener("click", closeModal);
+    $("#bugsave").addEventListener("click", () => { download(build()); toast("💾 Datei gesichert – schick sie dem Entwickler"); });
+    $("#bugshare").addEventListener("click", async () => {
+      const f = build();
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: "Clocktower – Problem" }); closeModal(); return; }
+      } catch (e) { if (e && e.name === "AbortError") return; }
+      download(f); toast("Teilen geht hier nicht – die Datei wurde gesichert");
+    });
+  }
+
   // Einsteiger- oder Profi-Ansicht (gilt für dieses Handy)
   const proMode = () => !!store.get("botc.pro", false);
   function settingsModal() {
@@ -1126,7 +1173,10 @@
       ${on ? "" : `<p class="small">Handy-Funktionen (Nachtaktionen, Abstimmen) gibt es im Online-Spiel oder in der Testrunde.</p>`}
       <h4>Dieses Handy</h4>
       ${sw("st-music", Mood.on, "🎵 Stimmungsmusik", "leise Klänge für Nacht und Tag.")}
+      <h4>Hilfe</h4>
+      <button class="btn" id="st-bug">🐞 Problem melden</button>
       <div class="row end"><button class="btn primary" id="st-close">Fertig</button></div>`);
+    $("#st-bug").addEventListener("click", bugReport);
     $$("[data-pro]").forEach(b => b.addEventListener("click", () => { store.set("botc.pro", b.dataset.pro === "1"); renderSL(); settingsModal(); }));
     $("#st-sug").addEventListener("change", e => { game.suggest = e.target.checked; save(); });
     $("#st-na") && $("#st-na").addEventListener("change", e => { game.nightActions = e.target.checked; game.asks = {}; game.seq = null; save(); renderSL(); });
@@ -2313,6 +2363,55 @@
     hist(x.alive ? `✨ ${x.name} lebt wieder` : `💀 ${x.name} ist gestorben (${r.ic} ${r.de})`);
     const last = game.history[game.history.length - 1];
     if (last) last[x.alive ? "alive" : "dead"] = x.name;
+  }
+  // Abstimmungen aller Tage in kompakter Form (für den Rückblick, auch an die Handys)
+  function recapDays() {
+    return Object.entries(game.days || {}).map(([d, v]) => ({
+      d: +d,
+      noms: (v.noms || []).map(n => ({ by: n.by, on: n.on, c: n.count || 0, h: n.hands || [], vg: !!n.virgin })),
+      ex: v.exec && v.exec !== "none" && !v.exec.survived ? v.exec.seat : null
+    })).filter(x => x.noms.length || x.ex !== null).sort((a, b) => a.d - b.d);
+  }
+  // Rückblick: Wer hat wann wofür gestimmt + kleine Auszeichnungen
+  function recapHtml(days, people, history) {
+    if (!people || !people.length) return "";
+    const N = k => people[k] ? esc(String(people[k].n).replace(/^🤖\s*/, "")) : "?";
+    const G = k => people[k] && people[k].good;
+    const badge = k => `<span class="rc-al ${G(k) ? "g" : "e"}">${G(k) ? "😇" : "😈"}</span>`;
+    const voteHtml = (days || []).map(d => `<div class="hgroup day"><div class="hhead">☀️ Tag ${d.d}</div><ul class="rc-noms">${d.noms.map(n => {
+      const exec = d.ex === n.on && !n.vg;
+      return `<li class="${exec ? "rc-exec" : ""}"><b>${N(n.by)}</b> → <b>${N(n.on)}</b> ${badge(n.on)}
+        ${n.vg ? `<span class="small">👰 Jungfrau – ${N(n.by)} wurde sofort hingerichtet</span>` : `<span class="small">${n.c} Stimme(n)${exec ? " · ⚔️ hingerichtet" : ""}</span>
+        ${n.h.length ? `<div class="rc-hands">✋ ${n.h.map(k => `<span class="${G(k) ? "g" : "e"}">${N(k)}</span>`).join(" ")}</div>` : ""}`}</li>`;
+    }).join("")}</ul></div>`).join("");
+    // Auszeichnungen
+    const st = people.map(() => ({ onEvil: 0, onGood: 0, nom: 0, nomEvil: 0, imp: 0 }));
+    (days || []).forEach(d => d.noms.forEach(n => {
+      if (st[n.on]) st[n.on].nom++;
+      if (st[n.by] && !G(n.on)) st[n.by].nomEvil++;
+      n.h.forEach(k => { if (st[k]) st[k][G(n.on) ? "onGood" : "onEvil"]++; });
+    }));
+    (history || []).forEach(h => {
+      const m = String(h.t || "").match(/^(?:🧪|🍺) (.+) ist (?:vergiftet|betrunken)/);
+      if (m) { const k = people.findIndex(p => p.n === m[1]); if (k >= 0) st[k].imp++; }
+    });
+    const best = (f, filter) => { let bk = -1, bv = 0; st.forEach((x, k) => { if (filter(k) && f(x) > bv) { bv = f(x); bk = k; } }); return bk >= 0 ? [bk, bv] : null; };
+    const aw = [];
+    const sniff = best(x => x.onEvil * 2 + x.nomEvil * 3 - x.onGood, k => G(k));
+    if (sniff) aw.push(["🎯", "Bester Riecher", `${N(sniff[0])} – hat am häufigsten gegen das Böse gestimmt oder es nominiert`]);
+    const fooled = best(x => x.onGood, k => G(k));
+    if (fooled && fooled[1] >= 2) aw.push(["🙈", "Auf der falschen Spur", `${N(fooled[0])} – ${fooled[1]}× für einen Guten gestimmt`]);
+    const target = best(x => x.nom, () => true);
+    if (target && target[1] >= 2) aw.push(["🎯", "Meistnominiert", `${N(target[0])} – ${target[1]}× nominiert`]);
+    const sly = best(x => x.onGood * 2 - x.onEvil, k => !G(k));
+    if (sly && sly[1] >= 2) aw.push(["🦊", "Geschickter Lenker (böse)", `${N(sly[0])} – hat Gute aufs Schafott gestimmt`]);
+    const imp = best(x => x.imp, () => true);
+    if (imp && imp[1] >= 1) aw.push(["🧪", "Am meisten getäuscht", `${N(imp[0])} – ${imp[1]}× vergiftet oder betrunken`]);
+    if (!voteHtml && !aw.length) return "";
+    return `<details class="history recap" open><summary><h3>🎬 Rückblick</h3></summary>
+      ${aw.length ? `<div class="rc-awards">${aw.map(([i, t, d]) => `<div class="rc-aw"><span class="rc-ic">${i}</span><div><b>${esc(t)}</b><br><span class="small">${d}</span></div></div>`).join("")}</div>` : ""}
+      ${voteHtml ? `<h4>🗳️ Wer hat wofür gestimmt?</h4><p class="small">😇 = gut, 😈 = böse · rot markierte Namen haben böse gespielt</p>${voteHtml}` : ""}
+    </details>`;
   }
   function historyHtml(h) {
     if (!h || !h.length) return "";
@@ -4594,6 +4693,7 @@
       <h3>Auflösung</h3>
       <ul class="endlist">${list}</ul>
       ${game.bluffs.length ? `<p class="small">Bluffs des Dämons: ${game.bluffs.map(id => esc(roleName(id))).join(", ")}</p>` : ""}
+      ${recapHtml(recapDays(), game.seats.map(x => ({ n: x.name, good: seatGood(x) })), game.history)}
       ${historyHtml(game.history)}
       <div class="row wrap center">
         <button class="btn primary" id="again">🔄 Neue Runde, gleiche Spieler</button>
@@ -5068,7 +5168,8 @@
         team: w.team, reason: w.reason, nights: game.nightNo,
         reveal: game.seats.map(s => ({ n: s.name, r: s.role, s: shownRole(s.role), good: seatGood(s), a: !!s.alive })),
         bluffs: game.bluffs,
-        history: (game.history || []).slice(-120).map(h => ({ n: h.n, ph: h.ph, t: h.t }))
+        history: (game.history || []).slice(-120).map(h => ({ n: h.n, ph: h.ph, t: h.t })),
+        days: recapDays()
       } : null
     };
   }
@@ -5363,6 +5464,7 @@
       <h3>Auflösung</h3>
       <ul class="endlist">${list}</ul>
       ${(w.bluffs || []).length ? `<p class="small">Bluffs des Dämons: ${w.bluffs.map(id => esc(roleName(id))).join(", ")}</p>` : ""}
+      ${recapHtml(w.days, (w.reveal || []).map(x => ({ n: x.n, good: x.good })), w.history)}
       ${historyHtml(w.history)}
       <div class="row center"><button class="btn primary" id="pubendclose">Schließen</button></div>`, "full");
     $("#pubendclose").addEventListener("click", () => { closeModal(); refreshPlayerView(true); });
