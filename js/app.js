@@ -1,4 +1,5 @@
 // Blood on the Clocktower – Rollen-App (ohne Server, alles im Browser).
+// Diese Datei wird aus src/app/ zusammengesetzt (node tools/build.cjs) – bitte dort ändern, nicht hier.
 
 (function () {
   "use strict";

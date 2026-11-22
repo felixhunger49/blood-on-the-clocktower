@@ -24,6 +24,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url || steps.deployment2.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # Sicherheits-Prüfungen: passt js/app.js zu den Teilen in src/app/? Keine doppelten Namen?
+      - run: node tools/check.cjs && node tools/build.cjs --check
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
