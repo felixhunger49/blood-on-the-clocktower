@@ -822,9 +822,10 @@
         <h2>Rollen für ${game.count} Spieler</h2>
         <p class="small">${esc(EDITIONS[game.edition].name)} · Tippe Rollen an, um sie hinzuzufügen oder zu entfernen.</p>
         ${requireWarnings()}
+        ${setupMeterHtml()}
         ${balanceHints()}
         ${game.edition === "custom" ? "" : jinxHtml(ROLES.filter(r => inEd(r, game.edition)).map(r => r.id))}
-        <div class="row wrap"><button class="btn primary" id="auto">🎲 Zufällig auswählen</button><button class="btn" id="clear">Auswahl leeren</button></div>
+        <div class="row wrap"><button class="btn primary" id="auto">🎲 Zufällig auswählen</button><button class="btn" id="autobal">⚖️ Ausgewogen vorschlagen</button><button class="btn" id="clear">Auswahl leeren</button></div>
         ${warn}
         ${extra}
         ${["townsfolk", "outsider", "minion", "demon"].map(teamBlock).join("")}
@@ -1021,6 +1022,7 @@
         <div class="daycount">🌙 Nacht ${game.nightNo} <span>·</span> ☀️ ${game.nightNo > 1 ? `Tag ${game.nightNo - 1} vorbei` : "noch kein Tag"}</div>
         <p class="small">${alive} von ${playerSeats().length} Spielern leben · Für eine Hinrichtung nötig: <b>${needed}</b> Stimmen</p>
         ${timerBox()}
+        ${balanceNowHtml()}
         <label class="switch"><input type="checkbox" id="musictoggle" ${Mood.on ? "checked" : ""}>
           <span><b>🎵 Stimmungsmusik</b> – leise Klänge für Nacht und Tag, nur auf diesem Handy.</span></label>
         <div class="chips viewtoggle">
@@ -1112,6 +1114,7 @@
 
     // Schritt 2
     $("#auto") && $("#auto").addEventListener("click", () => { autoPick(); save(); renderSL(); });
+    $("#autobal") && $("#autobal").addEventListener("click", () => { suggestBalanced(); save(); renderSL(); toast("⚖️ Ausgewogene Aufstellung gewählt"); });
     $("#clear") && $("#clear").addEventListener("click", () => { game.selected = []; save(); renderSL(); });
     $$(".tile[data-role]").forEach(t => t.addEventListener("click", () => {
       const id = t.dataset.role;
@@ -2008,7 +2011,9 @@
     const t = game.timer;
     const left = timerLeft(t);
     return `<div class="box timerbox">
-      <div class="tb-row"><h4>⏱️ Timer</h4><span class="timerval big ${left !== null && left <= 0 ? "over" : ""}">${left === null ? "0:00" : fmtTime(left)}</span></div>
+      <div class="tb-row"><h4>${t && t.label ? esc(t.label) : "⏱️ Timer"}</h4><span class="timerval big ${left !== null && left <= 0 ? "over" : ""}">${left === null ? "0:00" : fmtTime(left)}</span></div>
+      ${game.phase === "day" ? `<div class="chips tphases">${Object.entries(dayPhases()).map(([k, ph]) => `<button class="chip ${t && t.phase === k ? "on" : ""}" data-tphase="${k}">${ph.ic} ${esc(ph.l)} · ${ph.min} min</button>`).join("")}</div>
+      <p class="small">Empfohlene Zeiten für ${alivePlayers()} Lebende an Tag ${game.nightNo} – sie werden jeden Tag etwas kürzer.</p>` : ""}
       <div class="chips">${[2, 3, 5, 8, 10].map(m => `<button class="chip" data-tmin="${m}">${m} min</button>`).join("")}</div>
       <div class="row wrap">
         ${t && t.running ? `<button class="btn" id="tpause">⏸️ Pause</button>` : t && t.left > 0 ? `<button class="btn primary" id="tstart">▶️ Weiter</button>` : ""}
@@ -2018,13 +2023,29 @@
       ${game.online ? `<p class="small">🌐 Die Spieler sehen den Timer auf ihrem Handy.</p>` : ""}
     </div>`;
   }
+  // Tagesphasen mit empfohlener Dauer (je mehr Lebende, desto länger; jeden Tag etwas kürzer)
+  const alivePlayers = () => game.seats.filter(x => x.alive && !x.trav).length;
+  function dayPhases() {
+    const a = alivePlayers(), d = Math.max(0, game.nightNo - 1);
+    const cl = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(v)));
+    return {
+      private: { ic: "🤫", l: "Private Gespräche", min: cl(a * 0.6 - d * 0.5, 2, 8), end: "Private Gespräche vorbei – alle zurück an den Tisch!" },
+      public: { ic: "🗣️", l: "Offene Runde", min: cl(a * 0.35, 2, 5), end: "Offene Runde vorbei – jetzt wird nominiert!" },
+      noms: { ic: "⚖️", l: "Nominierungen", min: cl(a * 0.5, 3, 8), end: "Zeit für Nominierungen ist um – die Sonne geht unter!" }
+    };
+  }
   function bindTimer() {
     $$("[data-tmin]").forEach(b => b.addEventListener("click", () => {
       game.timer = { running: true, end: Date.now() + +b.dataset.tmin * 60000, left: 0, rang: false };
       unlockAudio(); save(); renderSL();
     }));
-    $("#tpause") && $("#tpause").addEventListener("click", () => { game.timer = { running: false, left: timerLeft(game.timer), rang: false }; save(); renderSL(); });
-    $("#tstart") && $("#tstart").addEventListener("click", () => { game.timer = { running: true, end: Date.now() + game.timer.left, left: 0, rang: false }; unlockAudio(); save(); renderSL(); });
+    $$("[data-tphase]").forEach(b => b.addEventListener("click", () => {
+      const ph = dayPhases()[b.dataset.tphase];
+      game.timer = { running: true, end: Date.now() + ph.min * 60000, left: 0, rang: false, phase: b.dataset.tphase, label: `${ph.ic} ${ph.l}`, endMsg: ph.end };
+      unlockAudio(); save(); renderSL();
+    }));
+    $("#tpause") && $("#tpause").addEventListener("click", () => { game.timer = { ...game.timer, running: false, left: timerLeft(game.timer), rang: false }; save(); renderSL(); });
+    $("#tstart") && $("#tstart").addEventListener("click", () => { game.timer = { ...game.timer, running: true, end: Date.now() + game.timer.left, left: 0, rang: false }; unlockAudio(); save(); renderSL(); });
     $("#tplus") && $("#tplus").addEventListener("click", () => {
       const t = game.timer;
       if (t.running) t.end = Math.max(t.end, Date.now()) + 60000; else t.left = (t.left || 0) + 60000;
@@ -2068,7 +2089,7 @@
         chip.addEventListener("click", () => { if (host) location.hash = "#/sl"; });
         document.body.appendChild(chip);
       }
-      chip.textContent = (t.running ? "⏱️ " : "⏸️ ") + fmtTime(left);
+      chip.textContent = (t.running ? "" : "⏸️ ") + (t.label ? t.label + " " : t.running ? "⏱️ " : "") + fmtTime(left);
       chip.classList.toggle("over", left <= 0);
     } else if (chip) chip.remove();
     // Alarm genau einmal pro Ablauf
@@ -2078,7 +2099,7 @@
         lastRangKey = key;
         beep();
         if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
-        notice("⏰ Die Zeit ist um!");
+        notice(`⏰ ${t.endMsg || "Die Zeit ist um!"}`);
       }
     }
   }
@@ -2107,16 +2128,37 @@
     const seats = online.length ? online.map((x, k) => ({ n: x.n, a: x.a, k })).filter(x => x.k !== me) : (notes.names || []).map(n => ({ n, a: true, own: true }));
     const pool = claimPool();
     const groups = ["townsfolk", "outsider", "minion", "demon"].map(t => [t, pool.filter(r => r.t === t)]).filter(([, l]) => l.length);
-    const claimSel = name => `<select data-pclaim="${esc(name)}"><option value="">behauptet …</option>${groups.map(([t, l]) =>
-      `<optgroup label="${TEAMS[t].plural}">${l.map(r => `<option value="${r.id}" ${notes["c:" + name] === r.id ? "selected" : ""}>${r.ic} ${esc(r.de)}</option>`).join("")}</optgroup>`).join("")}</select>`;
+    const roleSel = (name, key, ph) => `<select data-pclaim="${esc(name)}" data-pkey="${key}"><option value="">${ph}</option>${groups.map(([t, l]) =>
+      `<optgroup label="${TEAMS[t].plural}">${l.map(r => `<option value="${r.id}" ${notes[key + ":" + name] === r.id ? "selected" : ""}>${r.ic} ${esc(r.de)}</option>`).join("")}</optgroup>`).join("")}</select>`;
+    const claimSel = name => `<div class="nc-sels">${roleSel(name, "c", "🗨️ behauptet …")}${roleSel(name, "s", "🤔 ist wirklich …?")}</div>`;
+    // Tischansicht: alle Plätze im Kreis mit Vertrauen, Behauptung und Vermutung
+    const tableSeats = online.length ? online.map((x, k) => ({ n: x.n, a: x.a, me: k === me })) : (notes.names || []).map(n => ({ n, a: true }));
+    const circle = () => {
+      const n = tableSeats.length;
+      if (n < 3) return `<p class="small">Für die Tischansicht braucht es mindestens 3 Spieler.</p>`;
+      const d = Math.min(25, 0.92 * 2 * 41 * Math.sin(Math.PI / n)).toFixed(1);
+      return `<div class="circle ncircle size-${n <= 8 ? "lg" : n <= 15 ? "md" : "sm"}" style="--d:${d}">
+        <div class="circle-mid"><b>🧩 Mein Tisch</b><small>Antippen: zur Notiz</small></div>
+        ${tableSeats.map((x, i) => {
+          const a = (i / n) * 2 * Math.PI, t = notes["t:" + x.n], c = ROLE_BY_ID[notes["c:" + x.n]], g = ROLE_BY_ID[notes["s:" + x.n]];
+          return `<button class="token ${g ? "t-" + g.t : c ? "t-" + c.t : ""} ${x.a ? "" : "dead"} ${t ? "tr-" + t : ""} ${x.me ? "me" : ""}" style="left:${50 + 41 * Math.sin(a)}%;top:${50 - 41 * Math.cos(a)}%" ${x.me ? "" : `data-ncard="${esc(x.n)}"`}>
+            <span class="tk-name">${esc(String(x.n).replace(/^🤖\s*/, ""))}</span>
+            <span class="tk-ic">${x.me ? "⭐" : g ? g.ic : c ? c.ic : t === "evil" ? "😈" : t === "good" ? "😇" : "❔"}</span>
+            <span class="tk-role">${x.me ? "Du" : g ? "≈ " + esc(g.de) : c ? "„" + esc(c.de) + "“" : ""}</span>
+            <span class="tk-marks">${x.a ? "" : "💀"}${!x.me && t ? (TRUST.find(z => z[0] === t) || [])[1] : ""}</span></button>`;
+        }).join("")}</div>`;
+    };
+    const tview = store.get("botc.notesview", "list");
     const counts = { good: 0, unsure: 0, evil: 0 };
     seats.forEach(x => { const t = notes["t:" + x.n]; if (counts[t] !== undefined) counts[t]++; });
     return `<details class="panel notes" ${notesOpen ? "open" : ""}>
       <summary><h3>📝 Meine Notizen</h3>${seats.length ? `<span class="small"> 😇${counts.good} ❓${counts.unsure} 😈${counts.evil}</span>` : ""}</summary>
       <p class="small">Nur auf deinem Handy gespeichert – niemand sonst sieht sie.</p>
+      ${seats.length ? `<div class="chips viewtoggle"><button class="chip ${tview === "circle" ? "" : "on"}" data-nview="list">☰ Liste</button><button class="chip ${tview === "circle" ? "on" : ""}" data-nview="circle">◯ Tischansicht</button></div>` : ""}
+      ${seats.length && tview === "circle" ? circle() : ""}
       ${seats.length ? `<div class="notelist">${seats.map(x => {
         const t = notes["t:" + x.n], c = ROLE_BY_ID[notes["c:" + x.n]];
-        return `<div class="notecard ${x.a ? "" : "dead"} ${t ? "tr-" + t : ""}">
+        return `<div class="notecard ${x.a ? "" : "dead"} ${t ? "tr-" + t : ""}" data-card="${esc(x.n)}">
           <div class="nc-top"><b class="nc-name">${c ? c.ic + " " : ""}${esc(x.n)}${x.a ? "" : " 💀"}</b>
             <span class="trust">${TRUST.map(([k, ic, label]) => `<button class="trustbtn ${t === k ? "on" : ""}" data-ptrust="${esc(x.n)}" data-v="${k}" title="${label}" aria-label="${label}">${ic}</button>`).join("")}</span>
             ${x.own ? `<button class="trustbtn del" data-pdel="${esc(x.n)}" aria-label="entfernen">✕</button>` : ""}</div>
@@ -2146,7 +2188,13 @@
     const put = (k, v) => { const n = get(); if (v === null || v === "") delete n[k]; else n[k] = v; store.set("botc.notes", n); };
     $("#gnote").addEventListener("input", e => put("general", e.target.value));
     $$("[data-pnote]").forEach(inp => inp.addEventListener("input", () => put("p:" + inp.dataset.pnote, inp.value)));
-    $$("[data-pclaim]").forEach(sel => sel.addEventListener("change", () => { put("c:" + sel.dataset.pclaim, sel.value); rerenderNotes(); }));
+    $$("[data-pclaim]").forEach(sel => sel.addEventListener("change", () => { put((sel.dataset.pkey || "c") + ":" + sel.dataset.pclaim, sel.value); rerenderNotes(); }));
+    $$("[data-nview]").forEach(b => b.addEventListener("click", e => { e.preventDefault(); store.set("botc.notesview", b.dataset.nview); rerenderNotes(); }));
+    $$("[data-ncard]").forEach(b => b.addEventListener("click", e => {
+      e.preventDefault();
+      const card = $$("[data-card]").find(c => c.dataset.card === b.dataset.ncard);
+      if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); card.classList.add("flash"); setTimeout(() => card.classList.remove("flash"), 1200); }
+    }));
     $$("[data-ptrust]").forEach(btn => btn.addEventListener("click", e => {
       e.preventDefault();
       const k = "t:" + btn.dataset.ptrust;
@@ -2427,13 +2475,121 @@
     </div>${jinxHtml(sc)}`;
   }
   // Tipps zur Ausgewogenheit der gewählten Rollen
+  // Wer liegt gerade vorne? Grobe Einschätzung für den Spielleiter (kein Muss – nur ein Gefühl)
+  const PROTECT_ROLES = ["monk", "soldier", "tealady", "innkeeper", "mayor", "fool", "pacifist", "exorcist", "sailor", "courtier", "minstrel", "princess", "bountyhunter", "farmer"];
+  const MISREG_ROLES = ["spy", "recluse"];
+  function balanceNow() {
+    const ps = game.seats.filter(x => !x.trav && x.role);
+    const live = ps.filter(x => x.alive);
+    if (!live.length || game.winner || !live.some(x => ROLE_BY_ID[x.role].t === "demon")) return null;
+    const evil = live.filter(x => !seatGood(x)).length, good = live.length - evil;
+    const evil0 = ps.filter(x => !seatGood(x)).length / ps.length;
+    const goodInfo = live.filter(x => seatGood(x) && INFO_ROLES.includes(actingRole(x) || x.role));
+    const sober = goodInfo.filter(x => !impaired(x)), bad = goodInfo.filter(x => impaired(x));
+    const execLeft = Math.max(1, Math.floor((live.length - 3) / 2) + 1);
+    // Erwartung: etwa jeder zweite Gute hat eine Info-Rolle – mehr echte Infos helfen Gut, gestörte helfen Böse
+    let sc = 50 + (sober.length - 0.45 * good) * 7 - bad.length * 4 + (evil0 - evil / live.length) * 120;
+    if (live.some(x => PROTECT_ROLES.includes(x.role) && seatGood(x) && !impaired(x))) sc += 3;
+    if (live.some(x => MISREG_ROLES.includes(x.role))) sc -= 3;
+    sc = Math.max(5, Math.min(95, Math.round(sc)));
+    const tips = [];
+    if (sc >= 65) tips.push("Gut liegt vorne. Du kannst gestörten Spielern (betrunken/vergiftet) glaubwürdige Falschinfos geben und Spion/Einsiedler ruhig falsch registrieren lassen.");
+    else if (sc <= 35) tips.push("Böse liegt vorne. Gib klare, richtige Infos, registriere Spion/Einsiedler eher ehrlich und erinnere die Guten an ihre Fähigkeiten.");
+    else tips.push("Ausgeglichen – so soll es sein. Einfach weiterspielen.");
+    return { sc, good, evil, execLeft, sober, bad, tips };
+  }
+  function balanceNowHtml() {
+    const b = balanceNow();
+    if (!b) return "";
+    const nm = l => l.map(x => esc(String(x.name).replace(/^🤖\s*/, ""))).join(", ");
+    return `<details class="box balnow"><summary>⚖️ Wer liegt vorne? <span class="small">${b.sc >= 65 ? "Gut" : b.sc <= 35 ? "Böse" : "ausgeglichen"}</span></summary>
+      <div class="balbar"><span class="bb-g">😇 Gut</span><div class="bb-track"><i style="left:${100 - b.sc}%"></i></div><span class="bb-e">Böse 😈</span></div>
+      <ul class="small">
+        <li>${b.good} Gute und ${b.evil} Böse leben · noch etwa <b>${b.execLeft}</b> Hinrichtung(en) bis zum Finale mit 3 Lebenden.</li>
+        <li>Info-Rollen mit echten Infos: ${b.sober.length ? nm(b.sober) : "keine"}${b.bad.length ? ` · gestört: ${nm(b.bad)}` : ""}</li>
+        ${b.tips.map(t => `<li>💡 ${esc(t)}</li>`).join("")}
+      </ul><p class="small">Nur eine grobe Schätzung aus Lebenden, Infos und Gift – dein Gefühl am Tisch zählt mehr.</p></details>`;
+  }
+
+  // ================= SETUP-BEWERTUNG =================
+  const STRONG_DEMONS = ["vortox", "nodashii", "fanggu", "pukka", "vigormortis", "lleech", "alhadikhia", "legion", "leviathan", "riot", "kazali", "ojo", "yaggababble", "lordoftyphon", "zombuul", "shabaloth", "po"];
+  const DISRUPT_ROLES = ["poisoner", "drunk", "spy", "recluse", "widow", "pukka", "nodashii", "vortox", "sweetheart", "philosopher", "innkeeper", "sailor", "courtier", "minstrel", "goon", "lunatic", "marionette", "lleech", "vigormortis", "harpy", "mezepheles"];
+  function setupPower(sel) {
+    let g = 0, e = 0;
+    sel.forEach(id => {
+      const r = ROLE_BY_ID[id]; if (!r) return;
+      if (r.t === "townsfolk") g += INFO_ROLES.includes(id) ? 2 : PROTECT_ROLES.includes(id) ? 1.5 : 1.2;
+      else if (r.t === "outsider") g -= 0.6;
+      else if (r.t === "minion") e += 2.2;
+      else if (r.t === "demon") e += STRONG_DEMONS.includes(id) ? 4.5 : 3;
+      if (DISRUPT_ROLES.includes(id)) { if (r.t === "minion" || r.t === "demon") e += 1; else g -= 0.8; }
+    });
+    return g / Math.max(1, g + e);
+  }
+  // Zufällige Aufstellung (ohne etwas zu speichern)
+  function randomSetup() {
+    const ed = game.edition, base = SETUP_COUNTS[game.count];
+    const rolesOf = (e, t) => ROLES.filter(r => inEd(r, e) && r.t === t && !smallExcluded(r.id, game.count));
+    const demon = pick(rolesOf(ed, "demon"), 1);
+    const minions = pick(rolesOf(ed, "minion"), base[2]);
+    let outs = base[1];
+    [...demon, ...minions].forEach(r => { const m = OUTSIDER_MODS[r.id]; if (m) outs += m[randInt(m.length)]; });
+    const outsiderPool = rolesOf(ed, "outsider");
+    outs = Math.max(0, Math.min(outs, outsiderPool.length));
+    const tf = game.count - outs - base[2] - base[3];
+    let sel = [...demon, ...minions, ...pick(outsiderPool, outs), ...pick(rolesOf(ed, "townsfolk"), tf)];
+    Object.entries(REQUIRES).forEach(([a, bId]) => {
+      if (!sel.some(r => r.id === a) || sel.some(r => r.id === bId)) return;
+      const need = ROLE_BY_ID[bId];
+      const k = sel.findIndex(r => r.t === need.t && r.id !== a);
+      if (k >= 0) sel[k] = need; else sel = sel.filter(r => r.id !== a);
+    });
+    return sel.map(r => r.id);
+  }
+  // Vergleich mit vielen zufälligen Aufstellungen derselben Edition und Spielerzahl
+  const setupRef = {};
+  function setupStats() {
+    const key = game.edition + "|" + game.count + "|" + (game.script || []).join(",");
+    if (!setupRef[key]) {
+      const v = [];
+      for (let k = 0; k < 250; k++) { const sel = randomSetup(); if (sel.length === game.count) v.push(setupPower(sel)); }
+      v.sort((a, b) => a - b);
+      const mid = v.length ? v[Math.floor(v.length / 2)] : 0.5;
+      const sd = v.length ? Math.sqrt(v.reduce((a, x) => a + (x - mid) ** 2, 0) / v.length) || 0.05 : 0.05;
+      setupRef[key] = { mid, sd };
+    }
+    return setupRef[key];
+  }
+  function setupZ(sel) { const st = setupStats(); return (setupPower(sel) - st.mid) / st.sd; }
+  function setupMeterHtml() {
+    if (game.selected.length !== game.count) return "";
+    const z = setupZ(game.selected);
+    const lbl = z > 1.5 ? "sehr leicht für Gut" : z > 0.6 ? "eher leicht für Gut" : z < -1.5 ? "sehr schwer für Gut" : z < -0.6 ? "eher schwer für Gut" : "ausgeglichen";
+    const pos = Math.max(3, Math.min(97, 50 - z * 20));
+    return `<div class="box setupmeter"><h4>⚖️ Bewertung dieser Aufstellung: <span class="${Math.abs(z) <= 0.6 ? "okmsg" : "warnmsg"}">${lbl}</span></h4>
+      <div class="balbar"><span class="bb-g">😇 Gut</span><div class="bb-track"><i style="left:${pos}%"></i></div><span class="bb-e">Böse 😈</span></div>
+      <p class="small">Verglichen mit vielen zufälligen Aufstellungen dieser Edition bei ${game.count} Spielern. Zählt Info-, Schutz- und Störrollen sowie starke Dämonen.</p></div>`;
+  }
+  function suggestBalanced() {
+    const c = [];
+    for (let k = 0; k < 300; k++) {
+      const sel = randomSetup();
+      if (sel.length !== game.count || !sel.some(id => INFO_ROLES.includes(id))) continue;
+      c.push([Math.abs(setupZ(sel)), sel]);
+    }
+    if (!c.length) { autoPick(); return; }
+    c.sort((a, b) => a[0] - b[0]);
+    game.selected = c[randInt(Math.min(15, c.length))][1];
+    refreshHidden();
+  }
+
   function balanceHints() {
     const sel = game.selected, R = id => ROLE_BY_ID[id];
     if (sel.length !== game.count) return "";
     const tips = [];
     const towns = sel.filter(id => R(id).t === "townsfolk");
     const info = towns.filter(id => INFO_ROLES.includes(id));
-    const disrupt = sel.filter(id => ["poisoner", "drunk", "spy", "recluse", "widow", "pukka", "nodashii", "vortox", "sweetheart", "philosopher", "innkeeper", "sailor", "courtier", "minstrel", "goon", "lunatic", "marionette", "lleech", "vigormortis", "harpy", "mezepheles"].includes(id));
+    const disrupt = sel.filter(id => DISRUPT_ROLES.includes(id));
     if (!info.length) tips.push("Kein Info-Dorfbewohner im Spiel – Gut erfährt fast nichts und hat es sehr schwer.");
     else if (info.length >= Math.max(3, towns.length - 1) && !disrupt.length) tips.push("Viele Info-Rollen, aber nichts stört sie (kein Giftmischer, Säufer, Spion, Einsiedler …) – Gut hat es sehr leicht.");
     if (sel.includes("drunk") && game.drunkShown && !INFO_ROLES.includes(game.drunkShown)) tips.push(`Der Säufer glaubt, ${roleName(game.drunkShown)} zu sein – mit einer Info-Rolle kannst du ihm falsche Infos geben, das macht ihn spannender.`);
@@ -4834,7 +4990,7 @@
       ed: game.edition,
       scn: game.edition === "custom" ? game.scriptName || "" : "",
       fabled: game.fabled || [],
-      timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0 } : null,
+      timer: game.timer ? { running: !!game.timer.running, end: game.timer.end || 0, left: game.timer.left || 0, label: game.timer.label || "", endMsg: game.timer.endMsg || "" } : null,
       started: game.seats.length > 0 && game.step !== "setup",
       seats: game.seats.map(s => ({ n: s.name, a: !!s.alive, g: !!s.ghost || !!s.banshee, t: !!s.trav, bs: !!s.banshee })),
       pv: !!game.phoneVote && game.phase === "day",
