@@ -666,3 +666,11 @@ section.panel > details > summary h2 { display: inline; margin: 0; } section.pan
 div.yagga:not(.box) { background: var(--panel2); border-radius: 8px; padding: .4rem .6rem; margin: .4rem 0; }
 .yg-count { font-size: 1.4rem; min-width: 3rem; text-align: center; }
 .yglist { display: grid; gap: .1rem; max-height: 50vh; overflow: auto; }
+/* Rollenkarte: Wichtiges zuerst */
+.rc-new { border-left: 4px solid var(--accent); background: rgba(201,162,74,.12); }
+.rc-new h4 { color: var(--accent); }
+.rc-more summary, details.box.infos summary { cursor: pointer; font-weight: 600; }
+.rc-more h4 { margin: .7rem 0 .2rem; }
+.bluffs { padding-left: 1.1rem; display: grid; gap: .35rem; }
+.bluffchip { display: inline-block; white-space: nowrap; background: var(--panel2); border-radius: 999px; padding: .1rem .55rem; margin: .1rem 0; }
+.bluffmore summary { cursor: pointer; }

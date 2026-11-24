@@ -160,10 +160,20 @@
       if (x.m && !x.m.length && !x.d) evil += `<p>Du hast keine Schergen.</p>`;
       if (x.l) evil += `<p>Der Wahnsinnige (glaubt, Dämon zu sein): <b>${esc(x.l)}</b></p>`;
       if (x.mo) evil += `<p>Deine Marionette (glaubt, gut zu sein): <b>${esc(x.mo)}</b></p>`;
-      if (x.b && x.b.length) evil += `<p>Deine Bluffs (gute Rollen, die nicht im Spiel sind):</p><ul>${x.b.map(id => `<li><b>${esc(roleName(id))}</b> – ${esc(ROLE_BY_ID[id].a)}</li>`).join("")}</ul>`;
+      if (x.b && x.b.length) evil += `<p>Deine Bluffs <span class="small">(nicht im Spiel)</span>: ${x.b.map(id => `<b class="bluffchip">${ROLE_BY_ID[id].ic} ${esc(roleName(id))}</b>`).join(" ")}</p>
+        <details class="bluffmore"><summary class="small">Fähigkeiten der Bluffs</summary><ul class="bluffs">${x.b.map(id => `<li><b>${esc(roleName(id))}:</b> <span class="small">${esc(ROLE_BY_ID[id].a)}</span></li>`).join("")}</ul></details>`;
       evil += `</div>`;
     }
     const grim = (info.g ? grimBox(info.g) : "") + (info.amk ? `<div class="box ability"><h4>❓ Deine Fähigkeit (erraten!)</h4><p>${esc(info.amk)}</p></div>` : "");
+    const infos = info.i || [];
+    const lastN = infos.length ? Math.max(...infos.map(x => x.n || 0)) : null;
+    const infoLi = x => `<li>${String(x.t || "").startsWith("☀️") ? "" : `<b>Nacht ${x.n}:</b> `}${[(x.r || []).map(id => esc(roleName(id))).join(" / "), x.t ? esc(x.t) : ""].filter(Boolean).join(" – ")}</li>`;
+    const fresh = infos.filter(x => (x.n || 0) === lastN), older = infos.filter(x => (x.n || 0) !== lastN);
+    const newInfoHtml = fresh.length ? `<div class="box infos rc-new"><h4>🌙 Neu vom Spielleiter</h4><ul>${fresh.map(infoLi).join("")}</ul></div>` : "";
+    const oldInfoHtml = older.length ? `<details class="box infos"><summary>🗂️ Frühere Infos (${older.length})</summary><ul>${older.map(infoLi).join("")}</ul></details>` : "";
+    const madHtml = info.m && ROLE_BY_ID[info.m] ? `<div class="box madness"><h4>😵 Wahnsinn</h4>
+            <p>Du musst am Tag <b>überzeugend behaupten, ${esc(ROLE_BY_ID[info.m].de)} zu sein</b>. Tust du es nicht, kann der Spielleiter dich hinrichten lassen.</p>
+            <p class="small">${esc(ROLE_BY_ID[info.m].de)}: ${esc(ROLE_BY_ID[info.m].a)}</p></div>` : "";
     return `
       <div class="rolecard ${teamClass(role, info.a)}">
         <div class="rc-head">
@@ -174,20 +184,20 @@
           <div class="rc-team">${team.name} · ${good ? "Gut 😇" : "Böse 😈"}</div>
         </div>
         <div class="rc-body">
-          <div class="box ability"><h4>Deine Fähigkeit</h4><p>${esc(role.a)}</p></div>
-          <div class="box"><h4>So funktioniert's</h4><p>${esc(role.e)}</p></div>
-          ${role.tip ? `<div class="box"><h4>💡 Tipp</h4><p>${esc(role.tip)}</p></div>` : ""}
-          ${grim}
-          ${(info.i || []).length ? `<div class="box infos"><h4>🌙 Deine Infos vom Spielleiter</h4><ul>${info.i.map(x =>
-            `<li>${String(x.t || "").startsWith("☀️") ? "" : `<b>Nacht ${x.n}:</b> `}${[(x.r || []).map(id => esc(roleName(id))).join(" / "), x.t ? esc(x.t) : ""].filter(Boolean).join(" – ")}</li>`).join("")}</ul></div>` : ""}
-          ${info.m && ROLE_BY_ID[info.m] ? `<div class="box madness"><h4>😵 Wahnsinn</h4>
-            <p>Du musst am Tag <b>überzeugend behaupten, ${esc(ROLE_BY_ID[info.m].de)} zu sein</b>. Tust du es nicht, kann der Spielleiter dich hinrichten lassen.</p>
-            <p class="small">${esc(ROLE_BY_ID[info.m].de)}: ${esc(ROLE_BY_ID[info.m].a)}</p></div>` : ""}
+          ${madHtml}
+          ${newInfoHtml}
           ${evil}
-          <div class="box win"><h4>🏆 Dein Ziel</h4><p>${good
-            ? "Du bist <b>gut</b>. Finde den Dämon und lass ihn hinrichten. Gut gewinnt, wenn der Dämon stirbt."
-            : "Du bist <b>böse</b>. Lüge, täusche und schütze den Dämon. Böse gewinnt, wenn nur noch 2 Spieler leben."}</p></div>
-          <p class="small">Edition: ${esc(EDITIONS[role.ed].name)}</p>
+          ${grim}
+          <div class="box ability"><h4>Deine Fähigkeit</h4><p>${esc(role.a)}</p></div>
+          ${oldInfoHtml}
+          <details class="box rc-more"><summary>ℹ️ Mehr zu deiner Rolle</summary>
+            <h4>So funktioniert's</h4><p>${esc(role.e)}</p>
+            ${role.tip ? `<h4>💡 Tipp</h4><p>${esc(role.tip)}</p>` : ""}
+            <h4>🏆 Dein Ziel</h4><p>${good
+              ? "Du bist <b>gut</b>. Finde den Dämon und lass ihn hinrichten. Gut gewinnt, wenn der Dämon stirbt."
+              : "Du bist <b>böse</b>. Lüge, täusche und schütze den Dämon. Böse gewinnt, wenn nur noch 2 Spieler leben."}</p>
+            <p class="small">Edition: ${esc(EDITIONS[role.ed].name)}</p>
+          </details>
         </div>
       </div>`;
   }
