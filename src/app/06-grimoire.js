@@ -252,7 +252,7 @@
       ${on ? sw("st-pv", !!game.phoneVote, "📱 Nominieren &amp; Abstimmen am Handy", "Spieler nominieren und heben die Hand per Knopf, du bestätigst nur.") : ""}
       ${on ? "" : `<p class="small">Handy-Funktionen (Nachtaktionen, Abstimmen) gibt es im Online-Spiel oder in der Testrunde.</p>`}
       <h4>Dieses Handy</h4>
-      ${sw("st-music", Mood.on, "🎵 Stimmungsmusik", "leise Klänge für Nacht und Tag.")}
+      ${sw("st-music", Mood.on, "🎵 Stimmungsmusik", "ruhige Musik in der Nacht, rhythmische am Tag (braucht Internet).")}
       <h4>Hilfe</h4>
       <button class="btn" id="st-bug">🐞 Problem melden</button>
       <div class="row end"><button class="btn primary" id="st-close">Fertig</button></div>`);
