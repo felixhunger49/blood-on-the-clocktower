@@ -1262,7 +1262,7 @@
       ${on ? sw("st-pv", !!game.phoneVote, "📱 Nominieren &amp; Abstimmen am Handy", "Spieler nominieren und heben die Hand per Knopf, du bestätigst nur.") : ""}
       ${on ? "" : `<p class="small">Handy-Funktionen (Nachtaktionen, Abstimmen) gibt es im Online-Spiel oder in der Testrunde.</p>`}
       <h4>Dieses Handy</h4>
-      ${sw("st-music", Mood.on, "🎵 Stimmungsmusik", "ruhige Musik in der Nacht, rhythmische am Tag (braucht Internet).")}
+      ${sw("st-music", Mood.on, "🎵 Stimmungsmusik", "eigene Musik für Nacht und Tag (braucht Internet).")}
       <h4>Hilfe</h4>
       <button class="btn" id="st-bug">🐞 Problem melden</button>
       <div class="row end"><button class="btn primary" id="st-close">Fertig</button></div>`);
@@ -3035,10 +3035,10 @@
     Mood.setPhase(ph);
   }
 
-  // Stimmungsmusik: zwei Stücke (Nacht ruhig, Tag mit Rhythmus), in Schleife, weich übergeblendet.
+  // Stimmungsmusik: zwei Stücke (Nacht mit Rhythmus, Tag ruhig), in Schleife, weich übergeblendet.
   // Beide laufen gleichzeitig (der leise Teil auf Lautstärke 0) – so klappt der Wechsel auch auf dem iPhone ohne neuen Tipp.
   const Mood = (() => {
-    const TRACKS = { night: "audio/nacht.mp3", day: "audio/tag.mp3" };
+    const TRACKS = { night: "audio/nacht.mp3?2", day: "audio/tag.mp3?2" }; // ?2 – nach Änderungen an der Musik erhöhen
     const LEVEL = 0.55; // Hintergrund – nicht zu laut
     let ctx = null, phase = null;
     const ch = {}; // phase -> { el, gain }

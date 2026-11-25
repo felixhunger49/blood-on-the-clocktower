@@ -13,10 +13,10 @@
     Mood.setPhase(ph);
   }
 
-  // Stimmungsmusik: zwei Stücke (Nacht ruhig, Tag mit Rhythmus), in Schleife, weich übergeblendet.
+  // Stimmungsmusik: zwei Stücke (Nacht mit Rhythmus, Tag ruhig), in Schleife, weich übergeblendet.
   // Beide laufen gleichzeitig (der leise Teil auf Lautstärke 0) – so klappt der Wechsel auch auf dem iPhone ohne neuen Tipp.
   const Mood = (() => {
-    const TRACKS = { night: "audio/nacht.mp3", day: "audio/tag.mp3" };
+    const TRACKS = { night: "audio/nacht.mp3?2", day: "audio/tag.mp3?2" }; // ?2 – nach Änderungen an der Musik erhöhen
     const LEVEL = 0.55; // Hintergrund – nicht zu laut
     let ctx = null, phase = null;
     const ch = {}; // phase -> { el, gain }
